@@ -74,6 +74,22 @@ describe('Grammar Parser & Syntax Variations', () => {
     const epsProds = res.grammar!.productions.filter(p => p.rhs.length === 0);
     expect(epsProds.length).toBe(3);
   });
+
+  it('parses angle-bracketed non-terminals and mixed comments', () => {
+    const text = `
+      // Top-level statement
+      <Program> -> <Stmt> ";" <Program> # sequence
+                 | <Stmt>
+      <Stmt> -> "id" ":=" "num"
+    `;
+    const res = parseGrammar(text);
+    expect(res.errors).toHaveLength(0);
+    expect(res.grammar).toBeDefined();
+    expect(res.grammar!.nonTerminals.has('Program')).toBe(true);
+    expect(res.grammar!.nonTerminals.has('Stmt')).toBe(true);
+    expect(res.grammar!.terminals.has(';')).toBe(true);
+    expect(res.grammar!.terminals.has(':=')).toBe(true);
+  });
 });
 
 describe('Grammar Analyser (Nullable, FIRST, FOLLOW)', () => {
@@ -155,6 +171,44 @@ describe('Grammar Processor (Transformations)', () => {
       p => p.rhs.length === 1 && res.transformedGrammar.nonTerminals.has(p.rhs[0])
     );
     expect(hasUnit).toBe(false);
+  });
+
+  it('converts to Chomsky Normal Form (CNF)', () => {
+    const text = `
+      S -> "a" S "b" | "a" "b"
+    `;
+    const g = parseGrammar(text).grammar!;
+    const res = convertToChomsky(g);
+
+    // In CNF, all rules are either A -> B C or A -> a (or S0 -> eps)
+    for (const p of res.transformedGrammar.productions) {
+      if (p.rhs.length === 1) {
+        expect(res.transformedGrammar.terminals.has(p.rhs[0])).toBe(true);
+      } else if (p.rhs.length === 2) {
+        expect(res.transformedGrammar.nonTerminals.has(p.rhs[0])).toBe(true);
+        expect(res.transformedGrammar.nonTerminals.has(p.rhs[1])).toBe(true);
+      } else if (p.rhs.length === 0) {
+        expect(p.lhs).toBe(res.transformedGrammar.startSymbol);
+      } else {
+        throw new Error(`Production ${p.lhs} -> ${p.rhs.join(' ')} violates CNF length`);
+      }
+    }
+  });
+
+  it('reduces grammar by removing unreachable and unproductive symbols', () => {
+    const text = `
+      S -> "a" A
+      A -> "a"
+      B -> "b" B // non-terminating
+      C -> "c"   // unreachable
+    `;
+    const g = parseGrammar(text).grammar!;
+    const res = reduceGrammar(g);
+
+    expect(res.transformedGrammar.nonTerminals.has('B')).toBe(false);
+    expect(res.transformedGrammar.nonTerminals.has('C')).toBe(false);
+    expect(res.transformedGrammar.nonTerminals.has('S')).toBe(true);
+    expect(res.transformedGrammar.nonTerminals.has('A')).toBe(true);
   });
 });
 
