@@ -214,7 +214,13 @@ export const TRANSLATIONS = {
     forNonTerminal: 'for Non-Terminal',
     withLookahead: 'with lookahead',
     conflictingActions: 'Conflicting actions',
-    conflictingRules: 'Conflicting productions'
+    conflictingRules: 'Conflicting productions',
+    clickToViewErrors: 'Click to view errors in analyser →',
+    clickToViewAnalyser: 'Click to open analyser →',
+    overviewConflictsTitle: 'Grammar Parsing Conflicts Detected',
+    overviewConflictsDesc: 'The following parsing tables contain non-deterministic conflicts. Click to inspect the exact collision tokens and rules in the simulator:',
+    viewInLLAnalyser: 'Open LL(k) Analyser ({count} conflicts) →',
+    viewInLRAnalyser: 'Open {variant} Analyser ({count} conflicts) →'
   },
   cz: {
     appTitle: 'Analyzátor gramatik',
@@ -425,7 +431,13 @@ export const TRANSLATIONS = {
     forNonTerminal: 'pro neterminál',
     withLookahead: 'se symbolem',
     conflictingActions: 'Konfliktní akce',
-    conflictingRules: 'Konfliktní pravidla'
+    conflictingRules: 'Konfliktní pravidla',
+    clickToViewErrors: 'Klikněte pro zobrazení chyb v analyzátoru →',
+    clickToViewAnalyser: 'Klikněte pro otevření analyzátoru →',
+    overviewConflictsTitle: 'Detekovány kolize v rozkladu gramatiky',
+    overviewConflictsDesc: 'Následující rozkladové tabulky obsahují nedeterministické konflikty. Klikněte pro přímé zobrazení kolizních tokenů a pravidel v analyzátoru:',
+    viewInLLAnalyser: 'Otevřít LL(k) analyzátor ({count} konfliktů) →',
+    viewInLRAnalyser: 'Otevřít {variant} analyzátor ({count} konfliktů) →'
   }
 };
 

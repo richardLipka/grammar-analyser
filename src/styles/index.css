@@ -508,6 +508,58 @@ body {
   border: 1px solid var(--color-danger);
 }
 
+/* Overview Badge Cards (Clickable to Analysers) */
+.badge-item-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+  color: inherit;
+  background-color: var(--color-bg-base);
+  font-family: inherit;
+  outline: none;
+}
+
+.badge-item-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.badge-item-card.ok {
+  background-color: var(--color-success-subtle);
+  border-color: var(--color-success);
+}
+
+.badge-item-card.ok:hover {
+  border-color: var(--color-success);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);
+}
+
+.badge-item-card.has-conflicts {
+  background-color: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+}
+
+.badge-item-card.has-conflicts:hover {
+  border-color: var(--color-danger);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+}
+
+.badge-arrow-icon {
+  opacity: 0.6;
+  transition: transform var(--transition-fast), opacity var(--transition-fast);
+}
+
+.badge-item-card:hover .badge-arrow-icon {
+  opacity: 1;
+  transform: translateX(3px);
+}
+
 /* Buttons */
 .btn {
   display: inline-flex;

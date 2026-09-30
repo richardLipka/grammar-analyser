@@ -17,6 +17,8 @@ interface LRViewProps {
   lr1Table: LRTable;
   defaultInput?: string;
   lang: Language;
+  selectedVariant?: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+  onSelectVariant?: (variant: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => void;
 }
 
 export const LRView: React.FC<LRViewProps> = ({
@@ -26,10 +28,20 @@ export const LRView: React.FC<LRViewProps> = ({
   lalr1Table,
   lr1Table,
   defaultInput = 'id + id * id',
-  lang
+  lang,
+  selectedVariant: controlledVariant,
+  onSelectVariant
 }) => {
   const t = TRANSLATIONS[lang];
-  const [selectedVariant, setSelectedVariant] = useState<'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)'>('SLR(1)');
+  const [internalVariant, setInternalVariant] = useState<'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)'>('SLR(1)');
+  const selectedVariant = controlledVariant ?? internalVariant;
+  const setSelectedVariant = (v: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => {
+    if (onSelectVariant) {
+      onSelectVariant(v);
+    } else {
+      setInternalVariant(v);
+    }
+  };
   const [inputText, setInputText] = useState(defaultInput);
   const [simulation, setSimulation] = useState<LRSimulationResult | null>(null);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);

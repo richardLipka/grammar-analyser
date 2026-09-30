@@ -86,10 +86,18 @@ export const App: React.FC = () => {
   const [selectedPresetId, setSelectedPresetId] = useState(PRESET_GRAMMARS[0].id);
   const [sampleInput, setSampleInput] = useState(PRESET_GRAMMARS[0].sampleInput);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [lrVariant, setLrVariant] = useState<'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)'>('SLR(1)');
   const [theme, setTheme] = useState<Theme>('dark');
   const [lang, setLang] = useState<Language>('en');
 
   const t = TRANSLATIONS[lang];
+
+  const handleNavigateToAnalyser = (targetTab: 'll' | 'lr', variant?: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => {
+    if (variant) {
+      setLrVariant(variant);
+    }
+    setActiveTab(targetTab);
+  };
 
   // Set data-theme on root html/body
   React.useEffect(() => {
@@ -344,6 +352,7 @@ export const App: React.FC = () => {
               lalr1Table={analysisData.lalr1Table}
               lr1Table={analysisData.lr1Table}
               lang={lang}
+              onNavigateToAnalyser={handleNavigateToAnalyser}
             />
           )}
 
@@ -452,6 +461,7 @@ export const App: React.FC = () => {
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
+                    onNavigateToAnalyser={handleNavigateToAnalyser}
                   />
                 )}
 
@@ -489,6 +499,8 @@ export const App: React.FC = () => {
                     lr1Table={analysisData.lr1Table}
                     defaultInput={sampleInput}
                     lang={lang}
+                    selectedVariant={lrVariant}
+                    onSelectVariant={setLrVariant}
                   />
                 )}
 

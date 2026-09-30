@@ -27,6 +27,7 @@ interface CollisionsReportsPanelProps {
   lalr1Table: LRTable;
   lr1Table: LRTable;
   lang: Language;
+  onNavigateToAnalyser?: (tab: 'll' | 'lr', lrVariant?: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => void;
 }
 
 export const CollisionsReportsPanel: React.FC<CollisionsReportsPanelProps> = ({
@@ -37,7 +38,8 @@ export const CollisionsReportsPanel: React.FC<CollisionsReportsPanelProps> = ({
   slr1Table,
   lalr1Table,
   lr1Table,
-  lang
+  lang,
+  onNavigateToAnalyser
 }) => {
   const t = TRANSLATIONS[lang];
   const [isExpanded, setIsExpanded] = useState(false);
@@ -142,22 +144,43 @@ export const CollisionsReportsPanel: React.FC<CollisionsReportsPanelProps> = ({
         <div className="collisions-reports-right-controls">
           <div className="classification-chips-group">
             {/* LL(1) Chip */}
-            <span className={`classification-chip ${llTable.isLL1 ? 'chip-pass' : 'chip-fail'}`}>
+            <button
+              type="button"
+              className={`classification-chip ${llTable.isLL1 ? 'chip-pass' : 'chip-fail'}`}
+              onClick={() => onNavigateToAnalyser?.('ll')}
+              title={llTable.isLL1 ? t.clickToViewAnalyser : t.clickToViewErrors}
+              style={{ cursor: 'pointer' }}
+            >
               <span>{t.ll1Badge}:</span>
               <span>{llTable.isLL1 ? t.passZero : t.conflictsShort.replace('{count}', llConflictsCount.toString())}</span>
-            </span>
+              <ArrowRight size={10} />
+            </button>
 
             {/* SLR(1) Chip */}
-            <span className={`classification-chip ${slr1Table.isConflictFree ? 'chip-pass' : 'chip-fail'}`}>
+            <button
+              type="button"
+              className={`classification-chip ${slr1Table.isConflictFree ? 'chip-pass' : 'chip-fail'}`}
+              onClick={() => onNavigateToAnalyser?.('lr', 'SLR(1)')}
+              title={slr1Table.isConflictFree ? t.clickToViewAnalyser : t.clickToViewErrors}
+              style={{ cursor: 'pointer' }}
+            >
               <span>{t.slr1Badge}:</span>
               <span>{slr1Table.isConflictFree ? t.passZero : t.conflictsShort.replace('{count}', slr1ConflictsCount.toString())}</span>
-            </span>
+              <ArrowRight size={10} />
+            </button>
 
             {/* LR(1) Chip */}
-            <span className={`classification-chip ${lr1Table.isConflictFree ? 'chip-pass' : 'chip-fail'}`}>
+            <button
+              type="button"
+              className={`classification-chip ${lr1Table.isConflictFree ? 'chip-pass' : 'chip-fail'}`}
+              onClick={() => onNavigateToAnalyser?.('lr', 'LR(1)')}
+              title={lr1Table.isConflictFree ? t.clickToViewAnalyser : t.clickToViewErrors}
+              style={{ cursor: 'pointer' }}
+            >
               <span>{t.lr1Badge}:</span>
               <span>{lr1Table.isConflictFree ? t.passZero : t.conflictsShort.replace('{count}', lr1ConflictsCount.toString())}</span>
-            </span>
+              <ArrowRight size={10} />
+            </button>
           </div>
 
           {/* Details Toggle Button */}
@@ -181,7 +204,19 @@ export const CollisionsReportsPanel: React.FC<CollisionsReportsPanelProps> = ({
             {/* LL(1) & LL(2) Collisions Section */}
             <div>
               <div className="reports-subheading">
-                <span>{t.llConflictsTitle}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{t.llConflictsTitle}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '2px 8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => onNavigateToAnalyser?.('ll')}
+                    title={t.clickToViewErrors}
+                  >
+                    <span>{t.tabLL}</span>
+                    <ArrowRight size={11} />
+                  </button>
+                </div>
                 {llTable.isLL1 ? (
                   <span className="badge badge-success"><CheckCircle2 size={11} /> {t.ll1Valid}</span>
                 ) : llTable.isLL2 ? (
@@ -239,7 +274,19 @@ export const CollisionsReportsPanel: React.FC<CollisionsReportsPanelProps> = ({
             {/* LR Collisions Section */}
             <div style={{ marginTop: '8px' }}>
               <div className="reports-subheading">
-                <span>{t.lrConflictsTitle}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>{t.lrConflictsTitle}</span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '2px 8px', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => onNavigateToAnalyser?.('lr', selectedLrVariant)}
+                    title={t.clickToViewErrors}
+                  >
+                    <span>{selectedLrVariant}</span>
+                    <ArrowRight size={11} />
+                  </button>
+                </div>
                 <div style={{ display: 'flex', gap: '3px' }}>
                   {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
                     <button
