@@ -1,13 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Grammar } from './core/ast/grammar';
 import { parseGrammar } from './core/parser/grammarParser';
-import { analyzeGrammar } from './core/analyser/grammarAnalyser';
-import { buildLLTable } from './core/ll/llTable';
+import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
+import { buildLLTable, LLTable } from './core/ll/llTable';
 import {
   buildLR0Automaton,
   buildLR1Automaton,
-  buildLALR1Automaton
+  buildLALR1Automaton,
+  LRAutomaton
 } from './core/lr/lrAutomaton';
-import { buildLRTable } from './core/lr/lrTable';
+import { buildLRTable, LRTable } from './core/lr/lrTable';
 import { PRESET_GRAMMARS } from './core/presets/presetGrammars';
 import { Language, TRANSLATIONS } from './i18n/translations';
 
@@ -24,11 +26,59 @@ import { LatexExportView } from './ui/views/LatexExportView';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network,
-  Sparkles, FileText, Sun, Moon, Monitor, Globe, AlertCircle
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle
 } from 'lucide-react';
 
 type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
 type Theme = 'dark' | 'light' | 'projector';
+
+export interface AnalysisDataResult {
+  analysis: GrammarAnalysis;
+  llTable: LLTable;
+  lr0Automaton: LRAutomaton;
+  slr1Automaton: LRAutomaton;
+  lalr1Automaton: LRAutomaton;
+  lr1Automaton: LRAutomaton;
+  lr0Table: LRTable;
+  slr1Table: LRTable;
+  lalr1Table: LRTable;
+  lr1Table: LRTable;
+}
+
+function computeAnalysis(grammar: Grammar | null): AnalysisDataResult | null {
+  if (!grammar) return null;
+
+  try {
+    const analysis = analyzeGrammar(grammar);
+    const llTable = buildLLTable(grammar, analysis);
+
+    const lr0Automaton = buildLR0Automaton(grammar, 'LR(0)');
+    const slr1Automaton = buildLR0Automaton(grammar, 'SLR(1)');
+    const lalr1Automaton = buildLALR1Automaton(grammar, analysis);
+    const lr1Automaton = buildLR1Automaton(grammar, analysis);
+
+    const lr0Table = buildLRTable(lr0Automaton, grammar, analysis);
+    const slr1Table = buildLRTable(slr1Automaton, grammar, analysis);
+    const lalr1Table = buildLRTable(lalr1Automaton, grammar, analysis);
+    const lr1Table = buildLRTable(lr1Automaton, grammar, analysis);
+
+    return {
+      analysis,
+      llTable,
+      lr0Automaton,
+      slr1Automaton,
+      lalr1Automaton,
+      lr1Automaton,
+      lr0Table,
+      slr1Table,
+      lalr1Table,
+      lr1Table
+    };
+  } catch (err) {
+    console.error('Analysis error:', err);
+    return null;
+  }
+}
 
 export const App: React.FC = () => {
   const [grammarText, setGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
@@ -45,6 +95,68 @@ export const App: React.FC = () => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
+  // Recalculation & Stale state management
+  const [analyzedGrammarText, setAnalyzedGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
+  const initialParse = useMemo(() => parseGrammar(PRESET_GRAMMARS[0].grammarText), []);
+  const [analyzedGrammar, setAnalyzedGrammar] = useState<Grammar | null>(initialParse.grammar || null);
+  const [analysisData, setAnalysisData] = useState<AnalysisDataResult | null>(() => computeAnalysis(initialParse.grammar || null));
+  const [isCalculating, setIsCalculating] = useState(false);
+  const [lastCalcDuration, setLastCalcDuration] = useState<number>(0);
+  const [isHeavyGrammar, setIsHeavyGrammar] = useState(false);
+
+  // Parse currently edited text for syntax error validation
+  const parseResult = useMemo(() => parseGrammar(grammarText), [grammarText]);
+  const isStale = grammarText.trim() !== analyzedGrammarText.trim();
+
+  // Recalculation logic with timing measurement
+  const recalculate = (overrideText?: string) => {
+    const textToRun = overrideText !== undefined ? overrideText : grammarText;
+    const parsed = parseGrammar(textToRun);
+    if (!parsed.grammar) {
+      return;
+    }
+
+    setIsCalculating(true);
+
+    // Run async in next tick so React renders invalid grey state and spinner first
+    setTimeout(() => {
+      const startTime = performance.now();
+      try {
+        const data = computeAnalysis(parsed.grammar!);
+        const duration = Math.round(performance.now() - startTime);
+
+        setAnalysisData(data);
+        setAnalyzedGrammar(parsed.grammar || null);
+        setAnalyzedGrammarText(textToRun);
+        setLastCalcDuration(duration);
+        setIsHeavyGrammar(duration > 150);
+      } catch (err) {
+        console.error('Recalculation error:', err);
+      } finally {
+        setIsCalculating(false);
+      }
+    }, 15);
+  };
+
+  // Auto-recalculate on grammar changes (debounced 350ms)
+  // If grammar is heavy (> 150ms calculation time), pause auto-recalculation while typing
+  // to prevent UI lag, showing results as invalid (grey) with recalculate button.
+  useEffect(() => {
+    if (grammarText.trim() === analyzedGrammarText.trim()) {
+      return;
+    }
+
+    if (isHeavyGrammar) {
+      return; // Wait for manual click on recalculate button
+    }
+
+    const timer = setTimeout(() => {
+      recalculate();
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [grammarText, analyzedGrammarText, isHeavyGrammar]);
+
   // Load preset handler
   const handleSelectPreset = (presetId: string) => {
     const preset = PRESET_GRAMMARS.find(p => p.id === presetId);
@@ -52,48 +164,15 @@ export const App: React.FC = () => {
       setSelectedPresetId(preset.id);
       setGrammarText(preset.grammarText);
       setSampleInput(preset.sampleInput);
+      recalculate(preset.grammarText);
     }
   };
 
-  // Parse grammar
-  const parseResult = useMemo(() => parseGrammar(grammarText), [grammarText]);
-  const grammar = parseResult.grammar;
-
-  // Analysis & Automata
-  const analysisData = useMemo(() => {
-    if (!grammar) return null;
-
-    try {
-      const analysis = analyzeGrammar(grammar);
-      const llTable = buildLLTable(grammar, analysis);
-
-      const lr0Automaton = buildLR0Automaton(grammar, 'LR(0)');
-      const slr1Automaton = buildLR0Automaton(grammar, 'SLR(1)');
-      const lalr1Automaton = buildLALR1Automaton(grammar, analysis);
-      const lr1Automaton = buildLR1Automaton(grammar, analysis);
-
-      const lr0Table = buildLRTable(lr0Automaton, grammar, analysis);
-      const slr1Table = buildLRTable(slr1Automaton, grammar, analysis);
-      const lalr1Table = buildLRTable(lalr1Automaton, grammar, analysis);
-      const lr1Table = buildLRTable(lr1Automaton, grammar, analysis);
-
-      return {
-        analysis,
-        llTable,
-        lr0Automaton,
-        slr1Automaton,
-        lalr1Automaton,
-        lr1Automaton,
-        lr0Table,
-        slr1Table,
-        lalr1Table,
-        lr1Table
-      };
-    } catch (err) {
-      console.error('Analysis error:', err);
-      return null;
-    }
-  }, [grammar]);
+  // Apply transformed grammar handler
+  const handleApplyGrammarText = (newText: string) => {
+    setGrammarText(newText);
+    recalculate(newText);
+  };
 
   return (
     <div>
@@ -183,9 +262,24 @@ export const App: React.FC = () => {
                 <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
                   {t.editorTitle}
                 </label>
-                <span style={{ fontSize: '10.5px', color: 'var(--color-text-muted)' }}>
-                  {t.syntaxSyntaxLine}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {lastCalcDuration > 0 && (
+                    <span style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Clock size={11} />
+                      {t.calcDuration.replace('{ms}', lastCalcDuration.toString())}
+                    </span>
+                  )}
+                  <button
+                    className={`btn ${isStale ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => recalculate()}
+                    disabled={isCalculating || !parseResult.grammar}
+                    title={t.recalculateAnalysis}
+                  >
+                    <RefreshCw size={12} className={isCalculating ? 'spin-icon' : ''} />
+                    <span>{isCalculating ? t.recalculating : t.recalculateAnalysis}</span>
+                  </button>
+                </div>
               </div>
 
               <textarea
@@ -211,7 +305,7 @@ export const App: React.FC = () => {
                   <span>{t.syntaxErrorTitle}</span>
                 </div>
                 <ul style={{ paddingLeft: '18px', fontSize: '11.5px', color: 'var(--color-danger)', marginTop: '4px' }}>
-                  {parseResult.errors.map((err, idx) => (
+                  {parseResult.errors.map((err: { line: number; message: string }, idx: number) => (
                     <li key={idx}>{lang === 'cz' ? 'Řádek' : 'Line'} {err.line}: {err.message}</li>
                   ))}
                 </ul>
@@ -300,15 +394,42 @@ export const App: React.FC = () => {
 
           {/* Active Tab View */}
           <div className="tab-content">
-            {!grammar || !analysisData ? (
+            {/* Outdated / Invalid Banner when grammar changed or calculation is in progress */}
+            {(isStale || isCalculating) && analysisData && (
+              <div className="outdated-banner">
+                <div className="outdated-banner-text">
+                  <AlertTriangle size={18} />
+                  <div>
+                    <div>{t.outdatedResultsBanner}</div>
+                    {isHeavyGrammar && lastCalcDuration > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 400, marginTop: '2px' }}>
+                        {t.heavyGrammarNotice.replace('{ms}', lastCalcDuration.toString())}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  className="btn btn-primary"
+                  onClick={() => recalculate()}
+                  disabled={isCalculating || !parseResult.grammar}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px' }}
+                >
+                  <RefreshCw size={14} className={isCalculating ? 'spin-icon' : ''} />
+                  <span>{isCalculating ? t.recalculating : t.recalculateAnalysis}</span>
+                </button>
+              </div>
+            )}
+
+            {!analyzedGrammar || !analysisData ? (
               <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
                 {t.pleaseSpecifyGrammar}
               </div>
             ) : (
-              <>
+              <div className={isStale || isCalculating ? 'results-invalid' : ''}>
                 {activeTab === 'overview' && (
                   <OverviewView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     llTable={analysisData.llTable}
                     lr0Table={analysisData.lr0Table}
@@ -321,7 +442,7 @@ export const App: React.FC = () => {
 
                 {activeTab === 'firstFollow' && (
                   <FirstFollowView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     lang={lang}
                   />
@@ -329,15 +450,15 @@ export const App: React.FC = () => {
 
                 {activeTab === 'transformations' && (
                   <TransformationsView
-                    grammar={grammar}
-                    onApplyGrammarText={setGrammarText}
+                    grammar={analyzedGrammar}
+                    onApplyGrammarText={handleApplyGrammarText}
                     lang={lang}
                   />
                 )}
 
                 {activeTab === 'll' && (
                   <LLView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     llTable={analysisData.llTable}
                     defaultInput={sampleInput}
                     lang={lang}
@@ -346,7 +467,7 @@ export const App: React.FC = () => {
 
                 {activeTab === 'lr' && (
                   <LRView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     lr0Table={analysisData.lr0Table}
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
@@ -358,7 +479,7 @@ export const App: React.FC = () => {
 
                 {activeTab === 'graph' && (
                   <AutomatonGraphView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     lr0Automaton={analysisData.lr0Automaton}
                     slr1Automaton={analysisData.slr1Automaton}
                     lalr1Automaton={analysisData.lalr1Automaton}
@@ -373,21 +494,21 @@ export const App: React.FC = () => {
 
                 {activeTab === 'words' && (
                   <WordGeneratorView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     lang={lang}
                   />
                 )}
 
                 {activeTab === 'latex' && (
                   <LatexExportView
-                    grammar={grammar}
+                    grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     llTable={analysisData.llTable}
                     slr1Table={analysisData.slr1Table}
                     lang={lang}
                   />
                 )}
-              </>
+              </div>
             )}
           </div>
         </main>

@@ -31,6 +31,11 @@ export const TRANSLATIONS = {
     toGNF: 'Greibach Normal Form (GNF)',
     applyToEditor: 'Apply Result to Editor',
     transformedOutputTitle: 'Transformed Grammar Output',
+    recalculateAnalysis: 'Recalculate Analysis',
+    recalculating: 'Recalculating...',
+    outdatedResultsBanner: 'Grammar has changed. Analysis results are outdated.',
+    heavyGrammarNotice: 'Analysis took {ms} ms. Auto-recalculation is paused while typing.',
+    calcDuration: 'Calculated in {ms} ms',
 
     tabOverview: 'Overview',
     tabFirstFollow: 'FIRST & FOLLOW',
@@ -178,6 +183,11 @@ export const TRANSLATIONS = {
     toGNF: 'Greibachové normální forma (GNF)',
     applyToEditor: 'Vložit výsledek do editoru',
     transformedOutputTitle: 'Výstup transformované gramatiky',
+    recalculateAnalysis: 'Přepočítat analýzu',
+    recalculating: 'Přepočítávám...',
+    outdatedResultsBanner: 'Gramatika byla změněna. Výsledky analýzy jsou neaktuální.',
+    heavyGrammarNotice: 'Analýza trvala {ms} ms. Automatický přepočet je při psaní pozastaven.',
+    calcDuration: 'Vypočteno za {ms} ms',
 
     tabOverview: 'Přehled',
     tabFirstFollow: 'FIRST & FOLLOW',
