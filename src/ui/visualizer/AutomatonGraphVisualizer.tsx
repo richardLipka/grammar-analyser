@@ -10,7 +10,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import dagre from 'dagre';
 import { LRAutomaton, LRState } from '../../core/lr/lrAutomaton';
-import { formatLR0Item, formatLR1Item } from '../../core/lr/lrItem';
+import {
+  formatLR0Item,
+  formatLR1Item,
+  groupLR1Items,
+  GroupedLR1Item,
+  formatGroupedLR1Item,
+  LR0Item
+} from '../../core/lr/lrItem';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface AutomatonGraphVisualizerProps {
@@ -57,7 +64,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     g.setGraph({
       rankdir: 'LR',
       nodesep: 40,
-      ranksep: 70,
+      ranksep: 80,
       marginx: 20,
       marginy: 20
     });
@@ -65,12 +72,26 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
 
     // Calculate node dimensions
     automaton.states.forEach(s => {
-      const itemsCount = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)'
-        ? (s.items1?.length || 1)
-        : s.items0.length;
-      
-      const width = 230;
-      const height = Math.max(70, 36 + itemsCount * 20);
+      let lineCount = 0;
+      let maxLen = 14;
+
+      if (automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)') {
+        const grouped = groupLR1Items(s.items1 || []);
+        lineCount = grouped.length;
+        for (const it of grouped) {
+          const formatted = formatGroupedLR1Item(it);
+          if (formatted.length > maxLen) maxLen = formatted.length;
+        }
+      } else {
+        lineCount = s.items0.length;
+        for (const it of s.items0) {
+          const formatted = formatLR0Item(it);
+          if (formatted.length > maxLen) maxLen = formatted.length;
+        }
+      }
+
+      const width = Math.max(240, Math.round(maxLen * 7.5 + 32));
+      const height = Math.max(76, 36 + lineCount * 20 + 8);
 
       g.setNode(s.id.toString(), { width, height });
     });
@@ -286,8 +307,9 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
           {/* Nodes */}
           {nodes.map(node => {
             const isSelected = selectedStateId === node.state.id;
+            const isAccepting = node.state.isAccepting;
             const items = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)'
-              ? (node.state.items1 || [])
+              ? groupLR1Items(node.state.items1 || [])
               : node.state.items0;
 
             return (
@@ -306,8 +328,8 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                   height={node.height}
                   rx={8}
                   fill={isSelected ? 'var(--color-primary-subtle)' : 'var(--color-bg-card)'}
-                  stroke={isSelected ? 'var(--color-primary)' : 'var(--color-border)'}
-                  strokeWidth={isSelected ? 2.5 : 1.5}
+                  stroke={isSelected ? 'var(--color-primary)' : (isAccepting ? 'var(--color-success)' : 'var(--color-border)')}
+                  strokeWidth={isSelected ? 2.5 : (isAccepting ? 2 : 1.5)}
                   filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"
                 />
 
@@ -316,35 +338,53 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                   width={node.width}
                   height={28}
                   rx={7}
-                  fill={isSelected ? 'var(--color-primary)' : 'var(--color-bg-elevated)'}
+                  fill={isSelected ? 'var(--color-primary)' : (isAccepting ? 'var(--color-success-subtle)' : 'var(--color-bg-elevated)')}
                 />
+                <line x1={0} y1={28} x2={node.width} y2={28} stroke={isSelected ? 'var(--color-primary)' : 'var(--color-border)'} strokeWidth={1} />
                 <text
                   x={12}
                   y={18}
-                  fill={isSelected ? '#ffffff' : 'var(--color-text-primary)'}
+                  fill={isSelected ? '#ffffff' : (isAccepting ? 'var(--color-success)' : 'var(--color-text-primary)')}
                   fontSize="12"
                   fontWeight="700"
                   fontFamily="var(--font-sans)"
                 >
-                  State {node.state.id} {node.state.id === 0 ? '(Initial)' : ''}
+                  State {node.state.id} {node.state.id === 0 ? '(Initial)' : ''} {isAccepting ? '(Accept)' : ''}
                 </text>
 
                 {/* Items List */}
                 {items.map((item, itIdx) => {
-                  const itemStr = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)'
-                    ? formatLR1Item(item as any)
-                    : formatLR0Item(item as any);
+                  if (automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)') {
+                    const gItem = item as GroupedLR1Item;
+                    const lr0Str = formatLR0Item({ production: gItem.production, dotIndex: gItem.dotIndex });
+                    const lasStr = gItem.lookaheads.join(', ');
 
+                    return (
+                      <text
+                        key={`item_${itIdx}`}
+                        x={12}
+                        y={48 + itIdx * 20}
+                        fontSize="11"
+                        fontFamily="var(--font-mono)"
+                      >
+                        <tspan fill="var(--color-text-secondary)">[{lr0Str}, </tspan>
+                        <tspan fill="var(--color-primary)" fontWeight="700">{lasStr}</tspan>
+                        <tspan fill="var(--color-text-secondary)">]</tspan>
+                      </text>
+                    );
+                  }
+
+                  const lr0Str = formatLR0Item(item as LR0Item);
                   return (
                     <text
                       key={`item_${itIdx}`}
-                      x={10}
-                      y={48 + itIdx * 18}
+                      x={12}
+                      y={48 + itIdx * 20}
                       fill="var(--color-text-secondary)"
-                      fontSize="10"
+                      fontSize="11"
                       fontFamily="var(--font-mono)"
                     >
-                      {itemStr}
+                      {lr0Str}
                     </text>
                   );
                 })}

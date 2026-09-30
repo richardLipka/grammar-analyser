@@ -18,6 +18,7 @@ import {
   buildLR1Automaton,
   buildLALR1Automaton
 } from '../core/lr/lrAutomaton';
+import { groupLR1Items, formatGroupedLR1Item } from '../core/lr/lrItem';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { generateShortestWords } from '../core/generator/wordGenerator';
@@ -287,6 +288,62 @@ describe('LR(k) Automata and Parser', () => {
     const lalr1Aut = buildLALR1Automaton(g, analysis);
     const lalr1Tab = buildLRTable(lalr1Aut, g, analysis);
     expect(lalr1Tab.isConflictFree).toBe(true); // Resolved in LALR(1)!
+    expect(lalr1Aut.states).toHaveLength(10);
+  });
+
+  it('correctly builds LR(1) and LALR(1) automata for classic Dragon Book grammar', () => {
+    const text = `
+      S -> C C
+      C -> "c" C | "d"
+    `;
+    const g = parseGrammar(text).grammar!;
+    const analysis = analyzeGrammar(g);
+
+    const lr1Aut = buildLR1Automaton(g, analysis);
+    // Dragon Book example has exactly 10 canonical LR(1) states
+    expect(lr1Aut.states).toHaveLength(10);
+
+    // Initial state 0 should have 4 unique cores and grouped lookaheads
+    const state0Grouped = groupLR1Items(lr1Aut.states[0].items1!);
+    expect(state0Grouped).toHaveLength(4);
+
+    // Check that lookaheads for C -> . c C and C -> . d in State 0 are c and d
+    const cItem = state0Grouped.find(it => it.production.lhs === 'C' && it.dotIndex === 0);
+    expect(cItem).toBeDefined();
+    expect(cItem!.lookaheads).toEqual(['c', 'd']);
+
+    const lr1Tab = buildLRTable(lr1Aut, g, analysis);
+    expect(lr1Tab.isConflictFree).toBe(true);
+
+    const lalr1Aut = buildLALR1Automaton(g, analysis);
+    // LALR(1) merges states 3&6, 4&7, 8&9 => exactly 7 states
+    expect(lalr1Aut.states).toHaveLength(7);
+
+    const lalr1Tab = buildLRTable(lalr1Aut, g, analysis);
+    expect(lalr1Tab.isConflictFree).toBe(true);
+
+    // Parse simulation test in LALR(1)
+    const sim = simulateLRParse(['c', 'd', 'd'], g, lalr1Tab);
+    expect(sim.accepted).toBe(true);
+  });
+
+  it('distinguishes LALR(1) from LR(1) via Reduce/Reduce conflict on identical cores', () => {
+    const text = `
+      S -> "a" A "d" | "b" B "d" | "a" B "e" | "b" A "e"
+      A -> "c"
+      B -> "c"
+    `;
+    const g = parseGrammar(text).grammar!;
+    const analysis = analyzeGrammar(g);
+
+    const lr1Aut = buildLR1Automaton(g, analysis);
+    const lr1Tab = buildLRTable(lr1Aut, g, analysis);
+    expect(lr1Tab.isConflictFree).toBe(true);
+
+    const lalr1Aut = buildLALR1Automaton(g, analysis);
+    const lalr1Tab = buildLRTable(lalr1Aut, g, analysis);
+    expect(lalr1Tab.isConflictFree).toBe(false);
+    expect(lalr1Tab.conflicts.some(c => c.type === 'Reduce/Reduce')).toBe(true);
   });
 });
 

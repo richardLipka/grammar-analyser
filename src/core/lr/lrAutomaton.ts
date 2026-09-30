@@ -118,10 +118,15 @@ export function buildLR0Automaton(g: Grammar, variant: 'LR(0)' | 'SLR(1)' = 'LR(
 
   const allSymbols = [...augGrammar.nonTerminals, ...augGrammar.terminals].filter(s => s !== augGrammar.startSymbol);
 
+  const isInitialAccepting = initialClosure.some(
+    it => it.production.id === 0 && it.dotIndex === it.production.rhs.length
+  );
+
   states.push({
     id: 0,
     items0: initialClosure,
-    transitions: new Map()
+    transitions: new Map(),
+    isAccepting: isInitialAccepting
   });
   stateKeyMap.set(makeStateKey(initialClosure), 0);
 
@@ -138,10 +143,14 @@ export function buildLR0Automaton(g: Grammar, variant: 'LR(0)' | 'SLR(1)' = 'LR(
         if (targetId === undefined) {
           targetId = states.length;
           stateKeyMap.set(key, targetId);
+          const isTargetAccepting = nextItems.some(
+            it => it.production.id === 0 && it.dotIndex === it.production.rhs.length
+          );
           states.push({
             id: targetId,
             items0: nextItems,
-            transitions: new Map()
+            transitions: new Map(),
+            isAccepting: isTargetAccepting
           });
         }
 
@@ -164,8 +173,16 @@ export function buildLR0Automaton(g: Grammar, variant: 'LR(0)' | 'SLR(1)' = 'LR(
  * CLOSURE for LR(1) items
  */
 export function closure1(items: LR1Item[], g: Grammar, analysis: GrammarAnalysis): LR1Item[] {
-  const result: LR1Item[] = [...items];
-  const seen = new Set<string>(items.map(lr1ItemKey));
+  const result: LR1Item[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const key = lr1ItemKey(item);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(item);
+    }
+  }
 
   let changed = true;
   while (changed) {
@@ -221,6 +238,19 @@ export function goto1(items: LR1Item[], symbol: string, g: Grammar, analysis: Gr
   return closure1(moved, g, analysis);
 }
 
+function extractUniqueLR0Items(items1: LR1Item[]): LR0Item[] {
+  const seen = new Set<string>();
+  const res: LR0Item[] = [];
+  for (const it of items1) {
+    const key = lr0ItemKey(it);
+    if (!seen.has(key)) {
+      seen.add(key);
+      res.push({ production: it.production, dotIndex: it.dotIndex });
+    }
+  }
+  return res;
+}
+
 /**
  * Build Canonical LR(1) Automaton
  */
@@ -242,11 +272,16 @@ export function buildLR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAuto
 
   const allSymbols = [...augGrammar.nonTerminals, ...augGrammar.terminals].filter(s => s !== augGrammar.startSymbol);
 
+  const isInitialAccepting = initialClosure.some(
+    it => it.production.id === 0 && it.dotIndex === it.production.rhs.length && it.lookahead === END_MARKER
+  );
+
   states.push({
     id: 0,
-    items0: initialClosure.map(it => ({ production: it.production, dotIndex: it.dotIndex })),
+    items0: extractUniqueLR0Items(initialClosure),
     items1: initialClosure,
-    transitions: new Map()
+    transitions: new Map(),
+    isAccepting: isInitialAccepting
   });
   stateKeyMap.set(makeStateKey(initialClosure), 0);
 
@@ -263,11 +298,15 @@ export function buildLR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAuto
         if (targetId === undefined) {
           targetId = states.length;
           stateKeyMap.set(key, targetId);
+          const isTargetAccepting = nextItems.some(
+            it => it.production.id === 0 && it.dotIndex === it.production.rhs.length && it.lookahead === END_MARKER
+          );
           states.push({
             id: targetId,
-            items0: nextItems.map(it => ({ production: it.production, dotIndex: it.dotIndex })),
+            items0: extractUniqueLR0Items(nextItems),
             items1: nextItems,
-            transitions: new Map()
+            transitions: new Map(),
+            isAccepting: isTargetAccepting
           });
         }
 
@@ -318,11 +357,16 @@ export function buildLALR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAu
   for (const group of coreGroups.values()) {
     const firstState = lr1.states[group[0]];
 
-    // Merge lookaheads for identical cores
+    // Merge lookaheads for identical cores across all states in this group
     const mergedItemMap = new Map<string, Set<string>>(); // "prodId@dotIndex" -> Set of lookaheads
+    let isMergedAccepting = false;
+
     for (const oldId of group) {
       oldToNewMap.set(oldId, newId);
       const st = lr1.states[oldId];
+      if (st.isAccepting) {
+        isMergedAccepting = true;
+      }
       for (const item of st.items1!) {
         const core = `${item.production.id}@${item.dotIndex}`;
         if (!mergedItemMap.has(core)) {
@@ -332,17 +376,31 @@ export function buildLALR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAu
       }
     }
 
-    const mergedItems1: LR1Item[] = [];
-    const mergedItems0: LR0Item[] = [];
-
+    // Extract unique LR(0) items preserving order
+    const coreToItem0 = new Map<string, LR0Item>();
+    for (const item of firstState.items0) {
+      const core = `${item.production.id}@${item.dotIndex}`;
+      if (!coreToItem0.has(core)) {
+        coreToItem0.set(core, item);
+      }
+    }
     for (const item of firstState.items1!) {
       const core = `${item.production.id}@${item.dotIndex}`;
-      const lookaheads = mergedItemMap.get(core)!;
-      mergedItems0.push({ production: item.production, dotIndex: item.dotIndex });
+      if (!coreToItem0.has(core)) {
+        coreToItem0.set(core, { production: item.production, dotIndex: item.dotIndex });
+      }
+    }
+
+    const mergedItems0: LR0Item[] = Array.from(coreToItem0.values());
+    const mergedItems1: LR1Item[] = [];
+
+    for (const item0 of mergedItems0) {
+      const core = `${item0.production.id}@${item0.dotIndex}`;
+      const lookaheads = Array.from(mergedItemMap.get(core) || []).sort();
       for (const la of lookaheads) {
         mergedItems1.push({
-          production: item.production,
-          dotIndex: item.dotIndex,
+          production: item0.production,
+          dotIndex: item0.dotIndex,
           lookahead: la
         });
       }
@@ -352,7 +410,8 @@ export function buildLALR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAu
       id: newId,
       items0: mergedItems0,
       items1: mergedItems1,
-      transitions: new Map() // will repoint next
+      transitions: new Map(),
+      isAccepting: isMergedAccepting
     });
 
     newId++;

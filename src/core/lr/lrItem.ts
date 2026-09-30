@@ -41,3 +41,35 @@ export function nextSymbolAfterDot(item: LR0Item): string | null {
   }
   return null;
 }
+
+export interface GroupedLR1Item {
+  production: Production;
+  dotIndex: number;
+  lookaheads: string[];
+}
+
+/**
+ * Groups LR(1) items sharing the same LR(0) core with merged lookaheads
+ */
+export function groupLR1Items(items: LR1Item[]): GroupedLR1Item[] {
+  const map = new Map<string, { production: Production; dotIndex: number; lookaheads: Set<string> }>();
+  for (const it of items) {
+    const key = lr0ItemKey(it);
+    if (!map.has(key)) {
+      map.set(key, { production: it.production, dotIndex: it.dotIndex, lookaheads: new Set() });
+    }
+    map.get(key)!.lookaheads.add(it.lookahead);
+  }
+  return Array.from(map.values()).map(g => ({
+    production: g.production,
+    dotIndex: g.dotIndex,
+    lookaheads: Array.from(g.lookaheads).sort()
+  }));
+}
+
+export function formatGroupedLR1Item(item: GroupedLR1Item): string {
+  const lr0 = formatLR0Item({ production: item.production, dotIndex: item.dotIndex });
+  const las = item.lookaheads.join(' / ');
+  return `[${lr0}, ${las}]`;
+}
+

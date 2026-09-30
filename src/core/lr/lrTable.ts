@@ -70,10 +70,13 @@ export function buildLRTable(
     // 1. Shift and GOTO actions from transitions
     for (const [sym, targetId] of s.transitions.entries()) {
       if (g.terminals.has(sym)) {
-        actRow.get(sym)?.push({
-          type: 'shift',
-          targetState: targetId
-        });
+        const row = actRow.get(sym);
+        if (row && !row.some(a => a.type === 'shift' && a.targetState === targetId)) {
+          row.push({
+            type: 'shift',
+            targetState: targetId
+          });
+        }
       } else if (g.nonTerminals.has(sym)) {
         gotoRow.set(sym, targetId);
       }
@@ -85,14 +88,20 @@ export function buildLRTable(
         if (item.dotIndex === item.production.rhs.length) {
           if (item.production.id === 0) {
             // S' -> S •
-            actRow.get(END_MARKER)?.push({ type: 'accept' });
+            const row = actRow.get(END_MARKER);
+            if (row && !row.some(a => a.type === 'accept')) {
+              row.push({ type: 'accept' });
+            }
           } else {
             // Reduce on ALL terminals and $
             for (const t of terminalCols) {
-              actRow.get(t)?.push({
-                type: 'reduce',
-                production: item.production
-              });
+              const row = actRow.get(t);
+              if (row && !row.some(a => a.type === 'reduce' && a.production?.id === item.production.id)) {
+                row.push({
+                  type: 'reduce',
+                  production: item.production
+                });
+              }
             }
           }
         }
@@ -101,15 +110,21 @@ export function buildLRTable(
       for (const item of s.items0) {
         if (item.dotIndex === item.production.rhs.length) {
           if (item.production.id === 0) {
-            actRow.get(END_MARKER)?.push({ type: 'accept' });
+            const row = actRow.get(END_MARKER);
+            if (row && !row.some(a => a.type === 'accept')) {
+              row.push({ type: 'accept' });
+            }
           } else {
             // Reduce ONLY on FOLLOW(A)
             const followA = analysis.follow1.get(item.production.lhs) || new Set();
             for (const t of followA) {
-              actRow.get(t)?.push({
-                type: 'reduce',
-                production: item.production
-              });
+              const row = actRow.get(t);
+              if (row && !row.some(a => a.type === 'reduce' && a.production?.id === item.production.id)) {
+                row.push({
+                  type: 'reduce',
+                  production: item.production
+                });
+              }
             }
           }
         }
@@ -119,13 +134,19 @@ export function buildLRTable(
       for (const item of s.items1 || []) {
         if (item.dotIndex === item.production.rhs.length) {
           if (item.production.id === 0 && item.lookahead === END_MARKER) {
-            actRow.get(END_MARKER)?.push({ type: 'accept' });
+            const row = actRow.get(END_MARKER);
+            if (row && !row.some(a => a.type === 'accept')) {
+              row.push({ type: 'accept' });
+            }
           } else {
             // Reduce on item.lookahead
-            actRow.get(item.lookahead)?.push({
-              type: 'reduce',
-              production: item.production
-            });
+            const row = actRow.get(item.lookahead);
+            if (row && !row.some(a => a.type === 'reduce' && a.production?.id === item.production.id)) {
+              row.push({
+                type: 'reduce',
+                production: item.production
+              });
+            }
           }
         }
       }

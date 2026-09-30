@@ -139,6 +139,7 @@ export function computeFirst1(g: Grammar, nullable: Set<string>): Map<string, Se
   for (const t of g.terminals) {
     first.set(t, new Set([t]));
   }
+  first.set(END_MARKER, new Set([END_MARKER]));
 
   // Non-terminals initialization
   for (const nt of g.nonTerminals) {
@@ -204,15 +205,19 @@ export function first1OfString(
 
   let allNullable = true;
   for (const sym of symbols) {
-    const symFirst = first1.get(sym);
-    if (symFirst) {
-      for (const item of symFirst) {
-        if (item !== EPSILON) {
-          result.add(item);
-        }
+    let symFirst = first1.get(sym);
+    if (!symFirst) {
+      if (sym === EPSILON) {
+        continue;
+      }
+      symFirst = new Set([sym]);
+    }
+    for (const item of symFirst) {
+      if (item !== EPSILON) {
+        result.add(item);
       }
     }
-    if (!nullable.has(sym)) {
+    if (!nullable.has(sym) && !symFirst.has(EPSILON)) {
       allNullable = false;
       break;
     }

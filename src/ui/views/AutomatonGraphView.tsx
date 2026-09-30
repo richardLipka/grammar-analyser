@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { LRTable, formatAction } from '../../core/lr/lrTable';
-import { formatLR0Item, formatLR1Item } from '../../core/lr/lrItem';
+import { formatLR0Item, formatLR1Item, groupLR1Items, GroupedLR1Item, LR0Item } from '../../core/lr/lrItem';
 import { AutomatonGraphVisualizer } from '../visualizer/AutomatonGraphVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Network, Info, ArrowRight } from 'lucide-react';
@@ -107,20 +107,46 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
                 {t.lrItemsInState}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {(selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)'
-                  ? (selectedState.items1 || [])
+                  ? groupLR1Items(selectedState.items1 || [])
                   : selectedState.items0
                 ).map((item, idx) => {
-                  const str = (selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)')
-                    ? formatLR1Item(item as any)
-                    : formatLR0Item(item as any);
+                  if (selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)') {
+                    const gItem = item as GroupedLR1Item;
+                    const lr0Str = formatLR0Item({ production: gItem.production, dotIndex: gItem.dotIndex });
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          padding: '6px 10px',
+                          backgroundColor: 'var(--color-bg-base)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <span>{lr0Str}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>lookahead:</span>
+                          <span className="badge badge-primary" style={{ fontFamily: 'var(--font-mono)', padding: '2px 6px', fontSize: '11px' }}>
+                            {gItem.lookaheads.join(', ')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
 
+                  const str = formatLR0Item(item as LR0Item);
                   return (
                     <div
                       key={idx}
                       style={{
-                        padding: '4px 8px',
+                        padding: '6px 10px',
                         backgroundColor: 'var(--color-bg-base)',
                         borderRadius: 'var(--radius-sm)',
                         fontFamily: 'var(--font-mono)',
