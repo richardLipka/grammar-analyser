@@ -7,7 +7,9 @@ import {
   removeUnitRules,
   removeLeftRecursion,
   leftFactorGrammar,
-  convertToChomsky
+  convertToChomsky,
+  getAvailableTransformationsForSymbol,
+  applySymbolTransformation
 } from '../core/processor/grammarProcessor';
 import { buildLLTable } from '../core/ll/llTable';
 import { simulateLLParse } from '../core/ll/llParser';
@@ -359,5 +361,50 @@ describe('Bilingual Output Support', () => {
     const latexLR = exportLRTableToLatex(lrTable, 'cz');
     expect(latexLR).toContain('Stav');
     expect(latexLR).toContain('Rozkladová tabulka SLR(1)');
+  });
+
+  it('detects available symbol transformations and applies them directly', () => {
+    const text = `
+      E -> E "+" T | T
+      T -> "id"
+      A -> "a" "b" "c" | "a" "b" "d" | "x"
+      B -> ε
+      U -> "id"
+      W -> U
+    `;
+    const g = parseGrammar(text).grammar!;
+
+    // E has left recursion
+    const eTrans = getAvailableTransformationsForSymbol(g, 'E');
+    expect(eTrans.some(t => t.id === 'eliminateImmediateLeftRecursion')).toBe(true);
+
+    // Apply left recursion to E directly
+    const resE = applySymbolTransformation(g, 'E', 'eliminateImmediateLeftRecursion');
+    expect(resE.steps).toHaveLength(1);
+    expect(resE.transformedGrammar.nonTerminals.has("E'")).toBe(true);
+    // E' should have epsilon and + T E'
+    const ePrimeProds = resE.transformedGrammar.productions.filter(p => p.lhs === "E'");
+    expect(ePrimeProds.some(p => p.rhs.length === 0)).toBe(true);
+    expect(ePrimeProds.some(p => p.rhs[0] === '+')).toBe(true);
+
+    // A has left factorization
+    const aTrans = getAvailableTransformationsForSymbol(g, 'A');
+    expect(aTrans.some(t => t.id.startsWith('leftFactor:'))).toBe(true);
+
+    const resA = applySymbolTransformation(g, 'A', aTrans.find(t => t.id.startsWith('leftFactor:'))!.id);
+    expect(resA.steps).toHaveLength(1);
+    expect(resA.transformedGrammar.nonTerminals.has("A'")).toBe(true);
+
+    // B has epsilon elimination
+    const bTrans = getAvailableTransformationsForSymbol(g, 'B');
+    expect(bTrans.some(t => t.id === 'eliminateEpsilon')).toBe(true);
+
+    // W has unit rule elimination (W -> U)
+    const wTrans = getAvailableTransformationsForSymbol(g, 'W');
+    expect(wTrans.some(t => t.id === 'eliminateUnit')).toBe(true);
+    const resW = applySymbolTransformation(g, 'W', 'eliminateUnit');
+    expect(resW.steps).toHaveLength(1);
+    const wProds = resW.transformedGrammar.productions.filter(p => p.lhs === 'W');
+    expect(wProds.some(p => p.rhs.length === 1 && p.rhs[0] === 'id')).toBe(true);
   });
 });

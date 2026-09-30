@@ -32,6 +32,29 @@ export interface TransformationResult {
   steps: TransformationStep[];
 }
 
+export type SymbolTransformationType =
+  | 'eliminateImmediateLeftRecursion'
+  | 'leftFactor'
+  | 'eliminateEpsilon'
+  | 'eliminateUnit'
+  | 'substitute'
+  | 'expandLeadingNT'
+  | 'removeUnproductive'
+  | 'removeUnreachable';
+
+export interface AvailableSymbolTransformation {
+  id: string;
+  type: SymbolTransformationType;
+  labelEn: string;
+  labelCz: string;
+  descriptionEn: string;
+  descriptionCz: string;
+  details?: {
+    prefix?: string[];
+    leadingNt?: string;
+  };
+}
+
 /**
  * 1. Reduce Grammar (Remove non-generating then non-reachable symbols)
  */
@@ -664,4 +687,632 @@ function getFreshNonTerminal(base: string, existing: Set<string>): string {
     name = `${base}_${counter++}`;
   }
   return name;
+}
+
+/**
+ * Detect available transformations for a specific non-terminal symbol
+ */
+export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): AvailableSymbolTransformation[] {
+  if (!g.nonTerminals.has(nt)) return [];
+  const available: AvailableSymbolTransformation[] = [];
+  const ntProds = g.productions.filter(p => p.lhs === nt);
+
+  // 1. Immediate Left Recursion
+  const leftRec = ntProds.filter(p => p.rhs.length > 0 && p.rhs[0] === nt);
+  const nonLeftRec = ntProds.filter(p => p.rhs.length === 0 || p.rhs[0] !== nt);
+  if (leftRec.length > 0 && nonLeftRec.length > 0) {
+    available.push({
+      id: 'eliminateImmediateLeftRecursion',
+      type: 'eliminateImmediateLeftRecursion',
+      labelEn: `Eliminate Immediate Left Recursion (${nt} -> ${nt}α | β)`,
+      labelCz: `Odstranit přímou levou rekurzi (${nt} -> ${nt}α | β)`,
+      descriptionEn: `Replaces left-recursive rules of '${nt}' with right-recursive rules using fresh symbol '${nt}'.`,
+      descriptionCz: `Nahradí levo-rekurzivní pravidla pro '${nt}' pravo-rekurzivními zavedením nového symbolu '${nt}'.`
+    });
+  }
+
+  // 2. Left Factorization (detect common prefix among alternatives)
+  const prefixes = new Map<string, string[]>();
+  for (let i = 0; i < ntProds.length; i++) {
+    for (let j = i + 1; j < ntProds.length; j++) {
+      const cp = commonPrefix(ntProds[i].rhs, ntProds[j].rhs);
+      if (cp.length > 0) {
+        const key = cp.join(' ');
+        if (!prefixes.has(key)) {
+          prefixes.set(key, cp);
+        }
+      }
+    }
+  }
+
+  for (const [prefixKey, cp] of prefixes.entries()) {
+    const matchCount = ntProds.filter(p => hasPrefix(p.rhs, cp)).length;
+    if (matchCount >= 2) {
+      available.push({
+        id: `leftFactor:${prefixKey}`,
+        type: 'leftFactor',
+        labelEn: `Left Factorize prefix '${prefixKey}' (${matchCount} rules)`,
+        labelCz: `Levá faktorizace předpony '${prefixKey}' (${matchCount} pravidla)`,
+        descriptionEn: `Extracts common prefix '${prefixKey}' from ${matchCount} alternatives of '${nt}' into new non-terminal.`,
+        descriptionCz: `Vytkne společnou předponu '${prefixKey}' z ${matchCount} alternativ symbolu '${nt}' do nového neterminálu.`,
+        details: { prefix: cp }
+      });
+    }
+  }
+
+  // 3. Epsilon-Production Elimination
+  const epsProds = ntProds.filter(p => p.rhs.length === 0);
+  if (epsProds.length > 0) {
+    available.push({
+      id: 'eliminateEpsilon',
+      type: 'eliminateEpsilon',
+      labelEn: `Eliminate Epsilon Production (${nt} -> ε)`,
+      labelCz: `Odstranit pravidlo pro prázdné slovo (${nt} -> ε)`,
+      descriptionEn: `Removes '${nt} -> ε' and introduces rule combinations omitting '${nt}' in referencing rules.`,
+      descriptionCz: `Odstraní '${nt} -> ε' a doplní pravidla vynechávající výskyt '${nt}' v odkazujících pravidlech.`
+    });
+  }
+
+  // 4. Unit-Production Elimination
+  const unitProds = ntProds.filter(p => p.rhs.length === 1 && g.nonTerminals.has(p.rhs[0]) && p.rhs[0] !== nt);
+  if (unitProds.length > 0) {
+    const targets = [...new Set(unitProds.map(p => p.rhs[0]))].join(', ');
+    available.push({
+      id: 'eliminateUnit',
+      type: 'eliminateUnit',
+      labelEn: `Eliminate Unit Productions (${nt} -> ${targets})`,
+      labelCz: `Odstranit jednoduchá pravidla (${nt} -> ${targets})`,
+      descriptionEn: `Replaces unit productions from '${nt}' with non-unit alternatives from ${targets}.`,
+      descriptionCz: `Nahradí jednoduchá pravidla z '${nt}' ne-jednoduchými alternativami z ${targets}.`
+    });
+  }
+
+  // 5. Expand Leading Non-Terminal in nt
+  const leadingNts = new Set<string>();
+  for (const p of ntProds) {
+    if (p.rhs.length > 0) {
+      const first = p.rhs[0];
+      if (g.nonTerminals.has(first) && first !== nt) {
+        leadingNts.add(first);
+      }
+    }
+  }
+  for (const leadingNt of leadingNts) {
+    available.push({
+      id: `expandLeadingNT:${leadingNt}`,
+      type: 'expandLeadingNT',
+      labelEn: `Expand Leading Non-Terminal '${leadingNt}' in ${nt} -> ${leadingNt} ...`,
+      labelCz: `Rozvinout úvodní neterminál '${leadingNt}' v ${nt} -> ${leadingNt} ...`,
+      descriptionEn: `Substitutes the productions of '${leadingNt}' into the leading position of '${nt}' rules.`,
+      descriptionCz: `Dosadí pravidla neterminálu '${leadingNt}' na první pozici v pravidlech symbolu '${nt}'.`,
+      details: { leadingNt }
+    });
+  }
+
+  // 6. Substitute / Inline nt into Referencing Rules
+  const isReferencedInOthers = g.productions.some(p => p.lhs !== nt && p.rhs.includes(nt));
+  if (isReferencedInOthers && ntProds.length > 0) {
+    available.push({
+      id: 'substitute',
+      type: 'substitute',
+      labelEn: `Substitute / Inline '${nt}' into Referencing Rules`,
+      labelCz: `Substituovat / dosadit '${nt}' do odkazujících pravidel`,
+      descriptionEn: `Replaces all occurrences of '${nt}' in other rules with its ${ntProds.length} alternatives.`,
+      descriptionCz: `Nahradí všechny výskyty '${nt}' v ostatních pravidlech jeho ${ntProds.length} alternativami.`
+    });
+  }
+
+  // 7. Remove Unproductive (Non-generating) Symbol
+  const endable = computeEndable(g);
+  if (!endable.has(nt)) {
+    available.push({
+      id: 'removeUnproductive',
+      type: 'removeUnproductive',
+      labelEn: `Remove Unproductive (Non-Generating) Symbol '${nt}'`,
+      labelCz: `Odstranit neukončitelný (negenerující) symbol '${nt}'`,
+      descriptionEn: `Symbol '${nt}' cannot derive any terminal word. Removes '${nt}' and all rules containing it.`,
+      descriptionCz: `Symbol '${nt}' nemůže odvodit žádné terminální slovo. Odstraní '${nt}' a všechna pravidla, která jej obsahují.`
+    });
+  }
+
+  // 8. Remove Unreachable Symbol
+  if (nt !== g.startSymbol) {
+    const reachable = computeReachable(g);
+    if (!reachable.has(nt)) {
+      available.push({
+        id: 'removeUnreachable',
+        type: 'removeUnreachable',
+        labelEn: `Remove Unreachable Symbol '${nt}'`,
+        labelCz: `Odstranit nedosažitelný symbol '${nt}'`,
+        descriptionEn: `Symbol '${nt}' cannot be reached from start symbol '${g.startSymbol}'. Removes '${nt}' and its rules.`,
+        descriptionCz: `Symbol '${nt}' není dosažitelný z počátečního symbolu '${g.startSymbol}'. Odstraní '${nt}' a jeho pravidla.`
+      });
+    }
+  }
+
+  return available;
+}
+
+/**
+ * Apply a chosen transformation for a specific non-terminal symbol
+ */
+export function applySymbolTransformation(g: Grammar, nt: string, transId: string): TransformationResult {
+  if (transId === 'eliminateImmediateLeftRecursion') {
+    return eliminateImmediateLeftRecursionForSymbol(g, nt);
+  }
+  if (transId.startsWith('leftFactor:')) {
+    const prefixKey = transId.substring('leftFactor:'.length);
+    const prefix = prefixKey ? prefixKey.split(' ') : undefined;
+    return leftFactorSymbol(g, nt, prefix);
+  }
+  if (transId === 'eliminateEpsilon') {
+    return eliminateEpsilonForSymbol(g, nt);
+  }
+  if (transId === 'eliminateUnit') {
+    return eliminateUnitRulesForSymbol(g, nt);
+  }
+  if (transId === 'substitute') {
+    return substituteSymbol(g, nt);
+  }
+  if (transId.startsWith('expandLeadingNT:')) {
+    const leadingNt = transId.substring('expandLeadingNT:'.length);
+    return expandLeadingNonTerminalInSymbol(g, nt, leadingNt);
+  }
+  if (transId === 'removeUnproductive') {
+    return removeUnproductiveSymbol(g, nt);
+  }
+  if (transId === 'removeUnreachable') {
+    return removeUnreachableSymbol(g, nt);
+  }
+
+  return { transformedGrammar: cloneGrammar(g), steps: [] };
+}
+
+/**
+ * 1. Eliminate immediate left recursion for a specific symbol
+ */
+export function eliminateImmediateLeftRecursionForSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const ntProds = current.productions.filter(p => p.lhs === nt);
+  const alphas: string[][] = [];
+  const betas: string[][] = [];
+
+  for (const p of ntProds) {
+    if (p.rhs.length > 0 && p.rhs[0] === nt) {
+      alphas.push(p.rhs.slice(1));
+    } else {
+      betas.push([...p.rhs]);
+    }
+  }
+
+  if (alphas.length === 0 || betas.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const freshNt = getFreshNonTerminal(nt, current.nonTerminals);
+  current.nonTerminals.add(freshNt);
+
+  // New rules for A: A -> beta A'
+  const newAProds: Production[] = betas.map(beta => {
+    const rhs = beta.length === 0 ? [freshNt] : [...beta, freshNt];
+    return { id: 0, lhs: nt, rhs };
+  });
+
+  // New rules for A': A' -> alpha A' | epsilon
+  const newFreshProds: Production[] = alphas.map(alpha => ({
+    id: 0,
+    lhs: freshNt,
+    rhs: [...alpha, freshNt]
+  }));
+  newFreshProds.push({ id: 0, lhs: freshNt, rhs: [] }); // epsilon
+
+  const otherProds = current.productions.filter(p => p.lhs !== nt);
+  current.productions = [...otherProds, ...newAProds, ...newFreshProds].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const step: TransformationStep = {
+    title: `Eliminate Immediate Left Recursion for ${nt}`,
+    titleCz: `Odstranění přímé levé rekurze pro ${nt}`,
+    description: `Replaced left-recursive productions of '${nt}' by introducing fresh non-terminal '${freshNt}'.`,
+    descriptionCz: `Nahrazena levo-rekurzivní pravidla pro '${nt}' zavedením nového neterminálu '${freshNt}'.`,
+    mathExplanation: `${nt} -> ${nt}α | β  ==>  ${nt} -> β${freshNt}, ${freshNt} -> α${freshNt} | ε`,
+    mathExplanationCz: `${nt} -> ${nt}α | β  ==>  ${nt} -> β${freshNt}, ${freshNt} -> α${freshNt} | ε`,
+    addedRules: [...newAProds, ...newFreshProds].map(formatProduction),
+    removedRules: ntProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 2. Left factorize a specific symbol on target prefix (or best common prefix)
+ */
+export function leftFactorSymbol(g: Grammar, nt: string, targetPrefix?: string[]): TransformationResult {
+  const current = cloneGrammar(g);
+  const ntProds = current.productions.filter(p => p.lhs === nt);
+
+  let prefixToUse: string[] = targetPrefix || [];
+  if (prefixToUse.length === 0) {
+    let bestPrefix: string[] = [];
+    let bestCount = 0;
+    for (let i = 0; i < ntProds.length; i++) {
+      for (let j = i + 1; j < ntProds.length; j++) {
+        const cp = commonPrefix(ntProds[i].rhs, ntProds[j].rhs);
+        if (cp.length > 0) {
+          const count = ntProds.filter(p => hasPrefix(p.rhs, cp)).length;
+          if (count >= 2 && (cp.length > bestPrefix.length || (cp.length === bestPrefix.length && count > bestCount))) {
+            bestPrefix = cp;
+            bestCount = count;
+          }
+        }
+      }
+    }
+    prefixToUse = bestPrefix;
+  }
+
+  if (prefixToUse.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const matchingProds = ntProds.filter(p => hasPrefix(p.rhs, prefixToUse));
+  if (matchingProds.length < 2) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const freshNt = getFreshNonTerminal(nt, current.nonTerminals);
+  current.nonTerminals.add(freshNt);
+
+  const newHeadProd: Production = {
+    id: 0,
+    lhs: nt,
+    rhs: [...prefixToUse, freshNt]
+  };
+
+  const newFreshProds: Production[] = matchingProds.map(p => ({
+    id: 0,
+    lhs: freshNt,
+    rhs: p.rhs.slice(prefixToUse.length)
+  }));
+
+  const remainingNtProds = ntProds.filter(p => !matchingProds.includes(p));
+  const otherProds = current.productions.filter(p => p.lhs !== nt);
+
+  current.productions = [...otherProds, ...remainingNtProds, newHeadProd, ...newFreshProds].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const prefixStr = prefixToUse.join(' ');
+  const step: TransformationStep = {
+    title: `Left Factorize ${nt} on prefix '${prefixStr}'`,
+    titleCz: `Levá faktorizace ${nt} podle předpony '${prefixStr}'`,
+    description: `Extracted common prefix '${prefixStr}' across ${matchingProds.length} alternatives of '${nt}' into new non-terminal '${freshNt}'.`,
+    descriptionCz: `Vytknuta společná předpona '${prefixStr}' z ${matchingProds.length} alternativ '${nt}' do nového neterminálu '${freshNt}'.`,
+    mathExplanation: `${nt} -> αβ₁ | αβ₂  ==>  ${nt} -> α${freshNt}, ${freshNt} -> β₁ | β₂`,
+    mathExplanationCz: `${nt} -> αβ₁ | αβ₂  ==>  ${nt} -> α${freshNt}, ${freshNt} -> β₁ | β₂`,
+    addedRules: [newHeadProd, ...newFreshProds].map(formatProduction),
+    removedRules: matchingProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 3. Eliminate epsilon-production for a specific symbol
+ */
+export function eliminateEpsilonForSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const epsProds = current.productions.filter(p => p.lhs === nt && p.rhs.length === 0);
+  if (epsProds.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  // Remove A -> eps
+  const nonEpsProds = current.productions.filter(p => !(p.lhs === nt && p.rhs.length === 0));
+
+  // In all remaining productions, expand occurrences of nt
+  const newProdsMap = new Map<string, Production>();
+  for (const p of nonEpsProds) {
+    const indices: number[] = [];
+    p.rhs.forEach((sym, idx) => {
+      if (sym === nt) indices.push(idx);
+    });
+
+    if (indices.length === 0) {
+      const key = `${p.lhs}->${p.rhs.join(' ')}`;
+      if (!newProdsMap.has(key)) newProdsMap.set(key, { ...p });
+      continue;
+    }
+
+    const numCombos = 1 << indices.length;
+    for (let mask = 0; mask < numCombos; mask++) {
+      const omitSet = new Set<number>();
+      for (let i = 0; i < indices.length; i++) {
+        if ((mask & (1 << i)) !== 0) {
+          omitSet.add(indices[i]);
+        }
+      }
+      const newRhs = p.rhs.filter((_, idx) => !omitSet.has(idx));
+      if (newRhs.length === 0) {
+        continue;
+      }
+      const key = `${p.lhs}->${newRhs.join(' ')}`;
+      if (!newProdsMap.has(key)) {
+        newProdsMap.set(key, { id: 0, lhs: p.lhs, rhs: newRhs });
+      }
+    }
+  }
+
+  if (nt === current.startSymbol) {
+    const freshStart = getFreshNonTerminal(`${current.startSymbol}_0`, current.nonTerminals);
+    current.nonTerminals.add(freshStart);
+    const oldStart = current.startSymbol;
+    current.startSymbol = freshStart;
+    const rule1: Production = { id: 0, lhs: freshStart, rhs: [oldStart] };
+    const rule2: Production = { id: 0, lhs: freshStart, rhs: [] };
+    newProdsMap.set(`${freshStart}->${oldStart}`, rule1);
+    newProdsMap.set(`${freshStart}->`, rule2);
+  }
+
+  current.productions = [...newProdsMap.values()].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const step: TransformationStep = {
+    title: `Eliminate Epsilon Production ${nt} -> ε`,
+    titleCz: `Odstranění pravidla pro prázdné slovo ${nt} -> ε`,
+    description: `Removed rule '${nt} -> ε' and expanded all productions referencing '${nt}' to omit nullable occurrences.`,
+    descriptionCz: `Odstraněno pravidlo '${nt} -> ε' a rozvinuta všechna pravidla odkazující na '${nt}' o kombinace vynechávající nulovatelný výskyt.`,
+    mathExplanation: `For any rule B -> α ${nt} β, generate B -> α β.`,
+    mathExplanationCz: `Pro každé pravidlo B -> α ${nt} β generujeme B -> α β.`,
+    removedRules: epsProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 4. Eliminate unit productions for a specific symbol
+ */
+export function eliminateUnitRulesForSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const unitProds = current.productions.filter(p => p.lhs === nt && p.rhs.length === 1 && current.nonTerminals.has(p.rhs[0]) && p.rhs[0] !== nt);
+  if (unitProds.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  // Reachable unit symbols from nt
+  const reachableUnits = new Set<string>();
+  const queue = [nt];
+  reachableUnits.add(nt);
+
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    for (const p of current.productions) {
+      if (p.lhs === curr && p.rhs.length === 1 && current.nonTerminals.has(p.rhs[0])) {
+        const next = p.rhs[0];
+        if (!reachableUnits.has(next)) {
+          reachableUnits.add(next);
+          queue.push(next);
+        }
+      }
+    }
+  }
+
+  const newProdsForNt: Production[] = [];
+  const existingRhsKeys = new Set<string>();
+
+  for (const p of current.productions) {
+    if (p.lhs === nt) {
+      const isUnit = p.rhs.length === 1 && current.nonTerminals.has(p.rhs[0]);
+      if (!isUnit) {
+        newProdsForNt.push({ ...p });
+        existingRhsKeys.add(p.rhs.join(' '));
+      }
+    }
+  }
+
+  for (const B of reachableUnits) {
+    if (B === nt) continue;
+    for (const p of current.productions) {
+      if (p.lhs === B) {
+        const isUnit = p.rhs.length === 1 && current.nonTerminals.has(p.rhs[0]);
+        if (!isUnit) {
+          const key = p.rhs.join(' ');
+          if (!existingRhsKeys.has(key)) {
+            existingRhsKeys.add(key);
+            newProdsForNt.push({ id: 0, lhs: nt, rhs: [...p.rhs] });
+          }
+        }
+      }
+    }
+  }
+
+  const otherProds = current.productions.filter(p => p.lhs !== nt);
+  current.productions = [...otherProds, ...newProdsForNt].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const step: TransformationStep = {
+    title: `Eliminate Unit Productions for ${nt}`,
+    titleCz: `Odstranění jednoduchých pravidel pro ${nt}`,
+    description: `Replaced unit rules ${unitProds.map(formatProduction).join(', ')} with non-unit alternatives from { ${[...reachableUnits].filter(b => b !== nt).join(', ')} }.`,
+    descriptionCz: `Nahrazena jednoduchá pravidla ${unitProds.map(formatProduction).join(', ')} ne-jednoduchými alternativami z { ${[...reachableUnits].filter(b => b !== nt).join(', ')} }.`,
+    mathExplanation: `${nt} -> B (where B =>* α, non-unit)  ==>  ${nt} -> α`,
+    mathExplanationCz: `${nt} -> B (kde B =>* α, ne-jednoduché)  ==>  ${nt} -> α`,
+    addedRules: newProdsForNt.map(formatProduction),
+    removedRules: unitProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 5. Substitute / Inline a specific symbol into referencing rules
+ */
+export function substituteSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const ntProds = current.productions.filter(p => p.lhs === nt);
+  if (ntProds.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const referencingProds = current.productions.filter(p => p.lhs !== nt && p.rhs.includes(nt));
+  if (referencingProds.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const newProdsMap = new Map<string, Production>();
+  for (const p of ntProds) {
+    newProdsMap.set(`${p.lhs}->${p.rhs.join(' ')}`, { ...p });
+  }
+
+  for (const p of current.productions) {
+    if (p.lhs !== nt && !p.rhs.includes(nt)) {
+      newProdsMap.set(`${p.lhs}->${p.rhs.join(' ')}`, { ...p });
+    }
+  }
+
+  for (const p of referencingProds) {
+    let expansions: string[][] = [[]];
+    for (const sym of p.rhs) {
+      if (sym === nt) {
+        const nextExpansions: string[][] = [];
+        for (const exp of expansions) {
+          for (const rep of ntProds) {
+            nextExpansions.push([...exp, ...rep.rhs]);
+          }
+        }
+        expansions = nextExpansions;
+      } else {
+        for (const exp of expansions) {
+          exp.push(sym);
+        }
+      }
+    }
+    for (const exp of expansions) {
+      const key = `${p.lhs}->${exp.join(' ')}`;
+      if (!newProdsMap.has(key)) {
+        newProdsMap.set(key, { id: 0, lhs: p.lhs, rhs: exp });
+      }
+    }
+  }
+
+  current.productions = [...newProdsMap.values()].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const step: TransformationStep = {
+    title: `Substitute / Inline ${nt} into referencing rules`,
+    titleCz: `Substituce / dosazení ${nt} do odkazujících pravidel`,
+    description: `Substituted all occurrences of '${nt}' in other rules with its ${ntProds.length} alternative(s).`,
+    descriptionCz: `Dosazeny všechny výskyty '${nt}' v ostatních pravidlech pomocí jeho ${ntProds.length} alternativ.`,
+    mathExplanation: `For any rule B -> α ${nt} β, substitute ${nt} with each RHS of ${nt}.`,
+    mathExplanationCz: `Pro každé pravidlo B -> α ${nt} β dosadíme za ${nt} každou pravou stranu ${nt}.`,
+    removedRules: referencingProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 6. Expand leading non-terminal in a specific symbol
+ */
+export function expandLeadingNonTerminalInSymbol(g: Grammar, nt: string, targetLeadingNt?: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const matchingProds = current.productions.filter(p => {
+    if (p.lhs !== nt || p.rhs.length === 0) return false;
+    const first = p.rhs[0];
+    if (!current.nonTerminals.has(first) || first === nt) return false;
+    if (targetLeadingNt && first !== targetLeadingNt) return false;
+    return true;
+  });
+
+  if (matchingProds.length === 0) {
+    return { transformedGrammar: current, steps: [] };
+  }
+
+  const newNtProds: Production[] = [];
+  const existingKeys = new Set<string>();
+
+  for (const p of current.productions.filter(p => p.lhs === nt)) {
+    if (!matchingProds.includes(p)) {
+      newNtProds.push({ ...p });
+      existingKeys.add(p.rhs.join(' '));
+    }
+  }
+
+  for (const p of matchingProds) {
+    const leadingB = p.rhs[0];
+    const tail = p.rhs.slice(1);
+    const bProds = current.productions.filter(bp => bp.lhs === leadingB);
+
+    for (const bp of bProds) {
+      const newRhs = [...bp.rhs, ...tail];
+      const key = newRhs.join(' ');
+      if (!existingKeys.has(key)) {
+        existingKeys.add(key);
+        newNtProds.push({ id: 0, lhs: nt, rhs: newRhs });
+      }
+    }
+  }
+
+  const otherProds = current.productions.filter(p => p.lhs !== nt);
+  current.productions = [...otherProds, ...newNtProds].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  const targetNtStr = targetLeadingNt || matchingProds.map(p => p.rhs[0]).join(', ');
+  const step: TransformationStep = {
+    title: `Expand leading non-terminal '${targetNtStr}' in ${nt}`,
+    titleCz: `Rozvinutí úvodního neterminálu '${targetNtStr}' v ${nt}`,
+    description: `Expanded leading occurrence of '${targetNtStr}' in productions of '${nt}'.`,
+    descriptionCz: `Rozvinut úvodní výskyt '${targetNtStr}' v pravidlech neterminálu '${nt}'.`,
+    mathExplanation: `${nt} -> ${targetNtStr} α, where ${targetNtStr} -> β₁ | β₂  ==>  ${nt} -> β₁ α | β₂ α`,
+    mathExplanationCz: `${nt} -> ${targetNtStr} α, kde ${targetNtStr} -> β₁ | β₂  ==>  ${nt} -> β₁ α | β₂ α`,
+    addedRules: newNtProds.map(formatProduction),
+    removedRules: matchingProds.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 7. Remove unproductive symbol
+ */
+export function removeUnproductiveSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const removedRules = current.productions.filter(p => p.lhs === nt || p.rhs.includes(nt));
+  current.productions = current.productions.filter(p => p.lhs !== nt && !p.rhs.includes(nt)).map((p, idx) => ({ ...p, id: idx + 1 }));
+  current.nonTerminals.delete(nt);
+
+  const step: TransformationStep = {
+    title: `Remove Unproductive Symbol '${nt}'`,
+    titleCz: `Odstranění neukončitelného symbolu '${nt}'`,
+    description: `Removed non-generating symbol '${nt}' and ${removedRules.length} rule(s) containing it.`,
+    descriptionCz: `Odstraněn negenerující symbol '${nt}' a ${removedRules.length} pravidel, která jej obsahovala.`,
+    mathExplanation: `A non-terminal is unproductive if it cannot derive any string of terminals: A not in N_gen.`,
+    mathExplanationCz: `Neterminál je neukončitelný, pokud z něj nelze odvodit žádný řetězec terminálů: A nepatří do N_gen.`,
+    removedRules: removedRules.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
+}
+
+/**
+ * 8. Remove unreachable symbol
+ */
+export function removeUnreachableSymbol(g: Grammar, nt: string): TransformationResult {
+  const current = cloneGrammar(g);
+  const removedRules = current.productions.filter(p => p.lhs === nt || p.rhs.includes(nt));
+  current.productions = current.productions.filter(p => p.lhs !== nt && !p.rhs.includes(nt)).map((p, idx) => ({ ...p, id: idx + 1 }));
+  current.nonTerminals.delete(nt);
+
+  const step: TransformationStep = {
+    title: `Remove Unreachable Symbol '${nt}'`,
+    titleCz: `Odstranění nedosažitelného symbolu '${nt}'`,
+    description: `Removed unreachable symbol '${nt}' and ${removedRules.length} rule(s) containing it.`,
+    descriptionCz: `Odstraněn nedosažitelný symbol '${nt}' a ${removedRules.length} pravidel, která jej obsahovala.`,
+    mathExplanation: `A symbol is unreachable if it cannot appear in any sentential form derived from S: A not in V_reach.`,
+    mathExplanationCz: `Symbol je nedosažitelný, pokud se nemůže vyskytnout v žádné větné formě odvozené z S: A nepatří do V_reach.`,
+    removedRules: removedRules.map(formatProduction),
+    intermediateGrammar: cloneGrammar(current)
+  };
+
+  return { transformedGrammar: current, steps: [step] };
 }
