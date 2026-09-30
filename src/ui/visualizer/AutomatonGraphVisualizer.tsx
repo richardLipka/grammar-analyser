@@ -18,12 +18,15 @@ import {
   formatGroupedLR1Item,
   LR0Item
 } from '../../core/lr/lrItem';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon } from 'lucide-react';
+import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
+import { Language } from '../../i18n/translations';
 
 interface AutomatonGraphVisualizerProps {
   automaton: LRAutomaton;
   selectedStateId?: number | null;
   onSelectState?: (stateId: number) => void;
+  lang?: Language;
 }
 
 interface LayoutNode {
@@ -45,11 +48,14 @@ interface LayoutEdge {
 export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> = ({
   automaton,
   selectedStateId,
-  onSelectState
+  onSelectState,
+  lang = 'en'
 }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
   const [nodes, setNodes] = useState<LayoutNode[]>([]);
   const [edges, setEdges] = useState<LayoutEdge[]>([]);
   const [graphBounds, setGraphBounds] = useState({ width: 800, height: 600 });
+  const [isExportingPng, setIsExportingPng] = useState(false);
   
   // Pan and zoom state
   const [zoom, setZoom] = useState(1);
@@ -175,6 +181,27 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     setPan({ x: 40, y: 40 });
   };
 
+  const filename = `${automaton.variant.toLowerCase().replace(/[^a-z0-9]/g, '_')}_graph`;
+
+  const handleExportSvg = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!svgRef.current) return;
+    exportSvgFile(svgRef.current, filename, graphBounds);
+  };
+
+  const handleExportPng = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!svgRef.current || isExportingPng) return;
+    setIsExportingPng(true);
+    try {
+      await exportPngFile(svgRef.current, filename, graphBounds, 2);
+    } catch (err) {
+      console.error('Failed to export PNG:', err);
+    } finally {
+      setIsExportingPng(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -194,12 +221,13 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
     >
-      {/* Zoom / Reset Toolbar */}
+      {/* Zoom / Reset / Export Toolbar */}
       <div style={{
         position: 'absolute',
         top: '12px',
         right: '12px',
         display: 'flex',
+        alignItems: 'center',
         gap: '6px',
         zIndex: 10,
         backgroundColor: 'var(--color-bg-elevated)',
@@ -228,9 +256,35 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
         >
           <Maximize2 size={16} />
         </button>
+
+        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border)', margin: '0 2px' }} />
+
+        {/* Subtle SVG & PNG Export Buttons */}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
+          title={lang === 'cz' ? 'Exportovat graf jako vektorový SVG' : 'Export graph as vector SVG'}
+          onClick={handleExportSvg}
+        >
+          <Download size={12} />
+          <span>SVG</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
+          title={lang === 'cz' ? 'Exportovat graf jako PNG (vysoké rozlišení)' : 'Export graph as high-res PNG'}
+          onClick={handleExportPng}
+          disabled={isExportingPng}
+        >
+          <ImageIcon size={12} />
+          <span>{isExportingPng ? '...' : 'PNG'}</span>
+        </button>
       </div>
 
       <svg
+        ref={svgRef}
         width="100%"
         height="100%"
         style={{ width: '100%', height: '100%' }}

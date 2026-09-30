@@ -5,6 +5,8 @@ import { LLTable } from '../../core/ll/llTable';
 import { LRTable } from '../../core/lr/lrTable';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { CheckCircle2, Info, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
+import { LatexExportButton } from '../components/LatexExportButton';
+import { exportGrammarToLatex } from '../../core/export/latexExport';
 
 interface OverviewViewProps {
   grammar: Grammar;
@@ -376,7 +378,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
       {/* Numbered Productions List */}
       <div className="card">
-        <div className="card-title">{t.productionRules} ({grammar.productions.length})</div>
+        <div className="card-title">
+          <span>{t.productionRules} ({grammar.productions.length})</span>
+          <LatexExportButton
+            getLatex={() => exportGrammarToLatex(grammar)}
+            filename="grammar.tex"
+            lang={lang}
+          />
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
           {grammar.productions.map(p => (
             <div

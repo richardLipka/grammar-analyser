@@ -2,6 +2,8 @@ import React from 'react';
 import { Grammar, formatProduction, formatRhs } from '../../core/ast/grammar';
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
+import { LatexExportButton } from '../components/LatexExportButton';
+import { exportSetsToLatex } from '../../core/export/latexExport';
 
 interface FirstFollowViewProps {
   grammar: Grammar;
@@ -20,7 +22,14 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({
     <div>
       {/* Non-Terminal FIRST & FOLLOW Table */}
       <div className="card">
-        <div className="card-title">{t.firstFollowNtTitle}</div>
+        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{t.firstFollowNtTitle}</span>
+          <LatexExportButton
+            getLatex={() => exportSetsToLatex(grammar, analysis, lang)}
+            filename="first_follow_sets.tex"
+            lang={lang}
+          />
+        </div>
         <div className="data-table-container">
           <table className="data-table">
             <thead>

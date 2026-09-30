@@ -22,6 +22,8 @@ import { LRView } from './ui/views/LRView';
 import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { LatexExportView } from './ui/views/LatexExportView';
+import { LatexExportButton } from './ui/components/LatexExportButton';
+import { exportGrammarToLatex } from './core/export/latexExport';
 
 // Icons
 import {
@@ -276,6 +278,14 @@ export const App: React.FC = () => {
                       <Clock size={11} />
                       {t.calcDuration.replace('{ms}', lastCalcDuration.toString())}
                     </span>
+                  )}
+                  {analyzedGrammar && (
+                    <LatexExportButton
+                      getLatex={() => exportGrammarToLatex(analyzedGrammar)}
+                      filename="grammar.tex"
+                      lang={lang}
+                      title={lang === 'cz' ? 'Zkopírovat gramatiku jako LaTeX' : 'Copy grammar as LaTeX'}
+                    />
                   )}
                   <button
                     className={`btn ${isStale ? 'btn-primary' : 'btn-secondary'}`}

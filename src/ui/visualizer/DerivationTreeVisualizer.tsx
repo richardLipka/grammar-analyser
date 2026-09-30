@@ -2,14 +2,16 @@
  * Interactive SVG Parse / Derivation Tree Visualizer powered by Dagre
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import dagre from 'dagre';
 import { DerivationNode } from '../../core/generator/wordGenerator';
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon } from 'lucide-react';
+import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 
 interface DerivationTreeVisualizerProps {
   rootNode?: DerivationNode;
   height?: string;
+  filename?: string;
 }
 
 interface TreeNodeLayout {
@@ -30,14 +32,18 @@ interface TreeEdgeLayout {
 
 export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> = ({
   rootNode,
-  height = '380px'
+  height = '380px',
+  filename = 'parse_tree'
 }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
   const [nodes, setNodes] = useState<TreeNodeLayout[]>([]);
   const [edges, setEdges] = useState<TreeEdgeLayout[]>([]);
+  const [graphBounds, setGraphBounds] = useState({ width: 600, height: 400 });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 30, y: 30 });
   const [isDragging, setIsDragging] = useState(false);
-  const dragRef = React.useRef({ x: 0, y: 0 });
+  const [isExportingPng, setIsExportingPng] = useState(false);
+  const dragRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!rootNode) {
@@ -107,6 +113,12 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
       }
     });
 
+    const gInfo = g.graph();
+    setGraphBounds({
+      width: (gInfo.width || 600) + 80,
+      height: (gInfo.height || 400) + 80
+    });
+
     setNodes(layoutNodes);
     setEdges(layoutEdges);
   }, [rootNode]);
@@ -162,12 +174,13 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
         setZoom(z => Math.min(2.5, Math.max(0.4, z * factor)));
       }}
     >
-      {/* Zoom / Reset Toolbar */}
+      {/* Zoom / Reset / Export Toolbar */}
       <div style={{
         position: 'absolute',
         top: '8px',
         right: '8px',
         display: 'flex',
+        alignItems: 'center',
         gap: '4px',
         zIndex: 10,
         backgroundColor: 'var(--color-bg-elevated)',
@@ -196,9 +209,47 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
         >
           <Maximize2 size={14} />
         </button>
+
+        <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--color-border)', margin: '0 2px' }} />
+
+        {/* Subtle SVG & PNG Export Buttons */}
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '2px 6px', fontSize: '10.5px', height: '22px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}
+          title="Export SVG"
+          onClick={() => {
+            if (svgRef.current) exportSvgFile(svgRef.current, filename, graphBounds);
+          }}
+        >
+          <Download size={11} />
+          <span>SVG</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '2px 6px', fontSize: '10.5px', height: '22px', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 600 }}
+          title="Export PNG"
+          onClick={async () => {
+            if (!svgRef.current || isExportingPng) return;
+            setIsExportingPng(true);
+            try {
+              await exportPngFile(svgRef.current, filename, graphBounds, 2);
+            } catch (err) {
+              console.error('Failed to export PNG:', err);
+            } finally {
+              setIsExportingPng(false);
+            }
+          }}
+          disabled={isExportingPng}
+        >
+          <ImageIcon size={11} />
+          <span>{isExportingPng ? '...' : 'PNG'}</span>
+        </button>
       </div>
 
-      <svg width="100%" height="100%">
+      <svg ref={svgRef} width="100%" height="100%">
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
           {/* Edges */}
           {edges.map((e, idx) => {

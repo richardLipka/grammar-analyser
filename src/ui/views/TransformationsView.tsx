@@ -15,6 +15,8 @@ import {
 } from '../../core/processor/grammarProcessor';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Sparkles, Check, BookOpen, RotateCcw, SkipBack, Layers, HelpCircle } from 'lucide-react';
+import { LatexExportButton } from '../components/LatexExportButton';
+import { exportGrammarToLatex } from '../../core/export/latexExport';
 
 interface TransformationsViewProps {
   grammar: Grammar;
@@ -110,6 +112,13 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
               <RotateCcw size={14} />
               <span>{t.resetToInitial}</span>
             </button>
+
+            <LatexExportButton
+              getLatex={() => exportGrammarToLatex(workingGrammar)}
+              filename="transformed_grammar.tex"
+              label={lang === 'cz' ? 'LaTeX export' : 'LaTeX Export'}
+              title={lang === 'cz' ? 'Exportovat transformovanou gramatiku jako LaTeX' : 'Export transformed grammar as LaTeX'}
+            />
           </div>
         </div>
 
@@ -243,13 +252,21 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
       <div className="card" style={{ border: '2px solid var(--color-primary)' }}>
         <div className="card-title">
           <span>{t.transformedOutputTitle}</span>
-          <button
-            className="btn btn-primary"
-            onClick={() => onApplyGrammarText(formattedWorking)}
-          >
-            <Check size={16} />
-            {t.applyToEditor}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <LatexExportButton
+              getLatex={() => exportGrammarToLatex(workingGrammar)}
+              filename="transformed_grammar.tex"
+              label={lang === 'cz' ? 'LaTeX export' : 'LaTeX Export'}
+              title={lang === 'cz' ? 'Exportovat transformovanou gramatiku do LaTeXu' : 'Export transformed grammar to LaTeX'}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => onApplyGrammarText(formattedWorking)}
+            >
+              <Check size={16} />
+              {t.applyToEditor}
+            </button>
+          </div>
         </div>
 
         <pre style={{

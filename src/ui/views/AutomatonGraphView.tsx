@@ -88,6 +88,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         automaton={activeAutomaton}
         selectedStateId={selectedStateId}
         onSelectState={setSelectedStateId}
+        lang={lang}
       />
 
       {/* Selected State Inspector Drawer */}

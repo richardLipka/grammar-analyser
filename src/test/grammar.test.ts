@@ -22,7 +22,13 @@ import { groupLR1Items, formatGroupedLR1Item } from '../core/lr/lrItem';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { generateShortestWords } from '../core/generator/wordGenerator';
-import { exportSetsToLatex, exportLRTableToLatex } from '../core/export/latexExport';
+import {
+  exportSetsToLatex,
+  exportLRTableToLatex,
+  exportGrammarToLatex,
+  exportLLTableToLatex,
+  exportParseTreeToTikz
+} from '../core/export/latexExport';
 
 describe('Grammar Parser & Syntax Variations', () => {
   it('parses arrow syntax with pipe alternatives', () => {
@@ -469,5 +475,53 @@ describe('Bilingual Output Support', () => {
     expect(resW.steps).toHaveLength(1);
     const wProds = resW.transformedGrammar.productions.filter(p => p.lhs === 'W');
     expect(wProds.some(p => p.rhs.length === 1 && p.rhs[0] === 'id')).toBe(true);
+  });
+
+  describe('LaTeX and Graph Exporters', () => {
+    it('exports grammar, LL table, LR table, and parse tree to valid LaTeX', () => {
+      const g = parseGrammar(`
+        S -> "a" S "b" | "c"
+      `).grammar!;
+      const analysis = analyzeGrammar(g);
+
+      // Grammar export
+      const latexGrammar = exportGrammarToLatex(g);
+      expect(latexGrammar).toContain('\\begin{align*}');
+      expect(latexGrammar).toContain('S &\\to');
+
+      // Sets export
+      const latexSets = exportSetsToLatex(g, analysis, 'en');
+      expect(latexSets).toContain('FIRST');
+      expect(latexSets).toContain('FOLLOW');
+
+      // LL(1) Table export
+      const llTable = buildLLTable(g, analysis);
+      const latexLL = exportLLTableToLatex(llTable, 'en');
+      expect(latexLL).toContain('\\begin{table}');
+      expect(latexLL).toContain('LL(1) Parse Table');
+
+      // LR Table export
+      const auto = buildLR0Automaton(g);
+      const lrTable = buildLRTable(auto, g, analysis);
+      const latexLR = exportLRTableToLatex(lrTable, 'en');
+      expect(latexLR).toContain('\\begin{table}');
+      expect(latexLR).toContain('LR(0) Parsing Table');
+
+      // Parse Tree export
+      const treeNode = {
+        id: '1',
+        symbol: 'S',
+        isTerminal: false,
+        children: [
+          { id: '2', symbol: 'a', isTerminal: true },
+          { id: '3', symbol: 'S', isTerminal: false, children: [{ id: '4', symbol: 'c', isTerminal: true }] },
+          { id: '5', symbol: 'b', isTerminal: true }
+        ]
+      };
+      const latexTree = exportParseTreeToTikz(treeNode);
+      expect(latexTree).toContain('\\begin{forest}');
+      expect(latexTree).toContain('[S [a] [S [c]] [b]]');
+      expect(latexTree).toContain('\\end{forest}');
+    });
   });
 });

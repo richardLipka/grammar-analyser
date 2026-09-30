@@ -8,6 +8,8 @@ import {
   Play, Pause, SkipForward, SkipBack, RotateCcw,
   CheckCircle2, AlertTriangle, Cpu
 } from 'lucide-react';
+import { LatexExportButton } from '../components/LatexExportButton';
+import { exportLRTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
 
 interface LRViewProps {
   grammar: Grammar;
@@ -92,19 +94,28 @@ export const LRView: React.FC<LRViewProps> = ({
             <Cpu size={18} color="var(--color-primary)" />
           </div>
 
-          {/* Variant Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
-              <button
-                key={v}
-                type="button"
-                className={`btn ${selectedVariant === v ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 8px', fontSize: '11px' }}
-                onClick={() => setSelectedVariant(v)}
-              >
-                {v}
-              </button>
-            ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Variant Selector */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`btn ${selectedVariant === v ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 8px', fontSize: '11px' }}
+                  onClick={() => setSelectedVariant(v)}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+
+            <LatexExportButton
+              getLatex={() => exportLRTableToLatex(activeTable, lang)}
+              filename={`${selectedVariant.toLowerCase().replace(/[^a-z0-9]/g, '_')}_table.tex`}
+              label={lang === 'cz' ? 'Export tabulky' : 'Export Table'}
+              title={lang === 'cz' ? `Exportovat tabulku ${selectedVariant} jako LaTeX` : `Export ${selectedVariant} table as LaTeX`}
+            />
           </div>
         </div>
 
@@ -512,7 +523,17 @@ export const LRView: React.FC<LRViewProps> = ({
 
         {/* Live Parse Tree */}
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.bottomUpTreeLabel}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700 }}>{t.bottomUpTreeLabel}</div>
+            {currentStep?.tree && (
+              <LatexExportButton
+                getLatex={() => exportParseTreeToTikz(currentStep.tree!)}
+                filename="parse_tree_lr.tex"
+                label="LaTeX (TikZ)"
+                title={lang === 'cz' ? 'Exportovat strom do LaTeXu (TikZ / forest)' : 'Export tree to LaTeX (TikZ / forest)'}
+              />
+            )}
+          </div>
           <DerivationTreeVisualizer rootNode={currentStep?.tree} height="320px" />
         </div>
       </div>

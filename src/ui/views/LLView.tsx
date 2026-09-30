@@ -8,6 +8,8 @@ import {
   Play, Pause, SkipForward, SkipBack, RotateCcw,
   CheckCircle2, AlertTriangle, Layers
 } from 'lucide-react';
+import { LatexExportButton } from '../components/LatexExportButton';
+import { exportLLTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
 
 interface LLViewProps {
   grammar: Grammar;
@@ -67,7 +69,12 @@ export const LLView: React.FC<LLViewProps> = ({
             <Layers size={18} color="var(--color-primary)" />
           </div>
 
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <LatexExportButton
+              getLatex={() => exportLLTableToLatex(llTable, lang)}
+              filename="ll1_table.tex"
+              lang={lang}
+            />
             {llTable.isLL1 ? (
               <span className="badge badge-success"><CheckCircle2 size={12} /> {t.ll1Valid}</span>
             ) : llTable.isLL2 ? (
@@ -399,7 +406,17 @@ export const LLView: React.FC<LLViewProps> = ({
 
         {/* Live Parse Tree */}
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.parseTree}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700 }}>{t.parseTree}</div>
+            {currentStep?.tree && (
+              <LatexExportButton
+                getLatex={() => exportParseTreeToTikz(currentStep.tree!)}
+                filename="parse_tree_ll.tex"
+                label="LaTeX (TikZ)"
+                title={lang === 'cz' ? 'Exportovat strom do LaTeXu (TikZ / forest)' : 'Export tree to LaTeX (TikZ / forest)'}
+              />
+            )}
+          </div>
           <DerivationTreeVisualizer rootNode={currentStep?.tree} height="320px" />
         </div>
       </div>

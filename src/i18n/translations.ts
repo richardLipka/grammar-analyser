@@ -171,6 +171,11 @@ export const TRANSLATIONS = {
     downloadTex: 'Download .tex',
     copyClipboard: 'Copy to Clipboard',
     copied: 'Copied!',
+    exportSvg: 'Export SVG',
+    exportPng: 'Export PNG',
+    exportLatex: 'LaTeX',
+    copyLatex: 'Copy LaTeX to clipboard',
+    downloadTexFile: 'Download .tex file',
 
     // Themes & Proofs
     theme: 'Theme',
@@ -389,6 +394,11 @@ export const TRANSLATIONS = {
     downloadTex: 'Stáhnout .tex',
     copyClipboard: 'Zkopírovat do schránky',
     copied: 'Zkopírováno!',
+    exportSvg: 'Exportovat SVG',
+    exportPng: 'Exportovat PNG',
+    exportLatex: 'LaTeX',
+    copyLatex: 'Zkopírovat LaTeX do schránky',
+    downloadTexFile: 'Stáhnout .tex soubor',
 
     // Themes & Proofs
     theme: 'Vzhled',
