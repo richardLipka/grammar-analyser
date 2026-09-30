@@ -14,6 +14,8 @@ export interface LLParseStep {
   actionCz?: string;
   production?: Production;
   matchedToken?: string;
+  lookupNt?: string;
+  lookupTerminal?: string;
   isError?: boolean;
   isAccepted?: boolean;
   tree: DerivationNode;
@@ -149,6 +151,7 @@ export function simulateLLParse(
           action: `Match terminal '${matched.symbol}'`,
           actionCz: `Shoda s terminálem '${matched.symbol}'`,
           matchedToken: matched.symbol,
+          lookupTerminal: lookahead,
           tree: cloneTree(rootNode)
         });
         continue;
@@ -227,6 +230,8 @@ export function simulateLLParse(
         action: `Apply: ${formatProduction(prod)}`,
         actionCz: `Aplikovat pravidlo: ${formatProduction(prod)}`,
         production: prod,
+        lookupNt: top.symbol,
+        lookupTerminal: lookahead,
         tree: cloneTree(rootNode)
       });
       continue;

@@ -91,46 +91,77 @@ export const LLView: React.FC<LLViewProps> = ({
       {/* LL(1) Parsing Table */}
       <div className="card">
         <div className="card-title">{t.llTableTitle}</div>
+
+        {/* Active Table Lookup Banner */}
+        {currentStep?.lookupNt && currentStep?.lookupTerminal && (
+          <div className="active-lookup-banner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{t.activeTableLookup}</span>
+              <span>{t.activeLineRow}: <span className="active-lookup-badge">{currentStep.lookupNt}</span></span>
+              <span>×</span>
+              <span>{t.activeColumn}: <span className="active-lookup-badge">{currentStep.lookupTerminal}</span></span>
+            </div>
+            {currentStep.production && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12.5px', fontWeight: 700, color: 'var(--color-primary)' }}>
+                ➔ {formatProduction(currentStep.production)}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="data-table-container">
           <table className="data-table">
             <thead>
               <tr>
                 <th style={{ width: '100px' }}>{t.colNonTerminal}</th>
-                {llTable.terminals.map(term => (
-                  <th key={term} style={{ textAlign: 'center' }}>
-                    <code>{term}</code>
-                  </th>
-                ))}
+                {llTable.terminals.map(term => {
+                  const isColActive = currentStep?.lookupTerminal === term;
+                  return (
+                    <th
+                      key={term}
+                      className={isColActive ? 'table-col-active' : ''}
+                      style={{ textAlign: 'center' }}
+                    >
+                      <code>{term}</code>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {llTable.nonTerminals.map(nt => (
-                <tr key={nt}>
-                  <td style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>
-                    {nt}
-                  </td>
-                  {llTable.terminals.map(term => {
-                    const prods = llTable.table1.get(nt)?.get(term) || [];
-                    const isConflict = prods.length > 1;
+              {llTable.nonTerminals.map(nt => {
+                const isRowActive = currentStep?.lookupNt === nt;
 
-                    return (
-                      <td
-                        key={term}
-                        style={{
-                          textAlign: 'center',
-                          fontFamily: 'var(--font-mono)',
-                          fontSize: '11.5px',
-                          backgroundColor: isConflict ? 'var(--color-danger-subtle)' : undefined,
-                          color: isConflict ? 'var(--color-danger)' : undefined,
-                          fontWeight: isConflict ? 700 : 400
-                        }}
-                      >
-                        {prods.map(p => formatProduction(p)).join('\n')}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                return (
+                  <tr key={nt} className={isRowActive ? 'table-row-active' : ''}>
+                    <td style={{ fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>
+                      {nt}
+                    </td>
+                    {llTable.terminals.map(term => {
+                      const prods = llTable.table1.get(nt)?.get(term) || [];
+                      const isConflict = prods.length > 1;
+                      const isCellActive = isRowActive && currentStep?.lookupTerminal === term;
+
+                      return (
+                        <td
+                          key={term}
+                          className={isCellActive ? 'table-cell-active' : ''}
+                          style={{
+                            textAlign: 'center',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '11.5px',
+                            backgroundColor: isCellActive ? undefined : isConflict ? 'var(--color-danger-subtle)' : undefined,
+                            color: isCellActive ? '#ffffff' : isConflict ? 'var(--color-danger)' : undefined,
+                            fontWeight: isCellActive || isConflict ? 700 : 400
+                          }}
+                        >
+                          {prods.map(p => formatProduction(p)).join('\n')}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -214,36 +245,60 @@ export const LLView: React.FC<LLViewProps> = ({
 
         {/* Current State Cards */}
         {currentStep && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '14px' }}>
             {/* Stack */}
             <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stack} {t.topOnRight}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                {currentStep.stack.map((sym, idx) => (
-                  <span
-                    key={idx}
-                    className={`badge ${idx === currentStep.stack.length - 1 ? 'badge-primary' : 'badge-primary'}`}
-                    style={{ fontWeight: idx === currentStep.stack.length - 1 ? 800 : 500 }}
-                  >
-                    {sym}
-                  </span>
-                ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stack} {t.topOnRight}</div>
+                {currentStep.stack.length > 0 && (
+                  <div style={{ fontSize: '10.5px', color: 'var(--color-primary)', fontWeight: 600 }}>
+                    {t.topOfStackHint} <strong>{currentStep.stack[currentStep.stack.length - 1]}</strong>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {currentStep.stack.map((sym, idx) => {
+                  const isTop = idx === currentStep.stack.length - 1;
+                  return (
+                    <div key={idx} className="stack-chip-container">
+                      <span
+                        className={`badge ${isTop ? 'chip-top-stack' : 'badge-primary'}`}
+                        style={{ fontWeight: isTop ? 800 : 500 }}
+                      >
+                        {sym}
+                        {isTop && <span className="chip-tag-top">{t.topOfStackBadge}</span>}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Remaining Input */}
             <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.remainingInput}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
-                {currentStep.remainingInput.map((sym, idx) => (
-                  <span
-                    key={idx}
-                    className={`badge ${idx === 0 ? 'badge-warning' : 'badge-success'}`}
-                    style={{ fontWeight: idx === 0 ? 800 : 500 }}
-                  >
-                    {sym}
-                  </span>
-                ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.remainingInput}</div>
+                {currentStep.remainingInput.length > 0 && (
+                  <div style={{ fontSize: '10.5px', color: 'var(--color-warning)', fontWeight: 600 }}>
+                    {t.decisionSymbolHint} <strong>{currentStep.remainingInput[0]}</strong>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {currentStep.remainingInput.map((sym, idx) => {
+                  const isDecision = idx === 0;
+                  return (
+                    <div key={idx} className="stack-chip-container">
+                      <span
+                        className={`badge ${isDecision ? 'chip-decision-input' : 'badge-success'}`}
+                        style={{ fontWeight: isDecision ? 800 : 500 }}
+                      >
+                        {sym}
+                        {isDecision && <span className="chip-tag-decision">{t.decisionSymbolBadge}</span>}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

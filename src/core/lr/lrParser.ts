@@ -14,6 +14,10 @@ export interface LRParseStep {
   action: string;
   actionCz?: string;
   production?: Production;
+  lookupState?: number;
+  lookupSymbol?: string;
+  gotoState?: number;
+  gotoNt?: string;
   isError?: boolean;
   isAccepted?: boolean;
   tree?: DerivationNode;
@@ -59,6 +63,8 @@ export function simulateLRParse(
         remainingInput: remaining,
         action: `Error: No action in ACTION[State ${currentState}, '${lookahead}']`,
         actionCz: `Chyba: Žádná akce v ACTION[Stav ${currentState}, '${lookahead}']`,
+        lookupState: currentState,
+        lookupSymbol: lookahead,
         isError: true,
         tree: treeStack.length > 0 ? cloneTree(treeStack[treeStack.length - 1]) : undefined
       });
@@ -92,6 +98,8 @@ export function simulateLRParse(
         remainingInput: remaining,
         action: `Shift: push token '${lookahead}', transition to State ${targetState}`,
         actionCz: `Posuv (Shift): vložení symbolu '${lookahead}', přechod do stavu ${targetState}`,
+        lookupState: currentState,
+        lookupSymbol: lookahead,
         tree: cloneTree(leafNode)
       });
       continue;
@@ -123,6 +131,8 @@ export function simulateLRParse(
           remainingInput: remaining,
           action: `Error: Missing GOTO[State ${topState}, '${prod.lhs}']`,
           actionCz: `Chyba: Chybí přechod v GOTO[Stav ${topState}, '${prod.lhs}']`,
+          lookupState: currentState,
+          lookupSymbol: lookahead,
           isError: true
         });
         return {
@@ -155,6 +165,10 @@ export function simulateLRParse(
         action: `Reduce: ${formatProduction(prod)} -> GOTO State ${gotoState}`,
         actionCz: `Redukce: ${formatProduction(prod)} -> GOTO stav ${gotoState}`,
         production: prod,
+        lookupState: currentState,
+        lookupSymbol: lookahead,
+        gotoState: gotoState,
+        gotoNt: prod.lhs,
         tree: cloneTree(parentNode)
       });
       continue;
@@ -169,6 +183,8 @@ export function simulateLRParse(
         remainingInput: remaining,
         action: 'Accept: Word successfully parsed!',
         actionCz: 'Přijetí (Accept): Slovo bylo úspěšně analyzováno!',
+        lookupState: currentState,
+        lookupSymbol: lookahead,
         isAccepted: true,
         tree: finalTree ? cloneTree(finalTree) : undefined
       });

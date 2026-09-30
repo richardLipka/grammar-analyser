@@ -232,6 +232,9 @@ describe('LL(1) Parser Simulation', () => {
 
     const sim = simulateLLParse(['id', '+', 'id', '*', 'id'], g, table);
     expect(sim.accepted).toBe(true);
+    expect(sim.steps[0].lookupNt).toBe('E');
+    expect(sim.steps[0].lookupTerminal).toBe('id');
+    expect(sim.steps.some(s => s.lookupNt !== undefined && s.lookupTerminal !== undefined)).toBe(true);
   });
 
   it('rejects an invalid word in LL(1)', () => {
@@ -263,6 +266,9 @@ describe('LR(k) Automata and Parser', () => {
 
     const sim = simulateLRParse(['id', '+', 'id', '*', 'id'], g, table);
     expect(sim.accepted).toBe(true);
+    expect(sim.steps[0].lookupState).toBe(0);
+    expect(sim.steps[0].lookupSymbol).toBe('id');
+    expect(sim.steps.some(s => s.lookupState !== undefined && s.lookupSymbol !== undefined)).toBe(true);
   });
 
   it('distinguishes SLR(1) from LALR(1) conflict resolution', () => {

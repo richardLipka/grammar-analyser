@@ -121,6 +121,13 @@ export const TRANSLATIONS = {
     remainingInput: 'Remaining Input',
     action: 'Action',
     parseTree: 'Derivation / Parse Tree',
+    activeTableLookup: 'Active Table Lookup (Line & Column Applied):',
+    activeLineRow: 'Line (Row)',
+    activeColumn: 'Column',
+    topOfStackBadge: 'TOP',
+    decisionSymbolBadge: 'LOOKAHEAD',
+    decisionSymbolHint: 'Input symbol used for decision:',
+    topOfStackHint: 'Top of stack:',
 
     // LR Analyser & Simulator
     variant: 'Automaton Variant',
@@ -290,6 +297,13 @@ export const TRANSLATIONS = {
     remainingInput: 'Zbývající vstup',
     action: 'Provedená akce',
     parseTree: 'Derivační strom',
+    activeTableLookup: 'Aktivní položka rozkladu (Použitý řádek a sloupec):',
+    activeLineRow: 'Řádek (linie)',
+    activeColumn: 'Sloupec',
+    topOfStackBadge: 'VRCHOL',
+    decisionSymbolBadge: 'ČTENÝ VSTUP',
+    decisionSymbolHint: 'Vstupní symbol pro rozhodnutí:',
+    topOfStackHint: 'Vrchol zásobníku:',
 
     // LR Analyser & Simulator
     variant: 'Varianta automatu',

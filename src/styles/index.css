@@ -657,3 +657,119 @@ body {
   font-weight: 600;
   font-size: 11px;
 }
+
+/* Active Table Lookup (Line & Column applied in parser simulation) */
+.active-lookup-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  background-color: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  animation: fadeIn 200ms ease-out;
+}
+
+.active-lookup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.table-row-active {
+  background-color: var(--color-primary-subtle) !important;
+  border-left: 4px solid var(--color-primary) !important;
+}
+
+.table-row-active td {
+  background-color: var(--color-primary-subtle) !important;
+}
+
+.table-col-active {
+  background-color: var(--color-primary-subtle) !important;
+  color: var(--color-primary) !important;
+  font-weight: 800 !important;
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: -2px;
+}
+
+.table-cell-active {
+  background-color: var(--color-primary) !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  outline: 2px solid #ffffff !important;
+  outline-offset: -2px;
+  box-shadow: 0 0 12px rgba(2, 132, 199, 0.6) !important;
+}
+
+.table-cell-active code {
+  color: #ffffff !important;
+}
+
+/* Top of Stack & Lookahead Decision Badges */
+.stack-chip-container {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.chip-top-stack {
+  background: linear-gradient(135deg, var(--color-primary) 0%, #4f46e5 100%) !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.45) !important;
+  font-weight: 800 !important;
+  padding: 4px 10px !important;
+  font-size: 13px !important;
+}
+
+.chip-tag-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  text-transform: uppercase;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+}
+
+.chip-decision-input {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%) !important;
+  color: #ffffff !important;
+  border: 2px solid #fef3c7 !important;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.5) !important;
+  font-weight: 800 !important;
+  padding: 4px 10px !important;
+  font-size: 13px !important;
+}
+
+.chip-tag-decision {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  text-transform: uppercase;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+}
