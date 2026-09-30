@@ -84,16 +84,22 @@ export const LRView: React.FC<LRViewProps> = ({
 
   return (
     <div>
-      {/* Variant Selector & Conflict Overview */}
+      {/* ACTION & GOTO Parsing Table with Embedded Collisions */}
       <div className="card">
         <div className="card-title">
-          <span>{t.variant}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>{selectedVariant} {t.lrTableTitle}</span>
+            <Cpu size={18} color="var(--color-primary)" />
+          </div>
+
+          {/* Variant Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
               <button
                 key={v}
+                type="button"
                 className={`btn ${selectedVariant === v ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '4px 10px', fontSize: '12px' }}
+                style={{ padding: '3px 8px', fontSize: '11px' }}
                 onClick={() => setSelectedVariant(v)}
               >
                 {v}
@@ -102,39 +108,93 @@ export const LRView: React.FC<LRViewProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
-          <div>
-            <strong>{t.statusFor} {selectedVariant}: </strong>
-            {activeTable.isConflictFree ? (
-              <span className="badge badge-success"><CheckCircle2 size={12} /> {t.noConflicts}</span>
-            ) : (
-              <span className="badge badge-danger"><AlertTriangle size={12} /> {activeTable.conflicts.length} {t.conflictsCountSuffix}</span>
-            )}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-            {t.statesCount} <strong>{activeTable.states.length}</strong>
-          </div>
-        </div>
+        {/* Embedded LR Collisions Directly Above Table */}
+        <div style={{ marginBottom: '14px' }}>
+          {activeTable.conflicts.length > 0 ? (
+            <div style={{
+              backgroundColor: 'var(--color-danger-subtle)',
+              border: '1px solid var(--color-danger)',
+              borderRadius: 'var(--radius-md)',
+              padding: '12px 14px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertTriangle size={15} />
+                  <span>{activeTable.conflicts.length} {t.conflictsInVariant.replace('{variant}', selectedVariant)}</span>
+                </div>
+                <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
+                  <span>{t.statesCount} <strong>{activeTable.states.length}</strong></span>
+                  <span style={{ margin: '0 6px' }}>•</span>
+                  <span>{lang === 'cz' ? 'Zvýrazněno červeně v tabulce níže' : 'Highlighted in red in table below'}</span>
+                </div>
+              </div>
 
-        {activeTable.conflicts.length > 0 && (
-          <div style={{ backgroundColor: 'var(--color-danger-subtle)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-danger)', marginTop: '12px' }}>
-            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', marginBottom: '4px' }}>
-              {activeTable.conflicts.length} {t.conflictsInVariant.replace('{variant}', selectedVariant)}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {activeTable.conflicts.map((c, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      backgroundColor: 'var(--color-bg-surface)',
+                      border: '1px solid var(--color-border)',
+                      borderLeft: '3px solid var(--color-danger)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '8px 10px',
+                      fontSize: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--color-danger)' }}>
+                        {c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
+                        {t.stateLabel} <strong style={{ color: 'var(--color-primary)' }}>{c.stateId}</strong>, {t.onSymbol} <strong style={{ color: 'var(--color-text-primary)' }}>'{c.symbol}'</strong>
+                      </span>
+                    </div>
+                    <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>{t.conflictingActions}:</span>
+                      {c.actions.map((act, actIdx) => (
+                        <span
+                          key={actIdx}
+                          style={{
+                            padding: '2px 6px',
+                            backgroundColor: 'var(--color-bg-base)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '11px',
+                            border: '1px solid var(--color-border)'
+                          }}
+                        >
+                          <strong>{formatAction(act)}</strong>
+                          {act.production && ` (${formatProduction(act.production)})`}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--color-danger)' }}>
-              {activeTable.conflicts.map((c, idx) => (
-                <li key={idx}>
-                  <strong>{c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}</strong> {lang === 'cz' ? 've stavu' : 'in State'} {c.stateId} {lang === 'cz' ? 'se symbolem' : 'on symbol'} <code>'{c.symbol}'</code>: {c.actions.map(formatAction).join(' vs ')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* ACTION & GOTO Parsing Table */}
-      <div className="card">
-        <div className="card-title">{selectedVariant} {t.lrTableTitle}</div>
+          ) : (
+            <div style={{
+              backgroundColor: 'var(--color-success-subtle)',
+              border: '1px solid var(--color-success)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              color: 'var(--color-success)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <CheckCircle2 size={15} />
+                <span>{t.noLRConflicts.replace('{variant}', selectedVariant)}</span>
+              </div>
+              <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
+                {t.statesCount} <strong>{activeTable.states.length}</strong>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Active Table Lookup Banner */}
         {currentStep?.lookupState !== undefined && currentStep?.lookupSymbol && (

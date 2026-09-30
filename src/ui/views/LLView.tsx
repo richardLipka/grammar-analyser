@@ -59,38 +59,104 @@ export const LLView: React.FC<LLViewProps> = ({
 
   return (
     <div>
-      {/* Classification & Conflicts Summary */}
+      {/* LL(1) Parsing Table with Embedded Collisions */}
       <div className="card">
         <div className="card-title">
-          <span>{t.llStatusTitle}</span>
-          {llTable.isLL1 ? (
-            <span className="badge badge-success"><CheckCircle2 size={12} /> {t.ll1Valid}</span>
-          ) : llTable.isLL2 ? (
-            <span className="badge badge-warning"><CheckCircle2 size={12} /> {t.ll2Valid}</span>
-          ) : (
-            <span className="badge badge-danger"><AlertTriangle size={12} /> {t.notLL}</span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>{t.llTableTitle}</span>
+            <Layers size={18} color="var(--color-primary)" />
+          </div>
+
+          <div>
+            {llTable.isLL1 ? (
+              <span className="badge badge-success"><CheckCircle2 size={12} /> {t.ll1Valid}</span>
+            ) : llTable.isLL2 ? (
+              <span className="badge badge-warning"><CheckCircle2 size={12} /> {t.ll2Valid}</span>
+            ) : (
+              <span className="badge badge-danger"><AlertTriangle size={12} /> {t.notLL}</span>
+            )}
+          </div>
         </div>
 
-        {llTable.conflicts.length > 0 && (
-          <div style={{ backgroundColor: 'var(--color-danger-subtle)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-danger)' }}>
-            <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', marginBottom: '4px' }}>
-              {llTable.conflicts.length} {t.llConflictsDetected}
+        {/* Embedded LL Collisions Directly Above Table */}
+        {llTable.conflicts.length > 0 ? (
+          <div style={{
+            backgroundColor: 'var(--color-danger-subtle)',
+            border: '1px solid var(--color-danger)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 14px',
+            marginBottom: '14px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertTriangle size={15} />
+                <span>{llTable.conflicts.length} {t.llConflictsDetected}</span>
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                {lang === 'cz' ? 'Níže zvýrazněné kolizní buňky v rozkladové tabulce' : 'Conflicting cells highlighted in red in the table below'}
+              </span>
             </div>
-            <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--color-danger)' }}>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {llTable.conflicts.map((c, idx) => (
-                <li key={idx}>
-                  <strong>{c.conflictType === 'First/First' ? t.firstFirstConflict : t.firstFollowConflict}</strong> {lang === 'cz' ? 'pro neterminál' : 'on Non-Terminal'} <code>{c.nonTerminal}</code> {lang === 'cz' ? 'se symbolem' : 'with lookahead'} <code>'{c.lookahead}'</code>: {c.productions.map(formatProduction).join(' vs ')}
-                </li>
+                <div
+                  key={idx}
+                  style={{
+                    backgroundColor: 'var(--color-bg-surface)',
+                    border: '1px solid var(--color-border)',
+                    borderLeft: '3px solid var(--color-danger)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '8px 10px',
+                    fontSize: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--color-danger)' }}>
+                      {c.conflictType === 'First/First' ? t.firstFirstConflict : t.firstFollowConflict}
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
+                      {t.forNonTerminal} <strong style={{ color: 'var(--color-primary)' }}>{c.nonTerminal}</strong>, {t.withLookahead} <strong style={{ color: 'var(--color-text-primary)' }}>'{c.lookahead}'</strong>
+                    </span>
+                  </div>
+                  <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>{t.conflictingRules}:</span>
+                    {c.productions.map(p => (
+                      <span
+                        key={p.id}
+                        style={{
+                          padding: '2px 6px',
+                          backgroundColor: 'var(--color-bg-base)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '11px',
+                          border: '1px solid var(--color-border)'
+                        }}
+                      >
+                        ({p.id}) {formatProduction(p)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            backgroundColor: 'var(--color-success-subtle)',
+            border: '1px solid var(--color-success)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 12px',
+            marginBottom: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '12px',
+            color: 'var(--color-success)'
+          }}>
+            <CheckCircle2 size={15} />
+            <span>{t.noLLConflicts}</span>
           </div>
         )}
-      </div>
-
-      {/* LL(1) Parsing Table */}
-      <div className="card">
-        <div className="card-title">{t.llTableTitle}</div>
 
         {/* Active Table Lookup Banner */}
         {currentStep?.lookupNt && currentStep?.lookupTerminal && (

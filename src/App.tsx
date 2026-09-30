@@ -22,7 +22,6 @@ import { LRView } from './ui/views/LRView';
 import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { LatexExportView } from './ui/views/LatexExportView';
-import { CollisionsReportsPanel } from './ui/components/CollisionsReportsPanel';
 
 // Icons
 import {
@@ -341,21 +340,6 @@ export const App: React.FC = () => {
 
         {/* Right Pane: Analysis Dashboard & Simulator */}
         <main className="right-pane">
-          {/* Collisions & Reports Panel over the switching menu itself */}
-          {activeTab !== 'overview' && analyzedGrammar && analysisData && (
-            <CollisionsReportsPanel
-              grammar={analyzedGrammar}
-              analysis={analysisData.analysis}
-              llTable={analysisData.llTable}
-              lr0Table={analysisData.lr0Table}
-              slr1Table={analysisData.slr1Table}
-              lalr1Table={analysisData.lalr1Table}
-              lr1Table={analysisData.lr1Table}
-              lang={lang}
-              onNavigateToAnalyser={handleNavigateToAnalyser}
-            />
-          )}
-
           {/* Navigation Tabs */}
           <div className="tabs-header">
             <button
@@ -461,7 +445,10 @@ export const App: React.FC = () => {
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
-                    onNavigateToAnalyser={handleNavigateToAnalyser}
+                    onNavigateToTab={(tab, variant) => {
+                      if (variant) setLrVariant(variant);
+                      setActiveTab(tab);
+                    }}
                   />
                 )}
 
