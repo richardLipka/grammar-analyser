@@ -11,6 +11,7 @@ export interface LLParseStep {
   stack: string[];
   remainingInput: string[];
   action: string;
+  actionCz?: string;
   production?: Production;
   matchedToken?: string;
   isError?: boolean;
@@ -22,6 +23,7 @@ export interface LLSimulationResult {
   accepted: boolean;
   steps: LLParseStep[];
   errorMessage?: string;
+  errorMessageCz?: string;
   finalTree?: DerivationNode;
 }
 
@@ -35,7 +37,12 @@ export function simulateLLParse(
   const input = [...inputTokens, END_MARKER];
   
   if (!g.startSymbol) {
-    return { accepted: false, steps: [], errorMessage: 'Grammar has no start symbol.' };
+    return {
+      accepted: false,
+      steps: [],
+      errorMessage: 'Grammar has no start symbol.',
+      errorMessageCz: 'Gramatika nemá počáteční symbol.'
+    };
   }
 
   // Tree node management
@@ -73,6 +80,7 @@ export function simulateLLParse(
           stack: [],
           remainingInput: currentRemaining,
           action: 'Accept: Input successfully parsed!',
+          actionCz: 'Přijato: Vstup byl úspěšně analyzován!',
           isAccepted: true,
           tree: cloneTree(rootNode)
         });
@@ -83,10 +91,16 @@ export function simulateLLParse(
           stack: [],
           remainingInput: currentRemaining,
           action: `Error: Stack empty but unconsumed input '${lookahead}'`,
+          actionCz: `Chyba: Zásobník je prázdný, ale zbývá nezpracovaný vstup '${lookahead}'`,
           isError: true,
           tree: cloneTree(rootNode)
         });
-        return { accepted: false, steps, errorMessage: `Unconsumed input '${lookahead}'` };
+        return {
+          accepted: false,
+          steps,
+          errorMessage: `Unconsumed input '${lookahead}'`,
+          errorMessageCz: `Nezpracovaný vstup '${lookahead}'`
+        };
       }
     }
 
@@ -98,6 +112,7 @@ export function simulateLLParse(
           stack: currentStackSymbols,
           remainingInput: currentRemaining,
           action: 'Accept: Input successfully parsed!',
+          actionCz: 'Přijato: Vstup byl úspěšně analyzován!',
           isAccepted: true,
           tree: cloneTree(rootNode)
         });
@@ -108,10 +123,16 @@ export function simulateLLParse(
           stack: currentStackSymbols,
           remainingInput: currentRemaining,
           action: `Error: Expected end of input, found '${lookahead}'`,
+          actionCz: `Chyba: Očekáván konec vstupu, nalezeno '${lookahead}'`,
           isError: true,
           tree: cloneTree(rootNode)
         });
-        return { accepted: false, steps, errorMessage: `Expected end of input, found '${lookahead}'` };
+        return {
+          accepted: false,
+          steps,
+          errorMessage: `Expected end of input, found '${lookahead}'`,
+          errorMessageCz: `Očekáván konec vstupu, nalezeno '${lookahead}'`
+        };
       }
     }
 
@@ -126,6 +147,7 @@ export function simulateLLParse(
           stack: currentStackSymbols,
           remainingInput: currentRemaining,
           action: `Match terminal '${matched.symbol}'`,
+          actionCz: `Shoda s terminálem '${matched.symbol}'`,
           matchedToken: matched.symbol,
           tree: cloneTree(rootNode)
         });
@@ -136,13 +158,15 @@ export function simulateLLParse(
           stack: currentStackSymbols,
           remainingInput: currentRemaining,
           action: `Error: Expected terminal '${top.symbol}', found '${lookahead}'`,
+          actionCz: `Chyba: Očekáván terminál '${top.symbol}', nalezeno '${lookahead}'`,
           isError: true,
           tree: cloneTree(rootNode)
         });
         return {
           accepted: false,
           steps,
-          errorMessage: `Expected '${top.symbol}', found '${lookahead}'`
+          errorMessage: `Expected '${top.symbol}', found '${lookahead}'`,
+          errorMessageCz: `Očekáván terminál '${top.symbol}', nalezeno '${lookahead}'`
         };
       }
     }
@@ -157,13 +181,15 @@ export function simulateLLParse(
           stack: currentStackSymbols,
           remainingInput: currentRemaining,
           action: `Error: No production for M[${top.symbol}, ${lookahead}]`,
+          actionCz: `Chyba: V tabulce neexistuje pravidlo pro M[${top.symbol}, ${lookahead}]`,
           isError: true,
           tree: cloneTree(rootNode)
         });
         return {
           accepted: false,
           steps,
-          errorMessage: `No rule in parse table for non-terminal '${top.symbol}' with lookahead '${lookahead}'`
+          errorMessage: `No rule in parse table for non-terminal '${top.symbol}' with lookahead '${lookahead}'`,
+          errorMessageCz: `V rozkladové tabulce neexistuje pravidlo pro neterminál '${top.symbol}' se symbolem '${lookahead}'`
         };
       }
 
@@ -199,6 +225,7 @@ export function simulateLLParse(
         stack: currentStackSymbols,
         remainingInput: currentRemaining,
         action: `Apply: ${formatProduction(prod)}`,
+        actionCz: `Aplikovat pravidlo: ${formatProduction(prod)}`,
         production: prod,
         tree: cloneTree(rootNode)
       });
@@ -211,13 +238,24 @@ export function simulateLLParse(
       stack: currentStackSymbols,
       remainingInput: currentRemaining,
       action: `Error: Unknown symbol '${top.symbol}' on stack`,
+      actionCz: `Chyba: Neznámý symbol '${top.symbol}' na zásobníku`,
       isError: true,
       tree: cloneTree(rootNode)
     });
-    return { accepted: false, steps, errorMessage: `Unknown symbol '${top.symbol}'` };
+    return {
+      accepted: false,
+      steps,
+      errorMessage: `Unknown symbol '${top.symbol}'`,
+      errorMessageCz: `Neznámý symbol '${top.symbol}'`
+    };
   }
 
-  return { accepted: false, steps, errorMessage: 'Maximum simulation steps exceeded (possible loop).' };
+  return {
+    accepted: false,
+    steps,
+    errorMessage: 'Maximum simulation steps exceeded (possible loop).',
+    errorMessageCz: 'Překročen maximální počet simulačních kroků (možná smyčka).'
+  };
 }
 
 function cloneTree(node: DerivationNode): DerivationNode {

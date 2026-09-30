@@ -184,7 +184,7 @@ export const App: React.FC = () => {
                   {t.editorTitle}
                 </label>
                 <span style={{ fontSize: '10.5px', color: 'var(--color-text-muted)' }}>
-                  Syntax: -&gt; | ::= | : | =
+                  {t.syntaxSyntaxLine}
                 </span>
               </div>
 
@@ -208,11 +208,11 @@ export const App: React.FC = () => {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-danger)', fontWeight: 700, fontSize: '12px' }}>
                   <AlertCircle size={15} />
-                  <span>Grammar Syntax Error</span>
+                  <span>{t.syntaxErrorTitle}</span>
                 </div>
                 <ul style={{ paddingLeft: '18px', fontSize: '11.5px', color: 'var(--color-danger)', marginTop: '4px' }}>
                   {parseResult.errors.map((err, idx) => (
-                    <li key={idx}>Line {err.line}: {err.message}</li>
+                    <li key={idx}>{lang === 'cz' ? 'Řádek' : 'Line'} {err.line}: {err.message}</li>
                   ))}
                 </ul>
               </div>
@@ -227,11 +227,11 @@ export const App: React.FC = () => {
               color: 'var(--color-text-muted)',
               lineHeight: '1.4'
             }}>
-              <strong>Syntax Tips:</strong>
-              <div>• Non-terminals: uppercase or &lt;name&gt;</div>
-              <div>• Terminals: lowercase, "+", "*", "id"</div>
-              <div>• Epsilon (empty): ε, eps, epsilon, ""</div>
-              <div>• Alternatives: | or newline</div>
+              <strong>{t.syntaxHintTitle}</strong>
+              <div>{t.syntaxNonTerminals}</div>
+              <div>{t.syntaxTerminals}</div>
+              <div>{t.syntaxEps}</div>
+              <div>{t.syntaxAlts}</div>
             </div>
           </div>
         </aside>
@@ -302,7 +302,7 @@ export const App: React.FC = () => {
           <div className="tab-content">
             {!grammar || !analysisData ? (
               <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
-                Please specify a valid formal grammar in the editor to view analysis results.
+                {t.pleaseSpecifyGrammar}
               </div>
             ) : (
               <>

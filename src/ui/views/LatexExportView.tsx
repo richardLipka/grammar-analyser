@@ -38,11 +38,11 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
       case 'grammar':
         return exportGrammarToLatex(grammar);
       case 'sets':
-        return exportSetsToLatex(grammar, analysis);
+        return exportSetsToLatex(grammar, analysis, lang);
       case 'llTable':
-        return exportLLTableToLatex(llTable);
+        return exportLLTableToLatex(llTable, lang);
       case 'lrTable':
-        return exportLRTableToLatex(slr1Table);
+        return exportLRTableToLatex(slr1Table, lang);
       case 'all':
         return [
           '% ==========================================',
@@ -55,14 +55,14 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           '\\usepackage{multirow}',
           '\\usepackage{forest}',
           '\\begin{document}\n',
-          '\\section*{Formal Grammar Analysis}\n',
+          `\\section*{${lang === 'cz' ? 'Analýza formální gramatiky' : 'Formal Grammar Analysis'}}\n`,
           exportGrammarToLatex(grammar),
           '\n\\vspace{1em}\n',
-          exportSetsToLatex(grammar, analysis),
+          exportSetsToLatex(grammar, analysis, lang),
           '\n\\vspace{1em}\n',
-          exportLLTableToLatex(llTable),
+          exportLLTableToLatex(llTable, lang),
           '\n\\vspace{1em}\n',
-          exportLRTableToLatex(slr1Table),
+          exportLRTableToLatex(slr1Table, lang),
           '\n\\end{document}'
         ].join('\n');
     }
@@ -98,7 +98,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-secondary" onClick={handleDownload}>
               <Download size={15} />
-              Download .tex
+              {t.downloadTex}
             </button>
             <button className="btn btn-primary" onClick={handleCopy}>
               {copied ? <Check size={15} /> : <Copy size={15} />}
@@ -114,35 +114,35 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
             style={{ fontSize: '12px' }}
             onClick={() => setSection('all')}
           >
-            Complete Article (All Tables)
+            {t.completeArticle}
           </button>
           <button
             className={`btn ${section === 'grammar' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ fontSize: '12px' }}
             onClick={() => setSection('grammar')}
           >
-            Grammar (align*)
+            {t.grammarAlign}
           </button>
           <button
             className={`btn ${section === 'sets' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ fontSize: '12px' }}
             onClick={() => setSection('sets')}
           >
-            FIRST &amp; FOLLOW Table
+            {t.firstFollowTable}
           </button>
           <button
             className={`btn ${section === 'llTable' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ fontSize: '12px' }}
             onClick={() => setSection('llTable')}
           >
-            LL(1) Table
+            {t.llTableTab}
           </button>
           <button
             className={`btn ${section === 'lrTable' ? 'btn-primary' : 'btn-secondary'}`}
             style={{ fontSize: '12px' }}
             onClick={() => setSection('lrTable')}
           >
-            SLR(1) Table
+            {t.slrTableTab}
           </button>
         </div>
 

@@ -20,13 +20,13 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({
     <div>
       {/* Non-Terminal FIRST & FOLLOW Table */}
       <div className="card">
-        <div className="card-title">FIRST and FOLLOW Sets for Non-Terminals</div>
+        <div className="card-title">{t.firstFollowNtTitle}</div>
         <div className="data-table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: '120px' }}>Non-Terminal</th>
-                <th style={{ width: '90px' }}>Nullable</th>
+                <th style={{ width: '120px' }}>{t.colNonTerminal}</th>
+                <th style={{ width: '90px' }}>{t.colNullable}</th>
                 <th>FIRST₁</th>
                 <th>FOLLOW₁</th>
                 <th>FIRST₂</th>
@@ -48,7 +48,7 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({
                     </td>
                     <td>
                       <span className={`badge ${isNullable ? 'badge-warning' : 'badge-primary'}`}>
-                        {isNullable ? 'Yes (ε)' : 'No'}
+                        {isNullable ? t.yesEps : t.no}
                       </span>
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>
@@ -73,9 +73,9 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({
 
       {/* Production Predict / Director Sets */}
       <div className="card">
-        <div className="card-title">Production Predict / Lookahead Sets (Director Sets)</div>
+        <div className="card-title">{t.predictSetsTitle}</div>
         <p style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '12px' }}>
-          Calculated as LOOKAHEAD₁(A &rarr; &alpha;) = FIRST₁(&alpha; &middot; FOLLOW₁(A)). These determine the LL(1) parsing table entries.
+          {t.predictSetsDesc}
         </p>
 
         <div className="data-table-container">
@@ -83,9 +83,9 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({
             <thead>
               <tr>
                 <th style={{ width: '60px' }}>ID</th>
-                <th style={{ width: '220px' }}>Production</th>
-                <th>FIRST₁(RHS)</th>
-                <th>LOOKAHEAD₁ (Director Set)</th>
+                <th style={{ width: '220px' }}>{t.colProduction}</th>
+                <th>{t.colFirstRhs}</th>
+                <th>{t.colLookahead}</th>
               </tr>
             </thead>
             <tbody>

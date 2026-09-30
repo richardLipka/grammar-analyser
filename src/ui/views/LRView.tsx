@@ -92,27 +92,27 @@ export const LRView: React.FC<LRViewProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
           <div>
-            <strong>Status for {selectedVariant}: </strong>
+            <strong>{t.statusFor} {selectedVariant}: </strong>
             {activeTable.isConflictFree ? (
               <span className="badge badge-success"><CheckCircle2 size={12} /> {t.noConflicts}</span>
             ) : (
-              <span className="badge badge-danger"><AlertTriangle size={12} /> {activeTable.conflicts.length} conflict(s)</span>
+              <span className="badge badge-danger"><AlertTriangle size={12} /> {activeTable.conflicts.length} {t.conflictsCountSuffix}</span>
             )}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-            States: <strong>{activeTable.states.length}</strong>
+            {t.statesCount} <strong>{activeTable.states.length}</strong>
           </div>
         </div>
 
         {activeTable.conflicts.length > 0 && (
           <div style={{ backgroundColor: 'var(--color-danger-subtle)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-danger)', marginTop: '12px' }}>
             <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', marginBottom: '4px' }}>
-              {activeTable.conflicts.length} Conflict(s) in {selectedVariant}:
+              {activeTable.conflicts.length} {t.conflictsInVariant.replace('{variant}', selectedVariant)}
             </div>
             <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--color-danger)' }}>
               {activeTable.conflicts.map((c, idx) => (
                 <li key={idx}>
-                  <strong>{c.type} conflict</strong> in State {c.stateId} on symbol <code>'{c.symbol}'</code>: {c.actions.map(formatAction).join(' vs ')}
+                  <strong>{c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}</strong> {lang === 'cz' ? 've stavu' : 'in State'} {c.stateId} {lang === 'cz' ? 'se symbolem' : 'on symbol'} <code>'{c.symbol}'</code>: {c.actions.map(formatAction).join(' vs ')}
                 </li>
               ))}
             </ul>
@@ -122,12 +122,12 @@ export const LRView: React.FC<LRViewProps> = ({
 
       {/* ACTION & GOTO Parsing Table */}
       <div className="card">
-        <div className="card-title">{selectedVariant} Parsing Table (ACTION &amp; GOTO)</div>
+        <div className="card-title">{selectedVariant} {t.lrTableTitle}</div>
         <div className="data-table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th rowSpan={2} style={{ width: '60px', textAlign: 'center' }}>State</th>
+                <th rowSpan={2} style={{ width: '60px', textAlign: 'center' }}>{lang === 'cz' ? 'Stav' : 'State'}</th>
                 <th colSpan={activeTable.terminals.length} style={{ textAlign: 'center', borderBottom: '1px solid var(--color-border)' }}>
                   ACTION
                 </th>
@@ -204,7 +204,7 @@ export const LRView: React.FC<LRViewProps> = ({
       {/* Bottom-Up Parsing Simulator */}
       <div className="card">
         <div className="card-title">
-          <span>{t.parsingSimulator} (Bottom-Up Shift-Reduce)</span>
+          <span>{t.parsingSimulator} ({lang === 'cz' ? 'Zdola nahoru Shift-Reduce' : 'Bottom-Up Shift-Reduce'})</span>
           <Cpu size={18} color="var(--color-primary)" />
         </div>
 
@@ -216,7 +216,7 @@ export const LRView: React.FC<LRViewProps> = ({
             style={{ minHeight: 'unset', height: '38px', padding: '6px 12px' }}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Space-separated tokens (e.g. id + id * id)"
+            placeholder={t.tokensPlaceholder}
           />
           <button className="btn btn-primary" onClick={runParse}>
             {t.runSimulation}
@@ -228,7 +228,7 @@ export const LRView: React.FC<LRViewProps> = ({
           <button
             className="btn btn-secondary"
             onClick={() => { setIsPlaying(false); setCurrentStepIdx(0); }}
-            title="Reset"
+            title={t.reset}
           >
             <RotateCcw size={15} />
           </button>
@@ -236,14 +236,14 @@ export const LRView: React.FC<LRViewProps> = ({
             className="btn btn-secondary"
             onClick={() => { setIsPlaying(false); setCurrentStepIdx(prev => Math.max(0, prev - 1)); }}
             disabled={currentStepIdx === 0}
-            title="Step Back"
+            title={t.stepBackward}
           >
             <SkipBack size={15} />
           </button>
           <button
             className="btn btn-primary"
             onClick={() => setIsPlaying(p => !p)}
-            title={isPlaying ? "Pause" : "Play"}
+            title={isPlaying ? t.pause : t.play}
           >
             {isPlaying ? <Pause size={15} /> : <Play size={15} />}
           </button>
@@ -254,17 +254,17 @@ export const LRView: React.FC<LRViewProps> = ({
               setCurrentStepIdx(prev => Math.min((simulation?.steps.length || 1) - 1, prev + 1));
             }}
             disabled={!simulation || currentStepIdx >= simulation.steps.length - 1}
-            title="Step Forward"
+            title={t.stepForward}
           >
             <SkipForward size={15} />
           </button>
 
           <span style={{ fontSize: '12px', fontWeight: 600, margin: '0 8px', color: 'var(--color-text-secondary)' }}>
-            Step {currentStepIdx + 1} of {simulation?.steps.length || 0}
+            {t.stepCountLabel.replace('{current}', (currentStepIdx + 1).toString()).replace('{total}', (simulation?.steps.length || 0).toString())}
           </span>
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Speed:</span>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{t.speed}</span>
             <input
               type="range"
               min="150"
@@ -282,7 +282,7 @@ export const LRView: React.FC<LRViewProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '14px' }}>
             {/* State Stack */}
             <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stateStack} (Top on right)</div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stateStack} {t.topOnRight}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                 {currentStep.stateStack.map((st, idx) => (
                   <span
@@ -351,7 +351,7 @@ export const LRView: React.FC<LRViewProps> = ({
                   ? 'var(--color-danger)'
                   : 'var(--color-primary)'
               }}>
-                {currentStep.action}
+                {lang === 'cz' ? (currentStep.actionCz || currentStep.action) : currentStep.action}
               </div>
             </div>
           </div>
@@ -359,7 +359,7 @@ export const LRView: React.FC<LRViewProps> = ({
 
         {/* Live Parse Tree */}
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.parseTree} (Bottom-Up Construction)</div>
+          <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.bottomUpTreeLabel}</div>
           <DerivationTreeVisualizer rootNode={currentStep?.tree} height="320px" />
         </div>
       </div>

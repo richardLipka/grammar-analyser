@@ -62,25 +62,25 @@ export const LLView: React.FC<LLViewProps> = ({
       {/* Classification & Conflicts Summary */}
       <div className="card">
         <div className="card-title">
-          <span>LL(1) &amp; LL(2) Status</span>
+          <span>{t.llStatusTitle}</span>
           {llTable.isLL1 ? (
-            <span className="badge badge-success"><CheckCircle2 size={12} /> LL(1) Valid</span>
+            <span className="badge badge-success"><CheckCircle2 size={12} /> {t.ll1Valid}</span>
           ) : llTable.isLL2 ? (
-            <span className="badge badge-warning"><CheckCircle2 size={12} /> Not LL(1), but LL(2) Valid</span>
+            <span className="badge badge-warning"><CheckCircle2 size={12} /> {t.ll2Valid}</span>
           ) : (
-            <span className="badge badge-danger"><AlertTriangle size={12} /> Not LL(1) or LL(2)</span>
+            <span className="badge badge-danger"><AlertTriangle size={12} /> {t.notLL}</span>
           )}
         </div>
 
         {llTable.conflicts.length > 0 && (
           <div style={{ backgroundColor: 'var(--color-danger-subtle)', padding: '10px 14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-danger)' }}>
             <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--color-danger)', marginBottom: '4px' }}>
-              {llTable.conflicts.length} LL(1) Conflict(s) Detected:
+              {llTable.conflicts.length} {t.llConflictsDetected}
             </div>
             <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--color-danger)' }}>
               {llTable.conflicts.map((c, idx) => (
                 <li key={idx}>
-                  <strong>{c.conflictType} conflict</strong> on Non-Terminal <code>{c.nonTerminal}</code> with lookahead <code>'{c.lookahead}'</code>: {c.productions.map(formatProduction).join(' vs ')}
+                  <strong>{c.conflictType === 'First/First' ? t.firstFirstConflict : t.firstFollowConflict}</strong> {lang === 'cz' ? 'pro neterminál' : 'on Non-Terminal'} <code>{c.nonTerminal}</code> {lang === 'cz' ? 'se symbolem' : 'with lookahead'} <code>'{c.lookahead}'</code>: {c.productions.map(formatProduction).join(' vs ')}
                 </li>
               ))}
             </ul>
@@ -90,12 +90,12 @@ export const LLView: React.FC<LLViewProps> = ({
 
       {/* LL(1) Parsing Table */}
       <div className="card">
-        <div className="card-title">LL(1) Parsing Table M[A, a]</div>
+        <div className="card-title">{t.llTableTitle}</div>
         <div className="data-table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: '100px' }}>Non-Terminal</th>
+                <th style={{ width: '100px' }}>{t.colNonTerminal}</th>
                 {llTable.terminals.map(term => (
                   <th key={term} style={{ textAlign: 'center' }}>
                     <code>{term}</code>
@@ -151,7 +151,7 @@ export const LLView: React.FC<LLViewProps> = ({
             style={{ minHeight: 'unset', height: '38px', padding: '6px 12px' }}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Space-separated tokens (e.g. id + id * id)"
+            placeholder={t.tokensPlaceholder}
           />
           <button className="btn btn-primary" onClick={runParse}>
             {t.runSimulation}
@@ -163,7 +163,7 @@ export const LLView: React.FC<LLViewProps> = ({
           <button
             className="btn btn-secondary"
             onClick={() => { setIsPlaying(false); setCurrentStepIdx(0); }}
-            title="Reset"
+            title={t.reset}
           >
             <RotateCcw size={15} />
           </button>
@@ -171,14 +171,14 @@ export const LLView: React.FC<LLViewProps> = ({
             className="btn btn-secondary"
             onClick={() => { setIsPlaying(false); setCurrentStepIdx(prev => Math.max(0, prev - 1)); }}
             disabled={currentStepIdx === 0}
-            title="Step Back"
+            title={t.stepBackward}
           >
             <SkipBack size={15} />
           </button>
           <button
             className="btn btn-primary"
             onClick={() => setIsPlaying(p => !p)}
-            title={isPlaying ? "Pause" : "Play"}
+            title={isPlaying ? t.pause : t.play}
           >
             {isPlaying ? <Pause size={15} /> : <Play size={15} />}
           </button>
@@ -189,17 +189,17 @@ export const LLView: React.FC<LLViewProps> = ({
               setCurrentStepIdx(prev => Math.min((simulation?.steps.length || 1) - 1, prev + 1));
             }}
             disabled={!simulation || currentStepIdx >= simulation.steps.length - 1}
-            title="Step Forward"
+            title={t.stepForward}
           >
             <SkipForward size={15} />
           </button>
 
           <span style={{ fontSize: '12px', fontWeight: 600, margin: '0 8px', color: 'var(--color-text-secondary)' }}>
-            Step {currentStepIdx + 1} of {simulation?.steps.length || 0}
+            {t.stepCountLabel.replace('{current}', (currentStepIdx + 1).toString()).replace('{total}', (simulation?.steps.length || 0).toString())}
           </span>
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>Speed:</span>
+            <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{t.speed}</span>
             <input
               type="range"
               min="150"
@@ -217,7 +217,7 @@ export const LLView: React.FC<LLViewProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
             {/* Stack */}
             <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stack} (Top on right)</div>
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.stack} {t.topOnRight}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '6px' }}>
                 {currentStep.stack.map((sym, idx) => (
                   <span
@@ -270,7 +270,7 @@ export const LLView: React.FC<LLViewProps> = ({
                   ? 'var(--color-danger)'
                   : 'var(--color-primary)'
               }}>
-                {currentStep.action}
+                {lang === 'cz' ? (currentStep.actionCz || currentStep.action) : currentStep.action}
               </div>
             </div>
           </div>

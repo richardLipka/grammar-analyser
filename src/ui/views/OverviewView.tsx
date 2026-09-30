@@ -38,12 +38,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <ShieldCheck size={18} color="var(--color-primary)" />
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          <BadgeItem label={t.isLL1} ok={llTable.isLL1} conflictsCount={llTable.conflicts.length} />
-          <BadgeItem label={t.isLL2} ok={llTable.isLL2} conflictsCount={llTable.ll2Conflicts.length} />
-          <BadgeItem label={t.isLR0} ok={lr0Table.isConflictFree} conflictsCount={lr0Table.conflicts.length} />
-          <BadgeItem label={t.isSLR1} ok={slr1Table.isConflictFree} conflictsCount={slr1Table.conflicts.length} />
-          <BadgeItem label={t.isLALR1} ok={lalr1Table.isConflictFree} conflictsCount={lalr1Table.conflicts.length} />
-          <BadgeItem label={t.isLR1} ok={lr1Table.isConflictFree} conflictsCount={lr1Table.conflicts.length} />
+          <BadgeItem label={t.isLL1} ok={llTable.isLL1} conflictsCount={llTable.conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
+          <BadgeItem label={t.isLL2} ok={llTable.isLL2} conflictsCount={llTable.ll2Conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
+          <BadgeItem label={t.isLR0} ok={lr0Table.isConflictFree} conflictsCount={lr0Table.conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
+          <BadgeItem label={t.isSLR1} ok={slr1Table.isConflictFree} conflictsCount={slr1Table.conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
+          <BadgeItem label={t.isLALR1} ok={lalr1Table.isConflictFree} conflictsCount={lalr1Table.conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
+          <BadgeItem label={t.isLR1} ok={lr1Table.isConflictFree} conflictsCount={lr1Table.conflicts.length} passText={t.passZeroConflicts} conflictsSuffix={t.conflictsCountSuffix} />
         </div>
       </div>
 
@@ -86,7 +86,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)' }}>
             <div style={{ fontSize: '12px', fontWeight: 600 }}>{t.nullableSymbols}</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--color-warning)', marginTop: '4px' }}>
-              {analysis.nullable.size > 0 ? `{ ${[...analysis.nullable].join(', ')} }` : '∅ (none)'}
+              {analysis.nullable.size > 0 ? `{ ${[...analysis.nullable].join(', ')} }` : `∅ (${t.none})`}
             </div>
           </div>
 
@@ -108,7 +108,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
       {/* Numbered Productions List */}
       <div className="card">
-        <div className="card-title">Production Rules ({grammar.productions.length})</div>
+        <div className="card-title">{t.productionRules} ({grammar.productions.length})</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
           {grammar.productions.map(p => (
             <div
@@ -134,7 +134,13 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   );
 };
 
-const BadgeItem: React.FC<{ label: string; ok: boolean; conflictsCount: number }> = ({ label, ok, conflictsCount }) => {
+const BadgeItem: React.FC<{ label: string; ok: boolean; conflictsCount: number; passText: string; conflictsSuffix: string }> = ({
+  label,
+  ok,
+  conflictsCount,
+  passText,
+  conflictsSuffix
+}) => {
   return (
     <div
       style={{
@@ -153,7 +159,7 @@ const BadgeItem: React.FC<{ label: string; ok: boolean; conflictsCount: number }
           {label}
         </div>
         <div style={{ fontSize: '10.5px', color: 'var(--color-text-muted)' }}>
-          {ok ? 'Pass (0 conflicts)' : `${conflictsCount} conflict(s)`}
+          {ok ? passText : `${conflictsCount} ${conflictsSuffix}`}
         </div>
       </div>
     </div>

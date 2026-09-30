@@ -35,24 +35,24 @@ export const WordGeneratorView: React.FC<WordGeneratorViewProps> = ({ grammar, l
           <span>{t.tabWords}</span>
           <button className="btn btn-primary" onClick={refreshWords}>
             <RefreshCw size={14} />
-            Generate New Examples
+            {t.generateNewExamples}
           </button>
         </div>
         <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          Automatically generates shortest and random valid sentences in L(G), demonstrating the exact sequence of leftmost derivation steps.
+          {t.wordsDesc}
         </p>
       </div>
 
       {traces.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '30px', color: 'var(--color-text-muted)' }}>
-          No valid terminal words could be derived. Grammar may have unproductive non-terminals.
+          {t.noWordsGenerated}
         </div>
       ) : (
         <>
           {/* Word Selector Chips */}
           <div className="card">
             <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>
-              Generated Words in L(G):
+              {t.wordsInLanguage}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {traces.map((trace, idx) => (
@@ -76,9 +76,9 @@ export const WordGeneratorView: React.FC<WordGeneratorViewProps> = ({ grammar, l
                 <div className="card-title">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <GitBranch size={16} color="var(--color-primary)" />
-                    <span>Leftmost Derivation Sequence</span>
+                    <span>{t.leftmostSequence}</span>
                   </div>
-                  <span className="badge badge-success">{activeTrace.steps.length - 1} steps</span>
+                  <span className="badge badge-success">{t.derivationStepsCount.replace('{count}', (activeTrace.steps.length - 1).toString())}</span>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -95,10 +95,10 @@ export const WordGeneratorView: React.FC<WordGeneratorViewProps> = ({ grammar, l
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                        <span>Step {sIdx}</span>
+                        <span>{t.stepPrefix} {sIdx}</span>
                         {st.appliedRule && (
                           <span style={{ color: 'var(--color-primary)' }}>
-                            by {formatProduction(st.appliedRule)}
+                            {t.byRule} {formatProduction(st.appliedRule)}
                           </span>
                         )}
                       </div>
@@ -113,7 +113,7 @@ export const WordGeneratorView: React.FC<WordGeneratorViewProps> = ({ grammar, l
               {/* Derivation Tree Column */}
               <div className="card">
                 <div className="card-title">
-                  <span>Derivation Tree</span>
+                  <span>{t.derivationTree}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--color-primary)' }}>
                     "{activeTrace.word}"
                   </span>

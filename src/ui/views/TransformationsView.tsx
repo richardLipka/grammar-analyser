@@ -110,7 +110,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
       {/* Resulting Transformed Grammar & Apply Action */}
       <div className="card" style={{ border: '2px solid var(--color-primary)' }}>
         <div className="card-title">
-          <span>Transformed Grammar Output</span>
+          <span>{t.transformedOutputTitle}</span>
           <button
             className="btn btn-primary"
             onClick={() => onApplyGrammarText(formattedTransformed)}
@@ -152,12 +152,12 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
               }}
             >
               <div style={{ fontWeight: 700, fontSize: '13.5px', color: 'var(--color-text-primary)' }}>
-                Step {idx + 1}: {step.title}
+                {t.stepTitle.replace('{num}', (idx + 1).toString()).replace('{title}', lang === 'cz' ? (step.titleCz || step.title) : step.title)}
               </div>
               <p style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-                {step.description}
+                {lang === 'cz' ? (step.descriptionCz || step.description) : step.description}
               </p>
-              {step.mathExplanation && (
+              {(step.mathExplanationCz || step.mathExplanation) && (
                 <div style={{
                   marginTop: '6px',
                   fontSize: '11.5px',
@@ -167,12 +167,12 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
                   padding: '6px 10px',
                   borderRadius: 'var(--radius-sm)'
                 }}>
-                  {step.mathExplanation}
+                  {lang === 'cz' ? (step.mathExplanationCz || step.mathExplanation) : step.mathExplanation}
                 </div>
               )}
               {step.removedRules && step.removedRules.length > 0 && (
                 <div style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--color-danger)' }}>
-                  <strong>Removed rules:</strong> {step.removedRules.join(', ')}
+                  <strong>{t.removedRulesLabel}</strong> {step.removedRules.join(', ')}
                 </div>
               )}
             </div>

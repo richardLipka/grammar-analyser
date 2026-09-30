@@ -19,6 +19,7 @@ import {
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { generateShortestWords } from '../core/generator/wordGenerator';
+import { exportSetsToLatex, exportLRTableToLatex } from '../core/export/latexExport';
 
 describe('Grammar Parser & Syntax Variations', () => {
   it('parses arrow syntax with pipe alternatives', () => {
@@ -291,5 +292,72 @@ describe('Word Generator', () => {
 
     expect(words.length).toBeGreaterThan(0);
     expect(words[0].word).toBe('c');
+  });
+});
+
+describe('Bilingual Output Support', () => {
+  it('provides Czech translations for transformation steps and mathematical proofs', () => {
+    const text = `
+      E -> E "+" T | T
+      T -> "id"
+    `;
+    const g = parseGrammar(text).grammar!;
+    const res = removeLeftRecursion(g);
+
+    expect(res.steps.length).toBeGreaterThan(0);
+    for (const step of res.steps) {
+      expect(step.titleCz).toBeDefined();
+      expect(step.descriptionCz).toBeDefined();
+      expect(step.titleCz!.length).toBeGreaterThan(0);
+      expect(step.descriptionCz!.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('provides Czech action strings and error messages in LL and LR parsing simulations', () => {
+    const text = `
+      E -> T E'
+      E' -> "+" T E' | ε
+      T -> "id"
+    `;
+    const g = parseGrammar(text).grammar!;
+    const analysis = analyzeGrammar(g);
+    const llTable = buildLLTable(g, analysis);
+
+    const validLL = simulateLLParse(['id', '+', 'id'], g, llTable);
+    expect(validLL.accepted).toBe(true);
+    expect(validLL.steps.every(s => typeof s.actionCz === 'string' && s.actionCz.length > 0)).toBe(true);
+
+    const invalidLL = simulateLLParse(['+', 'id'], g, llTable);
+    expect(invalidLL.accepted).toBe(false);
+    expect(invalidLL.errorMessageCz).toBeDefined();
+
+    const lr0Aut = buildLR0Automaton(g, 'SLR(1)');
+    const lrTable = buildLRTable(lr0Aut, g, analysis);
+    const validLR = simulateLRParse(['id', '+', 'id'], g, lrTable);
+    expect(validLR.accepted).toBe(true);
+    expect(validLR.steps.every(s => typeof s.actionCz === 'string' && s.actionCz.length > 0)).toBe(true);
+
+    const invalidLR = simulateLRParse(['+', 'id'], g, lrTable);
+    expect(invalidLR.accepted).toBe(false);
+    expect(invalidLR.errorMessageCz).toBeDefined();
+  });
+
+  it('exports compile-ready LaTeX with Czech academic headers when requested', () => {
+    const text = `
+      S -> "a" S | ε
+    `;
+    const g = parseGrammar(text).grammar!;
+    const analysis = analyzeGrammar(g);
+    const lr0Aut = buildLR0Automaton(g, 'SLR(1)');
+    const lrTable = buildLRTable(lr0Aut, g, analysis);
+
+    const latexSets = exportSetsToLatex(g, analysis, 'cz');
+    expect(latexSets).toContain('Nulovatelný');
+    expect(latexSets).toContain('Ano');
+    expect(latexSets).toContain('Množiny FIRST a FOLLOW pro gramatiku');
+
+    const latexLR = exportLRTableToLatex(lrTable, 'cz');
+    expect(latexLR).toContain('Stav');
+    expect(latexLR).toContain('Rozkladová tabulka SLR(1)');
   });
 });

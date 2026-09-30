@@ -37,18 +37,19 @@ export function exportGrammarToLatex(g: Grammar): string {
   return lines.join('\n');
 }
 
-export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis): string {
+export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis, lang: 'en' | 'cz' = 'en'): string {
+  const isCz = lang === 'cz';
   const lines: string[] = [
     '% FIRST and FOLLOW Sets',
     '\\begin{table}[h]',
     '\\centering',
     '\\begin{tabular}{|c|c|l|l|}',
     '\\hline',
-    '\\textbf{Symbol} & \\textbf{Nullable} & \\textbf{FIRST} & \\textbf{FOLLOW} \\\\ \\hline'
+    `\\textbf{Symbol} & \\textbf{${isCz ? 'Nulovatelný' : 'Nullable'}} & \\textbf{FIRST} & \\textbf{FOLLOW} \\\\ \\hline`
   ];
 
   for (const nt of g.nonTerminals) {
-    const isNullable = analysis.nullable.has(nt) ? 'Yes' : 'No';
+    const isNullable = analysis.nullable.has(nt) ? (isCz ? 'Ano' : 'Yes') : (isCz ? 'Ne' : 'No');
     const firstSet = analysis.first1.get(nt) || new Set();
     const followSet = analysis.follow1.get(nt) || new Set();
 
@@ -59,12 +60,13 @@ export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis): string
   }
 
   lines.push('\\end{tabular}');
-  lines.push('\\caption{First and Follow Sets for Grammar}');
+  lines.push(`\\caption{${isCz ? 'Množiny FIRST a FOLLOW pro gramatiku' : 'First and Follow Sets for Grammar'}}`);
   lines.push('\\end{table}');
   return lines.join('\n');
 }
 
-export function exportLLTableToLatex(llTable: LLTable): string {
+export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en'): string {
+  const isCz = lang === 'cz';
   const cols = llTable.terminals;
   const colFormat = '|c|' + cols.map(() => 'c|').join('');
 
@@ -89,12 +91,13 @@ export function exportLLTableToLatex(llTable: LLTable): string {
   }
 
   lines.push('\\end{tabular}');
-  lines.push('\\caption{LL(1) Parse Table}');
+  lines.push(`\\caption{${isCz ? 'Rozkladová tabulka LL(1)' : 'LL(1) Parse Table'}}`);
   lines.push('\\end{table}');
   return lines.join('\n');
 }
 
-export function exportLRTableToLatex(table: LRTable): string {
+export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en'): string {
+  const isCz = lang === 'cz';
   const termCols = table.terminals;
   const ntCols = table.nonTerminals;
   const colFormat = '|c|' + termCols.map(() => 'c|').join('') + '|' + ntCols.map(() => 'c|').join('');
@@ -105,7 +108,7 @@ export function exportLRTableToLatex(table: LRTable): string {
     '\\centering',
     `\\begin{tabular}{${colFormat}}`,
     '\\hline',
-    `\\multirow{2}{*}{\\textbf{State}} & \\multicolumn{${termCols.length}}{|c|}{\\textbf{ACTION}} & \\multicolumn{${ntCols.length}}{|c|}{\\textbf{GOTO}} \\\\ \\cline{2-${1 + termCols.length + ntCols.length}}`,
+    `\\multirow{2}{*}{\\textbf{${isCz ? 'Stav' : 'State'}}} & \\multicolumn{${termCols.length}}{|c|}{\\textbf{ACTION}} & \\multicolumn{${ntCols.length}}{|c|}{\\textbf{GOTO}} \\\\ \\cline{2-${1 + termCols.length + ntCols.length}}`,
     ` & ${termCols.map(t => `\\textbf{${escapeLatex(t)}}`).join(' & ')} & ${ntCols.map(nt => `\\textbf{${escapeLatex(nt)}}`).join(' & ')} \\\\ \\hline`
   ];
 
@@ -127,7 +130,7 @@ export function exportLRTableToLatex(table: LRTable): string {
   }
 
   lines.push('\\end{tabular}');
-  lines.push(`\\caption{${table.variant} Parsing Table}`);
+  lines.push(`\\caption{${isCz ? `Rozkladová tabulka ${table.variant}` : `${table.variant} Parsing Table`}}`);
   lines.push('\\end{table}');
   return lines.join('\n');
 }

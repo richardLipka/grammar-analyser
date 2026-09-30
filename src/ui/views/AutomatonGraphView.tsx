@@ -61,7 +61,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         <div className="card-title">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Network size={18} color="var(--color-primary)" />
-            <span>LR Automaton State Graph</span>
+            <span>{t.graphTitle}</span>
           </div>
 
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -79,7 +79,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         </div>
 
         <p style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          Interactive state transition graph (DFA of item sets). Click any state to inspect items and table row. Drag background to pan, scroll to zoom.
+          {t.graphDesc}
         </p>
       </div>
 
@@ -96,7 +96,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
           <div className="card-title">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Info size={16} color="var(--color-primary)" />
-              <span>Inspecting State {selectedState.id} {selectedState.id === 0 ? '(Start State)' : ''}</span>
+              <span>{t.inspectingState.replace('{id}', selectedState.id.toString())} {selectedState.id === 0 ? t.startState : ''}</span>
             </div>
             <span className="badge badge-primary">{selectedVariant}</span>
           </div>
@@ -105,7 +105,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             {/* Item Sets in State */}
             <div>
               <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
-                LR Items in State:
+                {t.lrItemsInState}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {(selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)'
@@ -137,7 +137,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             {/* Outgoing Transitions */}
             <div>
               <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
-                Outgoing Transitions ({selectedState.transitions.size}):
+                {t.outgoingTransitions.replace('{count}', selectedState.transitions.size.toString())}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                 {[...selectedState.transitions.entries()].map(([sym, targetId]) => (
@@ -151,7 +151,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                       {sym}
                     </span>
                     <ArrowRight size={12} style={{ margin: '0 4px' }} />
-                    <span>State {targetId}</span>
+                    <span>{lang === 'cz' ? 'Stav' : 'State'} {targetId}</span>
                   </button>
                 ))}
               </div>
@@ -159,7 +159,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               {/* Table Row Preview */}
               <div style={{ marginTop: '14px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
-                  Parsing Table Row for State {selectedState.id}:
+                  {t.tableRowForState.replace('{id}', selectedState.id.toString())}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {activeTable.terminals.map(term => {

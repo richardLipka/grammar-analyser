@@ -12,6 +12,7 @@ export interface LRParseStep {
   symbolStack: string[];
   remainingInput: string[];
   action: string;
+  actionCz?: string;
   production?: Production;
   isError?: boolean;
   isAccepted?: boolean;
@@ -22,6 +23,7 @@ export interface LRSimulationResult {
   accepted: boolean;
   steps: LRParseStep[];
   errorMessage?: string;
+  errorMessageCz?: string;
   finalTree?: DerivationNode;
 }
 
@@ -56,13 +58,15 @@ export function simulateLRParse(
         symbolStack: [...symbolStack],
         remainingInput: remaining,
         action: `Error: No action in ACTION[State ${currentState}, '${lookahead}']`,
+        actionCz: `Chyba: Žádná akce v ACTION[Stav ${currentState}, '${lookahead}']`,
         isError: true,
         tree: treeStack.length > 0 ? cloneTree(treeStack[treeStack.length - 1]) : undefined
       });
       return {
         accepted: false,
         steps,
-        errorMessage: `Syntax error at token '${lookahead}': no valid action in state ${currentState}.`
+        errorMessage: `Syntax error at token '${lookahead}': no valid action in state ${currentState}.`,
+        errorMessageCz: `Syntaktická chyba na symbolu '${lookahead}': ve stavu ${currentState} neexistuje platná akce.`
       };
     }
 
@@ -87,6 +91,7 @@ export function simulateLRParse(
         symbolStack: [...symbolStack],
         remainingInput: remaining,
         action: `Shift: push token '${lookahead}', transition to State ${targetState}`,
+        actionCz: `Posuv (Shift): vložení symbolu '${lookahead}', přechod do stavu ${targetState}`,
         tree: cloneTree(leafNode)
       });
       continue;
@@ -117,12 +122,14 @@ export function simulateLRParse(
           symbolStack: [...symbolStack],
           remainingInput: remaining,
           action: `Error: Missing GOTO[State ${topState}, '${prod.lhs}']`,
+          actionCz: `Chyba: Chybí přechod v GOTO[Stav ${topState}, '${prod.lhs}']`,
           isError: true
         });
         return {
           accepted: false,
           steps,
-          errorMessage: `GOTO table missing transition for non-terminal '${prod.lhs}' from state ${topState}.`
+          errorMessage: `GOTO table missing transition for non-terminal '${prod.lhs}' from state ${topState}.`,
+          errorMessageCz: `V tabulce GOTO chybí přechod pro neterminál '${prod.lhs}' ze stavu ${topState}.`
         };
       }
 
@@ -146,6 +153,7 @@ export function simulateLRParse(
         symbolStack: [...symbolStack],
         remainingInput: remaining,
         action: `Reduce: ${formatProduction(prod)} -> GOTO State ${gotoState}`,
+        actionCz: `Redukce: ${formatProduction(prod)} -> GOTO stav ${gotoState}`,
         production: prod,
         tree: cloneTree(parentNode)
       });
@@ -160,6 +168,7 @@ export function simulateLRParse(
         symbolStack: [...symbolStack],
         remainingInput: remaining,
         action: 'Accept: Word successfully parsed!',
+        actionCz: 'Přijetí (Accept): Slovo bylo úspěšně analyzováno!',
         isAccepted: true,
         tree: finalTree ? cloneTree(finalTree) : undefined
       });
@@ -167,7 +176,12 @@ export function simulateLRParse(
     }
   }
 
-  return { accepted: false, steps, errorMessage: 'Maximum simulation steps exceeded.' };
+  return {
+    accepted: false,
+    steps,
+    errorMessage: 'Maximum simulation steps exceeded.',
+    errorMessageCz: 'Překročen maximální počet kroků simulace.'
+  };
 }
 
 function cloneTree(node: DerivationNode): DerivationNode {
