@@ -48,7 +48,8 @@
     - occurrence on a right-hand side: substitution of its right-hand sides, **absorption of the following symbol** `A → α B a β` ⇒ `A → α [Ba] β`, `[Ba] → αᵢ a` (turns a FIRST-FOLLOW conflict into a FIRST-FIRST one for left factoring), and a copy `B₂` for this occurrence (reduction of FOLLOW sets)
     - LL(1) conflicts are marked (FF / FFL) and the actions that address them are tagged
   - Immediate and indirect left-recursion elimination (Paull's algorithm, with logged preprocessing of ε-rules and cycles)
-  - Left factorization
+  - Left-corner transformation (Rosenkrantz & Lewis) as an alternative way of removing all left recursion: only the left-recursive non-terminals are rewritten (`A → X [A-X]`, `[A-X] → β [A-B]` for `B → X β`, `[A-A] → ε`), no order of the non-terminals is needed, and helpers with a single unit rule are merged afterwards
+  - Left factorization, and right factoring of common suffixes (`A → α₁ β | α₂ β` ⇒ `A → A' β`, `A' → α₁ | α₂`)
   - Non-terminal substitution (inlining/expansion)
   - Chomsky Normal Form (CNF)
   - Greibach Normal Form (GNF): CNF, ordering $A_1 \dots A_n$, substitution, ε-free elimination of left recursion and back-substitution

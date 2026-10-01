@@ -238,7 +238,44 @@ The tests in `src/test/lrLecture.test.ts` use the lecture's examples G11–G14 a
 **A remark on the lecture's absorption example** (`A → B a C`, `B → e | a b C`, `C → e | c B C`). After the absorption B still has a FIRST-FOLLOW conflict on `a`. The slide says the conflict is gone, but the new rule `[Ba] → a b C a` puts `a` after C, and `C → c B C` passes FOLLOW(C) on to FOLLOW(B). The transformation is correct, and the example illustrates the lecture's own warning that removing one conflict can cause another. C has an FFL conflict on `c` both before and after.
 
 **Not implemented (candidates):**
-- the left-corner transformation, as an alternative to Paull's algorithm;
-- right factoring of common suffixes;
 - removing ambiguity by operator precedence and associativity, which needs the user's decision on the intended meaning;
 - an automatic search for an LL(1) form, which may not terminate and is not guaranteed to succeed.
+
+## 8. Left-corner transformation and right factoring
+
+**Left-corner transformation** (Rosenkrantz & Lewis, 1970). This is the selective form used by Johnson (1998) and Moore (2000): only the left-recursive non-terminals N_L are rewritten, and the others keep their rules.
+
+For A ∈ N_L, let R(A) be the non-terminals of N_L that are left corners of A through N_L, A included. A's rules are replaced by:
+- `A → X [A-X]` for every left corner X ∉ N_L of a B ∈ R(A);
+- `[A-X] → β [A-B]` for every rule `B → X β` with B ∈ R(A);
+- `[A-A] → ε`.
+
+**Why it is correct.** The leftmost spine of a derivation from A goes down through N_L until the first symbol X ∉ N_L. In an ε-free grammar the spine ends at a terminal, so such an X always exists. The new grammar generates X first and then climbs back up the spine with the `[A-·]` helpers.
+
+**Why no left recursion remains.** A left-recursive cycle among the new left corners would map back to a cycle in the original grammar through some X ∉ N_L, which would make X left-recursive.
+
+**Preparation.** The grammar is first made ε-free and cycle-free, with the same logged preparation as Paull's algorithm (now shared code).
+
+**Simplification.** Afterwards, helpers with a single unit rule are merged into their target, and useless helpers are removed.
+
+**Example.** The expression grammar becomes:
+- `E → F [E-T]`
+- `[E-T] → * F [E-T] | [E-E]`
+- `[E-E] → + T [E-E] | ε`
+- `T → F [T-T]`
+- `[T-T] → * F [T-T] | ε`
+
+The result is LL(1). Unlike Paull's algorithm, no order of the non-terminals is needed. Characters that would break a bracketed name in the editor (`< > # | "`) are replaced in helper names by look-alikes, so the result reads back unchanged.
+
+**Right factoring**, the mirror image of left factoring: `A → α₁ β | α₂ β` becomes `A → A' β`, `A' → α₁ | α₂`. It is offered for each non-terminal (one suffix at a time) and for the whole grammar (the longest suffix first, until none is left).
+
+**Where to find them.**
+- In the click menu: the left-corner transformation is offered on every left-recursive non-terminal and is tagged as helping with the conflict. Right factoring appears next to left factoring.
+- In the "Celá gramatika…" menu and on the Transformations tab: both whole-grammar versions.
+
+**Tests** (`src/test/leftCornerRightFactor.test.ts`, plus both constructions in the equivalence loop of `correctness.test.ts`):
+- language equivalence on all test grammars;
+- no left recursion afterwards, including indirect and mutual recursion, ε-rules and cycles;
+- agreement with Paull's algorithm on the language;
+- the LL(1) result for the expression grammar;
+- an editor round trip with `>` and `#` as left corners.

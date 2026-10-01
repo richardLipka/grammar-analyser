@@ -20,6 +20,8 @@ import {
   leftFactorGrammar,
   convertToChomsky,
   convertToGreibach,
+  leftCornerTransform,
+  rightFactorGrammar,
   applySymbolTransformation,
   getAvailableTransformationsForSymbol
 } from '../core/processor/grammarProcessor';
@@ -216,7 +218,9 @@ describe('Transformations preserve the language', () => {
     removeLeftRecursion,
     leftFactorGrammar,
     convertToChomsky,
-    convertToGreibach
+    convertToGreibach,
+    leftCornerTransform,
+    rightFactorGrammar
   };
 
   for (const [name, text] of Object.entries(cases)) {
@@ -236,11 +240,13 @@ describe('Transformations preserve the language', () => {
     expect(res.productions.some(p => p.rhs.includes(res.startSymbol))).toBe(false);
   });
 
-  it('left recursion removal leaves no left recursion', () => {
+  it('left recursion removal leaves no left recursion (Paull and left corner)', () => {
     for (const text of [cases.arithmetic, cases.indirectLR, cases.startOnRhs, cases.onlyLeftRecursive, cases.cycle]) {
-      const res = removeLeftRecursion(parse(text)).transformedGrammar;
-      const lr = computeLeftRecursion(res, computeNullable(res));
-      expect([...lr.immediate, ...lr.indirect]).toEqual([]);
+      for (const fn of [removeLeftRecursion, leftCornerTransform]) {
+        const res = fn(parse(text)).transformedGrammar;
+        const lr = computeLeftRecursion(res, computeNullable(res));
+        expect([...lr.immediate, ...lr.indirect]).toEqual([]);
+      }
     }
   });
 

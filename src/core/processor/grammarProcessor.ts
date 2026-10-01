@@ -54,6 +54,8 @@ export type SymbolTransformationType =
   | 'eliminateImmediateLeftRecursion'
   | 'eliminateImmediateLeftRecursionEpsFree'
   | 'leftFactor'
+  | 'rightFactor'
+  | 'leftCorner'
   | 'eliminateEpsilon'
   | 'eliminateUnit'
   | 'substitute'
@@ -507,27 +509,11 @@ function removeNonGeneratingOnly(g: Grammar): { grammar: Grammar; removed: strin
 }
 
 /**
- * Removes all (immediate and indirect) left recursion. Paull's algorithm
- * requires a grammar without ε-rules and cycles A ⇒+ A, so these are removed
- * first when present (each preprocessing step is logged).
+ * Preparation shared by Paull's algorithm and the left-corner transformation:
+ * both need a grammar without non-generating symbols, ε-rules and cycles
+ * A ⇒+ A. Only what is present is removed, and every step is logged.
  */
-export function removeLeftRecursion(g: Grammar): TransformationResult {
-  const steps: TransformationStep[] = [];
-  const lr = computeLeftRecursion(g, computeNullable(g));
-
-  if (lr.immediate.size === 0 && lr.indirect.size === 0) {
-    const result = normalizeGrammar(cloneGrammar(g));
-    return {
-      transformedGrammar: result,
-      steps: withSnapshot([{
-        title: 'No Left Recursion',
-        titleCz: 'Žádná levá rekurze',
-        description: 'No non-terminal A satisfies A ⇒+ A α; the grammar is unchanged.',
-        descriptionCz: 'Žádný neterminál nesplňuje A ⇒+ A α; gramatika zůstává beze změny.'
-      }], result)
-    };
-  }
-
+function prepareForLeftRecursionRemoval(g: Grammar, steps: TransformationStep[], methodEn: string, methodCz: string): Grammar {
   let current = normalizeGrammar(cloneGrammar(g));
 
   // Preprocessing 1: non-generating symbols (A -> A α only) would otherwise turn into A -> A'.
@@ -551,8 +537,8 @@ export function removeLeftRecursion(g: Grammar): TransformationResult {
     steps.push({
       title: 'Preprocessing: Eliminate ε-Rules',
       titleCz: 'Příprava: odstranění ε-pravidel',
-      description: 'Paull\'s algorithm requires an ε-free grammar, otherwise left recursion can hide behind a nullable prefix (A -> B A α with B ⇒* ε).',
-      descriptionCz: 'Paullův algoritmus vyžaduje gramatiku bez ε-pravidel, jinak se levá rekurze může skrývat za prefixem, z něhož lze odvodit ε (A -> B A α, kde B ⇒* ε).',
+      description: `${methodEn} requires an ε-free grammar, otherwise left recursion can hide behind a nullable prefix (A -> B A α with B ⇒* ε).`,
+      descriptionCz: `${methodCz.charAt(0).toUpperCase()}${methodCz.slice(1)} vyžaduje gramatiku bez ε-pravidel, jinak se levá rekurze může skrývat za prefixem, z něhož lze odvodit ε (A -> B A α, kde B ⇒* ε).`,
       removedRules: eps.steps.flatMap(s => s.removedRules || []),
       addedRules: eps.steps.flatMap(s => s.addedRules || []),
       intermediateGrammar: cloneGrammar(current)
@@ -566,14 +552,39 @@ export function removeLeftRecursion(g: Grammar): TransformationResult {
     steps.push({
       title: 'Preprocessing: Eliminate Unit Rules (Cycles)',
       titleCz: 'Příprava: odstranění jednoduchých pravidel (cyklů)',
-      description: 'The grammar contains a cycle A ⇒+ A, which Paull\'s algorithm cannot handle; unit rules are eliminated.',
-      descriptionCz: 'Gramatika obsahuje cyklus A ⇒+ A, se kterým si Paullův algoritmus neporadí; odstraní se jednoduchá pravidla.',
+      description: `The grammar contains a cycle A ⇒+ A, which ${methodEn} cannot handle; unit rules are eliminated.`,
+      descriptionCz: `Gramatika obsahuje cyklus A ⇒+ A, se kterým si ${methodCz} neporadí; odstraní se jednoduchá pravidla.`,
       removedRules: unit.steps.flatMap(s => s.removedRules || []),
       addedRules: unit.steps.flatMap(s => s.addedRules || []),
       intermediateGrammar: cloneGrammar(current)
     });
   }
+  return current;
+}
 
+/**
+ * Removes all (immediate and indirect) left recursion. Paull's algorithm
+ * requires a grammar without ε-rules and cycles A ⇒+ A, so these are removed
+ * first when present (each preprocessing step is logged).
+ */
+export function removeLeftRecursion(g: Grammar): TransformationResult {
+  const steps: TransformationStep[] = [];
+  const lr = computeLeftRecursion(g, computeNullable(g));
+
+  if (lr.immediate.size === 0 && lr.indirect.size === 0) {
+    const result = normalizeGrammar(cloneGrammar(g));
+    return {
+      transformedGrammar: result,
+      steps: withSnapshot([{
+        title: 'No Left Recursion',
+        titleCz: 'Žádná levá rekurze',
+        description: 'No non-terminal A satisfies A ⇒+ A α; the grammar is unchanged.',
+        descriptionCz: 'Žádný neterminál nesplňuje A ⇒+ A α; gramatika zůstává beze změny.'
+      }], result)
+    };
+  }
+
+  const current = prepareForLeftRecursionRemoval(g, steps, "Paull's algorithm", 'Paullův algoritmus');
   const table = new RuleTable(current);
   const order = [...table.order];
 
@@ -1094,6 +1105,19 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
     });
   }
 
+  // 1b. Left-corner transformation (all left recursion, also indirect)
+  const lrInfo = computeLeftRecursion(g, computeNullable(g));
+  if (lrInfo.immediate.has(nt) || lrInfo.indirect.has(nt)) {
+    available.push({
+      id: 'leftCorner',
+      type: 'leftCorner',
+      labelEn: `Remove left recursion by the left-corner transformation (whole grammar)`,
+      labelCz: `Odstranit levou rekurzi transformací levého rohu (celá gramatika)`,
+      descriptionEn: `Rosenkrantz & Lewis: every left-recursive A gets A -> X [A-X] for its left corners X outside the left-recursive cycle, [A-X] -> β [A-B] for B -> X β and [A-A] -> ε. An alternative to Paull's algorithm that needs no order of the non-terminals.`,
+      descriptionCz: `Rosenkrantz a Lewis: každý levorekurzivní A dostane A -> X [A-X] pro své levé rohy X mimo levorekurzivní cyklus, [A-X] -> β [A-B] pro B -> X β a [A-A] -> ε. Alternativa k Paullovu algoritmu, která nepotřebuje uspořádání neterminálů.`
+    });
+  }
+
   // 2. Left Factorization (detect common prefix among alternatives)
   const prefixes = new Map<string, string[]>();
   for (let i = 0; i < ntProds.length; i++) {
@@ -1118,6 +1142,21 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
         details: { prefix: cp }
       });
     }
+  }
+
+  // 2b. Right factoring (common suffix among alternatives)
+  for (const cs of commonSuffixes(ntProds.map(p => p.rhs))) {
+    const suffixKey = cs.join(' ');
+    const matchCount = ntProds.filter(p => hasSuffix(p.rhs, cs)).length;
+    available.push({
+      id: `rightFactor:${suffixKey}`,
+      type: 'rightFactor',
+      labelEn: `Right Factorize suffix '${suffixKey}' (${matchCount} rules)`,
+      labelCz: `Pravá faktorizace přípony '${suffixKey}' (počet pravidel: ${matchCount})`,
+      descriptionEn: `Extracts the common suffix '${suffixKey}' of ${matchCount} alternatives of '${nt}': ${nt} -> ${nt}' ${suffixKey}, ${nt}' -> the different beginnings.`,
+      descriptionCz: `Vytkne společnou příponu '${suffixKey}' alternativ neterminálu '${nt}' (počet: ${matchCount}): ${nt} -> ${nt}' ${suffixKey}, ${nt}' -> jejich různé začátky.`,
+      details: { prefix: cs }
+    });
   }
 
   // 3. Epsilon-Production Elimination (S -> ε with S absent from right-hand sides is already allowed)
@@ -1242,6 +1281,11 @@ export function applySymbolTransformation(g: Grammar, nt: string, transId: strin
   }
   if (transId === 'eliminateImmediateLeftRecursion') return eliminateImmediateLeftRecursionForSymbol(g, nt);
   if (transId === 'eliminateImmediateLeftRecursionEpsFree') return eliminateImmediateLeftRecursionForSymbol(g, nt, false);
+  if (transId === 'leftCorner') return leftCornerTransform(g);
+  if (transId.startsWith('rightFactor:')) {
+    const suffixKey = transId.substring('rightFactor:'.length);
+    return rightFactorSymbol(g, nt, suffixKey ? suffixKey.split(' ') : undefined);
+  }
   if (transId.startsWith('mergeEquivalent:')) return mergeEquivalentNonTerminal(g, nt, transId.substring('mergeEquivalent:'.length));
   if (transId.startsWith('leftFactor:')) {
     const prefixKey = transId.substring('leftFactor:'.length);
@@ -1694,7 +1738,7 @@ function absorbedRules(g: Grammar, B: string, X: string, n: string): Alt[] {
 
 /** Name of the non-terminal [B X] created by absorbing X after B (reused when it already has exactly these rules). */
 function absorbedName(g: Grammar, B: string, X: string): { name: string; reuse: boolean } {
-  const base = `[${B}${X}]`;
+  const base = `[${B}${nameFragment(X)}]`;
   if (g.nonTerminals.has(base)) {
     const expected = absorbedRules(g, B, X, base).map(altKey).sort().join('\u0001');
     const actual = g.productions.filter(p => p.lhs === base).map(p => altKey(p.rhs)).sort().join('\u0001');
@@ -1885,4 +1929,240 @@ export function getAvailableTransformationsForOccurrence(g: Grammar, occ: RhsOcc
     });
   }
   return list;
+}
+
+// ---------------------------------------------------------------------------
+// Left-corner transformation (Rosenkrantz & Lewis 1970)
+// ---------------------------------------------------------------------------
+
+/** Characters that would end or split a bracketed name in the editor are replaced by look-alikes. */
+function nameFragment(sym: string): string {
+  return sym.replace(/</g, '‹').replace(/>/g, '›').replace(/#/g, '♯').replace(/\|/g, '¦').replace(/"/g, '″');
+}
+
+/**
+ * Left-corner transformation (Rosenkrantz & Lewis 1970), applied selectively to
+ * the left-recursive non-terminals N_L (as in Johnson 1998 and Moore 2000).
+ * For A ∈ N_L let R(A) be the non-terminals of N_L that are left corners of A
+ * through N_L (A included). The rules of A are replaced by
+ *   A → X [A-X]        for every left corner X ∉ N_L of some B ∈ R(A)
+ *   [A-X] → β [A-B]    for every rule B → X β with B ∈ R(A)
+ *   [A-A] → ε
+ * [A-X] generates what completes an A once its left corner X has been read.
+ * The other non-terminals keep their rules. The grammar must be ε-free and
+ * cycle-free (prepared as for Paull's algorithm); then no left recursion
+ * remains, since a new left-recursive cycle would need a left-recursive X ∉ N_L.
+ */
+export function leftCornerTransform(g: Grammar): TransformationResult {
+  const steps: TransformationStep[] = [];
+  const lr0 = computeLeftRecursion(g, computeNullable(g));
+  if (lr0.immediate.size === 0 && lr0.indirect.size === 0) {
+    const result = normalizeGrammar(cloneGrammar(g));
+    return {
+      transformedGrammar: result,
+      steps: withSnapshot([{
+        title: 'No Left Recursion',
+        titleCz: 'Žádná levá rekurze',
+        description: 'No non-terminal A satisfies A ⇒+ A α; the grammar is unchanged.',
+        descriptionCz: 'Žádný neterminál nesplňuje A ⇒+ A α; gramatika zůstává beze změny.'
+      }], result)
+    };
+  }
+
+  const current = prepareForLeftRecursionRemoval(g, steps, 'The left-corner transformation', 'transformace levého rohu');
+  const lr = computeLeftRecursion(current, computeNullable(current));
+  const NL = new Set([...lr.immediate, ...lr.indirect]);
+  const table = new RuleTable(current);
+  const order = table.order.filter(nt => NL.has(nt));
+  if (order.length === 0) {
+    const result = table.toGrammar(current.startSymbol);
+    return { transformedGrammar: result, steps: withSnapshot(steps, result) };
+  }
+
+  steps.push({
+    title: 'Left-Recursive Non-Terminals',
+    titleCz: 'Levorekurzivní neterminály',
+    description: `N_L = ${fmtSet(order, '∅')}. Only these non-terminals are transformed; the others keep their rules. A derivation of A ∈ N_L goes down its left corners A, B₁, B₂, … until a symbol X outside N_L; the transformed grammar generates X first and then climbs back up to A.`,
+    descriptionCz: `N_L = ${fmtSet(order, '∅')}. Transformují se jen tyto neterminály, ostatní si ponechají svá pravidla. Odvození z A ∈ N_L sestupuje po levých rozích A, B₁, B₂, … až k symbolu X mimo N_L; upravená gramatika vygeneruje nejprve X a pak „stoupá“ zpět k A.`,
+    mathExplanation: 'A → X [A-X]  (X ∉ N_L a left corner),   [A-X] → β [A-B]  for B → X β,   [A-A] → ε',
+    mathExplanationCz: 'A → X [A-X]  (X ∉ N_L levý roh),   [A-X] → β [A-B]  pro B → X β,   [A-A] → ε'
+  });
+
+  const original = new Map(order.map(nt => [nt, table.get(nt).map(r => [...r])]));
+  const helpers = new Set<string>();
+  for (const A of order) {
+    // R(A): left corners of A inside N_L
+    const reach = [A];
+    for (let i = 0; i < reach.length; i++) {
+      for (const r of original.get(reach[i])!) {
+        if (r.length > 0 && NL.has(r[0]) && !reach.includes(r[0])) reach.push(r[0]);
+      }
+    }
+    const names = new Map<string, string>();
+    const helperRules = new Map<string, Alt[]>();
+    const helper = (X: string) => {
+      if (!names.has(X)) {
+        const name = table.fresh(`[${A}-${nameFragment(X)}]`);
+        names.set(X, name);
+        helperRules.set(name, []);
+        helpers.add(name);
+      }
+      return names.get(X)!;
+    };
+    const aRules: Alt[] = [];
+    for (const B of reach) {
+      for (const r of original.get(B)!) {
+        if (r.length === 0) continue; // cannot happen after the preparation
+        const X = r[0];
+        if (!NL.has(X) && !aRules.some(a => a[0] === X)) aRules.push([X, helper(X)]);
+        helperRules.get(helper(X))!.push([...r.slice(1), helper(B)]);
+      }
+    }
+    helperRules.get(helper(A))!.push([]);
+
+    table.set(A, aRules);
+    let pos = table.order.indexOf(A);
+    for (const [name, rules] of helperRules) {
+      table.rules.set(name, dedupeAlts(rules));
+      table.order.splice(++pos, 0, name);
+    }
+    if (table.size() > MAX_PRODUCTIONS) return abortTooLarge(steps, g);
+
+    steps.push({
+      title: `Left-Corner Transformation of ${A}`,
+      titleCz: `Transformace levého rohu pro ${A}`,
+      description: `Left corners of ${A} inside N_L: ${fmtSet(reach, '∅')}. ${A} now starts with ${fmtSet(aRules.map(r => r[0]), '∅')}; each [${A}-X] adds the rest of a rule B → X β and continues with [${A}-B] until [${A}-${A}] → ε.`,
+      descriptionCz: `Levé rohy ${A} uvnitř N_L: ${fmtSet(reach, '∅')}. ${A} nyní začíná symboly ${fmtSet(aRules.map(r => r[0]), '∅')}; každý [${A}-X] doplní zbytek pravidla B → X β a pokračuje [${A}-B] až k [${A}-${A}] → ε.`,
+      removedRules: original.get(A)!.map(r => fmtRule(A, r)),
+      addedRules: [...aRules.map(r => fmtRule(A, r)), ...[...helperRules].flatMap(([n, rules]) => rules.map(r => fmtRule(n, r)))]
+    });
+  }
+
+  let result = table.toGrammar(current.startSymbol);
+
+  // Simplification: a helper with the single rule N → M (M a non-terminal) is replaced by M,
+  // and helpers that are unreachable or generate nothing are dropped.
+  const replaced: string[] = [];
+  for (let guard = 0; guard < 1000; guard++) {
+    const unit = [...helpers].find(n => {
+      const rules = result.productions.filter(p => p.lhs === n);
+      return rules.length === 1 && rules[0].rhs.length === 1 && result.nonTerminals.has(rules[0].rhs[0]) && rules[0].rhs[0] !== n;
+    });
+    if (!unit) break;
+    const target = result.productions.find(p => p.lhs === unit)!.rhs[0];
+    replaced.push(`${unit} → ${target}`);
+    helpers.delete(unit);
+    result = buildGrammar(result, result.productions
+      .filter(p => p.lhs !== unit)
+      .map(p => ({ lhs: p.lhs, rhs: p.rhs.map(s => (s === unit ? target : s)) })), result.startSymbol);
+  }
+  const endable = computeEndable(result);
+  const deadHelpers = [...helpers].filter(n => !endable.has(n));
+  let pruned = buildGrammar(result, result.productions.filter(p => !deadHelpers.includes(p.lhs) && !p.rhs.some(s => deadHelpers.includes(s))), result.startSymbol);
+  const reachable = computeReachable(pruned);
+  const unreachableHelpers = [...helpers].filter(n => pruned.nonTerminals.has(n) && !reachable.has(n));
+  pruned = buildGrammar(pruned, pruned.productions.filter(p => !unreachableHelpers.includes(p.lhs)), pruned.startSymbol);
+  const removedHelpers = [...deadHelpers, ...unreachableHelpers];
+  result = pruned;
+
+  if (replaced.length > 0 || removedHelpers.length > 0) {
+    steps.push({
+      title: 'Simplification',
+      titleCz: 'Zjednodušení',
+      description: (replaced.length > 0 ? `Helpers with a single unit rule were replaced by its right-hand side: ${replaced.join(', ')}. ` : '') +
+        (removedHelpers.length > 0 ? `Useless helpers were removed: ${fmtSet(removedHelpers, '∅')}.` : ''),
+      descriptionCz: (replaced.length > 0 ? `Pomocné neterminály s jediným jednoduchým pravidlem byly nahrazeny jeho pravou stranou: ${replaced.join(', ')}. ` : '') +
+        (removedHelpers.length > 0 ? `Odstraněny zbytečné pomocné neterminály: ${fmtSet(removedHelpers, '∅')}.` : '')
+    });
+  }
+
+  return { transformedGrammar: result, steps: withSnapshot(steps, result) };
+}
+
+// ---------------------------------------------------------------------------
+// Right factoring (common suffixes)
+// ---------------------------------------------------------------------------
+
+function commonSuffix(a: string[], b: string[]): string[] {
+  const suffix: string[] = [];
+  for (let i = 1; i <= Math.min(a.length, b.length); i++) {
+    if (a[a.length - i] !== b[b.length - i]) break;
+    suffix.unshift(a[a.length - i]);
+  }
+  return suffix;
+}
+
+function hasSuffix(arr: string[], suffix: string[]): boolean {
+  if (arr.length < suffix.length) return false;
+  return suffix.every((s, i) => arr[arr.length - suffix.length + i] === s);
+}
+
+/** Common suffixes shared by at least two alternatives of nt (each listed once). */
+function commonSuffixes(alts: Alt[]): string[][] {
+  const found = new Map<string, string[]>();
+  for (let i = 0; i < alts.length; i++) {
+    for (let j = i + 1; j < alts.length; j++) {
+      const cs = commonSuffix(alts[i], alts[j]);
+      if (cs.length > 0 && !found.has(cs.join(' '))) found.set(cs.join(' '), cs);
+    }
+  }
+  return [...found.values()];
+}
+
+/** A → α₁ β | α₂ β  ⟹  A → A' β,  A' → α₁ | α₂ (the mirror image of left factoring). */
+export function rightFactorSymbol(g: Grammar, nt: string, targetSuffix?: string[]): TransformationResult {
+  const table = new RuleTable(g);
+  const alts = table.get(nt);
+
+  let suffix: string[] = targetSuffix || [];
+  if (suffix.length === 0) {
+    for (const cs of commonSuffixes(alts)) if (cs.length > suffix.length) suffix = cs;
+  }
+  const matching = alts.filter(a => hasSuffix(a, suffix));
+  if (suffix.length === 0 || matching.length < 2) return unchanged(g);
+
+  const freshNt = table.addAfter(nt, `${nt}'`, matching.map(a => a.slice(0, a.length - suffix.length)));
+  const firstIdx = alts.findIndex(a => hasSuffix(a, suffix));
+  table.set(nt, alts.flatMap((a, idx) => (idx === firstIdx ? [[freshNt, ...suffix]] : hasSuffix(a, suffix) ? [] : [a])));
+  const result = table.toGrammar();
+
+  const suffixStr = suffix.join(' ');
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Right Factorize ${nt} on suffix '${suffixStr}'`,
+      titleCz: `Pravá faktorizace ${nt} podle přípony '${suffixStr}'`,
+      description: `Extracted the common suffix '${suffixStr}' of ${matching.length} alternatives of '${nt}'; their different beginnings form the new non-terminal '${freshNt}'.`,
+      descriptionCz: `Vytknuta společná přípona '${suffixStr}' ${matching.length} alternativ '${nt}'; jejich různé začátky tvoří nový neterminál '${freshNt}'.`,
+      mathExplanation: `${nt} -> α₁ β | α₂ β  ⟹  ${nt} -> ${freshNt} β,  ${freshNt} -> α₁ | α₂`,
+      mathExplanationCz: `${nt} -> α₁ β | α₂ β  ⟹  ${nt} -> ${freshNt} β,  ${freshNt} -> α₁ | α₂`,
+      addedRules: [fmtRule(nt, [freshNt, ...suffix]), ...table.get(freshNt).map(r => fmtRule(freshNt, r))],
+      removedRules: matching.map(a => fmtRule(nt, a)),
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/** Right factoring of the whole grammar: the longest common suffix first, until none is left. */
+export function rightFactorGrammar(g: Grammar): TransformationResult {
+  const steps: TransformationStep[] = [];
+  let current = normalizeGrammar(cloneGrammar(g));
+  for (let iteration = 1; iteration < 500; iteration++) {
+    const target = [...new Set(current.productions.map(p => p.lhs))].find(nt =>
+      commonSuffixes(current.productions.filter(p => p.lhs === nt).map(p => p.rhs)).length > 0);
+    if (!target) break;
+    const res = rightFactorSymbol(current, target);
+    if (res.steps.length === 0) break;
+    current = res.transformedGrammar;
+    steps.push(...res.steps.map(s => ({ ...s, intermediateGrammar: undefined })));
+  }
+  if (steps.length === 0) {
+    steps.push({
+      title: 'Nothing to Factor',
+      titleCz: 'Není co faktorizovat',
+      description: 'No two alternatives of the same non-terminal share a common suffix.',
+      descriptionCz: 'Žádné dvě alternativy téhož neterminálu nemají společnou příponu.'
+    });
+  }
+  return { transformedGrammar: current, steps: withSnapshot(steps, current) };
 }

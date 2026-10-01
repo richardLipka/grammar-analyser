@@ -81,7 +81,7 @@ export const GrammarClickView: React.FC<GrammarClickViewProps> = ({ grammar, ana
   const helps = (tr: AvailableSymbolTransformation, nt: string): boolean => {
     const c = conflictsOf(nt);
     if (tr.type === 'leftFactor' || tr.type === 'expandLeadingNT') return c.ff.length > 0;
-    if (tr.type === 'eliminateImmediateLeftRecursion' || tr.type === 'eliminateImmediateLeftRecursionEpsFree') return true;
+    if (tr.type === 'eliminateImmediateLeftRecursion' || tr.type === 'eliminateImmediateLeftRecursionEpsFree' || tr.type === 'leftCorner') return true;
     if (tr.type === 'absorbFollowing' && tr.details?.follower && tr.details.occurrence) {
       const owner = grammar.productions.find(p => p.id === tr.details!.occurrence!.productionId)?.rhs[tr.details.occurrence.position];
       const ownerConflicts = owner ? conflictsOf(owner).ffl : [];

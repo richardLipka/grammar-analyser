@@ -6,6 +6,8 @@ import {
   removeUnitRules,
   removeLeftRecursion,
   leftFactorGrammar,
+  leftCornerTransform,
+  rightFactorGrammar,
   convertToChomsky,
   convertToGreibach
 } from '../core/processor/grammarProcessor';
@@ -25,7 +27,9 @@ export const WHOLE_GRAMMAR_TRANSFORMATIONS: {
   { id: 'eps', fn: removeEpsilonRules, label: t => t.btnRemoveEps, hint: t => t.hintEps },
   { id: 'units', fn: removeUnitRules, label: t => t.btnRemoveUnits, hint: t => t.hintUnits },
   { id: 'leftrec', fn: removeLeftRecursion, label: t => t.btnRemoveLeftRec, hint: t => t.hintLeftRec },
+  { id: 'leftcorner', fn: leftCornerTransform, label: t => t.btnLeftCorner, hint: t => t.hintLeftCorner },
   { id: 'factor', fn: leftFactorGrammar, label: t => t.btnLeftFactor, hint: t => t.hintLeftFactor },
+  { id: 'rightfactor', fn: rightFactorGrammar, label: t => t.btnRightFactor, hint: t => t.hintRightFactor },
   { id: 'cnf', fn: convertToChomsky, label: t => t.btnCNF, hint: t => t.hintCNF, accent: true },
   { id: 'gnf', fn: convertToGreibach, label: t => t.btnGNF, hint: t => t.hintGNF, accent: true }
 ];
