@@ -2,7 +2,7 @@ import React from 'react';
 import { Grammar } from '../../core/ast/grammar';
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { LLTable } from '../../core/ll/llTable';
-import { LRTable } from '../../core/lr/lrTable';
+import { LRTable, LRLayout } from '../../core/lr/lrTable';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { CheckCircle2, Info, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
@@ -21,6 +21,8 @@ interface OverviewViewProps {
   lalr1Table: LRTable;
   lr1Table: LRTable;
   lang: Language;
+  /** Conflicts are counted per state for LR(0) in the lecture layout, per table cell otherwise */
+  lrLayout: LRLayout;
   onNavigateToTab?: (tab: TabId, lrVariant?: LRVariantName) => void;
 }
 
@@ -33,6 +35,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   lalr1Table,
   lr1Table,
   lang,
+  lrLayout,
   onNavigateToTab
 }) => {
   const t = TRANSLATIONS[lang];
@@ -48,12 +51,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const emptyLanguage = !analysis.endable.has(grammar.startSymbol);
   const epsInLanguage = analysis.nullable.has(grammar.startSymbol);
 
-  const lrBadges: { variant: LRVariantName; label: string; table: LRTable }[] = [
+  const lrBadges = ([
     { variant: 'LR(0)', label: t.isLR0, table: lr0Table },
     { variant: 'SLR(1)', label: t.isSLR1, table: slr1Table },
     { variant: 'LALR(1)', label: t.isLALR1, table: lalr1Table },
     { variant: 'LR(1)', label: t.isLR1, table: lr1Table }
-  ];
+  ] as { variant: LRVariantName; label: string; table: LRTable }[]).map(b => ({
+    ...b,
+    conflictCount: (lrLayout === 'lecture' ? b.table.fConflicts : b.table.conflicts).length
+  }));
 
   const hasAnyConflicts = !llTable.isLL1 || lrBadges.some(b => !b.table.isConflictFree);
 
@@ -94,7 +100,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               ok={b.table.isConflictFree}
               detail={b.table.isConflictFree
                 ? `${t.passZeroConflicts} · ${t.statesN.replace('{count}', b.table.states.length.toString())}`
-                : `${t.conflictsCount.replace('{count}', b.table.conflicts.length.toString())} · ${t.statesN.replace('{count}', b.table.states.length.toString())}`}
+                : `${t.conflictsCount.replace('{count}', b.conflictCount.toString())} · ${t.statesN.replace('{count}', b.table.states.length.toString())}`}
               targetHint={!b.table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
               onClick={() => onNavigateToTab?.('lr', b.variant)}
             />
@@ -124,7 +130,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <ArrowRight size={13} />
               </button>
             )}
-            {lrBadges.filter(b => b.table.conflicts.length > 0).map(b => (
+            {lrBadges.filter(b => b.conflictCount > 0).map(b => (
               <button
                 key={b.variant}
                 type="button"
@@ -132,7 +138,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 style={{ fontSize: '11.5px', padding: '5px 12px' }}
                 onClick={() => onNavigateToTab?.('lr', b.variant)}
               >
-                <span>{t.viewInLRAnalyser.replace('{variant}', b.variant).replace('{count}', b.table.conflicts.length.toString())}</span>
+                <span>{t.viewInLRAnalyser.replace('{variant}', b.variant).replace('{count}', b.conflictCount.toString())}</span>
                 <ArrowRight size={13} />
               </button>
             ))}

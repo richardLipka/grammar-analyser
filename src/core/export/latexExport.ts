@@ -10,7 +10,8 @@
 import { Grammar, END_MARKER, EPSILON } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { LLTable } from '../ll/llTable';
-import { LRTable, formatAction } from '../lr/lrTable';
+import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction } from '../lr/lrTable';
+import { INITIAL_STATE_SYMBOL } from '../lr/lrAutomaton';
 import { DerivationNode } from '../generator/wordGenerator';
 
 /** Escapes a string for use inside \mathtt{...} / \mathit{...} / \text{...}. */
@@ -146,11 +147,25 @@ export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en',
   return lines.join('\n');
 }
 
-export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en'): string {
+export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en', layout: LRLayout = 'lecture'): string {
   const isCz = lang === 'cz';
-  const termCols = table.terminals;
-  const ntCols = table.nonTerminals;
-  const colFormat = '|c|' + termCols.map(() => 'c|').join('') + '|' + ntCols.map(() => 'c|').join('');
+  const lecture = layout === 'lecture';
+  const actCols = lecture ? table.fColumns : table.terminals;
+  const trCols = lecture ? table.gColumns : table.nonTerminals;
+  const actTable = lecture ? table.fTable : table.actionTable;
+  const trTable = lecture ? table.gTable : table.gotoTable;
+  const nonTerminals = new Set(table.nonTerminals);
+  const colFormat = '|c|' + actCols.map(() => 'c|').join('') + '|' + trCols.map(() => 'c|').join('');
+  // Lecture names E₁ become $E_{1}$; the Dragon Book layout numbers the states
+  const stateCell = (s: number) => {
+    if (!lecture) return s.toString();
+    const n = table.stateNames[s];
+    const base = n.symbol === INITIAL_STATE_SYMBOL && n.index === undefined ? '\\#' : latexSymbol(n.symbol, !nonTerminals.has(n.symbol));
+    return `$${base}${n.index !== undefined ? `_{${n.index}}` : ''}$`;
+  };
+  const actionHeader = lecture ? (isCz ? 'Akce $f$' : 'Actions $f$') : 'ACTION';
+  const transitionHeader = lecture ? (isCz ? 'Přechody $g$' : 'Transitions $g$') : 'GOTO';
+  const colHeader = (c: string) => (c === LR0_ACTION_COLUMN ? (isCz ? 'akce' : 'action') : `$${latexSymbol(c, !nonTerminals.has(c))}$`);
 
   const lines: string[] = [
     `% ${table.variant} Parsing Table (requires \\usepackage{multirow})`,
@@ -158,19 +173,19 @@ export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en'): 
     '\\centering',
     `\\begin{tabular}{${colFormat}}`,
     '\\hline',
-    `\\multirow{2}{*}{\\textbf{${isCz ? 'Stav' : 'State'}}} & \\multicolumn{${termCols.length}}{c||}{\\textbf{ACTION}} & \\multicolumn{${ntCols.length}}{c|}{\\textbf{GOTO}} \\\\ \\cline{2-${1 + termCols.length + ntCols.length}}`,
-    ` & ${termCols.map(t => `$${latexSymbol(t, true)}$`).join(' & ')} & ${ntCols.map(nt => `$${latexSymbol(nt, false)}$`).join(' & ')} \\\\ \\hline`
+    `\\multirow{2}{*}{\\textbf{${isCz ? 'Stav' : 'State'}}} & \\multicolumn{${actCols.length}}{c||}{\\textbf{${actionHeader}}} & \\multicolumn{${trCols.length}}{c|}{\\textbf{${transitionHeader}}} \\\\ \\cline{2-${1 + actCols.length + trCols.length}}`,
+    ` & ${actCols.map(colHeader).join(' & ')} & ${trCols.map(colHeader).join(' & ')} \\\\ \\hline`
   ];
 
   for (const s of table.states) {
-    const actRow = table.actionTable.get(s);
-    const gotoRow = table.gotoTable.get(s);
-    const actCells = termCols.map(t => (actRow?.get(t) || []).map(formatAction).join('/'));
-    const gotoCells = ntCols.map(nt => {
-      const target = gotoRow?.get(nt);
-      return target !== undefined ? target.toString() : '';
+    const actRow = actTable.get(s);
+    const trRow = trTable.get(s);
+    const actCells = actCols.map(c => (actRow?.get(c) || []).map(a => formatLayoutAction(a, layout, lang)).join('/'));
+    const trCells = trCols.map(x => {
+      const target = trRow?.get(x);
+      return target !== undefined ? stateCell(target) : '';
     });
-    lines.push(`  ${s} & ${actCells.join(' & ')} & ${gotoCells.join(' & ')} \\\\ \\hline`);
+    lines.push(`  ${stateCell(s)} & ${actCells.join(' & ')} & ${trCells.join(' & ')} \\\\ \\hline`);
   }
 
   lines.push('\\end{tabular}');

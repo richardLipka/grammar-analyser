@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
-import { LRTable, formatAction } from '../../core/lr/lrTable';
+import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
@@ -8,6 +8,7 @@ import { CheckCircle2, AlertTriangle, Cpu, XCircle } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
+import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
 import { exportLRTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
@@ -22,6 +23,8 @@ interface LRViewProps {
   lang: Language;
   selectedVariant?: LRVariantName;
   onSelectVariant?: (variant: LRVariantName) => void;
+  layout: LRLayout;
+  onLayoutChange: (layout: LRLayout) => void;
 }
 
 export const LRView: React.FC<LRViewProps> = ({
@@ -33,7 +36,9 @@ export const LRView: React.FC<LRViewProps> = ({
   defaultInput = 'id + id * id',
   lang,
   selectedVariant: controlledVariant,
-  onSelectVariant
+  onSelectVariant,
+  layout,
+  onLayoutChange
 }) => {
   const t = TRANSLATIONS[lang];
   const [internalVariant, setInternalVariant] = useState<LRVariantName>('SLR(1)');
@@ -48,11 +53,12 @@ export const LRView: React.FC<LRViewProps> = ({
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
   const activeTable = { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table }[selectedVariant];
+  const lecture = layout === 'lecture';
 
   const simulation: LRSimulationResult = useMemo(() => {
     const tokens = inputText.trim().split(/\s+/).filter(Boolean);
-    return simulateLRParse(tokens, grammar, activeTable);
-  }, [inputText, grammar, activeTable]);
+    return simulateLRParse(tokens, grammar, activeTable, layout);
+  }, [inputText, grammar, activeTable, layout]);
 
   useEffect(() => {
     setCurrentStepIdx(0);
@@ -68,15 +74,31 @@ export const LRView: React.FC<LRViewProps> = ({
 
   const currentStep: LRParseStep | undefined = simulation.steps[currentStepIdx];
   const actionText = (s: LRParseStep) => (lang === 'cz' ? s.actionCz || s.action : s.action);
-  const conflictCells = new Set(activeTable.conflicts.map(c => `${c.stateId}|${c.symbol}`));
 
-  /** Interleaved stack as in textbooks: $ 0 E 1 + 6 … */
+  // The two layouts: lecture f/g with named states, Dragon Book ACTION/GOTO with numbers
+  const name = (state: number) => stateLabel(activeTable, state, layout);
+  const actColumns = lecture ? activeTable.fColumns : activeTable.terminals;
+  const actTable = lecture ? activeTable.fTable : activeTable.actionTable;
+  const trColumns = lecture ? activeTable.gColumns : activeTable.nonTerminals;
+  const trTable = lecture ? activeTable.gTable : activeTable.gotoTable;
+  const conflicts = lecture ? activeTable.fConflicts : activeTable.conflicts;
+  const conflictCells = new Set(conflicts.map(c => `${c.stateId}|${c.symbol}`));
+  const fmt = (a: LRAction) => formatLayoutAction(a, layout, lang);
+  const actionCellName = (state: number, col: string) =>
+    lecture ? (col === LR0_ACTION_COLUMN ? `f(${name(state)})` : `f(${name(state)}, ${col})`) : `ACTION[${state}, ${col}]`;
+  const transitionCellName = (state: number, sym: string) => (lecture ? `g(${name(state)}, ${sym})` : `GOTO[${state}, ${sym}]`);
+
+  /** Lecture: the named states read like the sentential form (# E₁ + T₂); Dragon Book: $ 0 E 1 + 6 … */
   const stackText = (s: LRParseStep) =>
-    s.stateStack.map((st, i) => (i === 0 ? `${s.symbolStack[0]} ${st}` : `${s.symbolStack[i]} ${st}`)).join(' ');
+    lecture
+      ? s.stateStack.map(name).join(' ')
+      : s.stateStack.map((st, i) => `${s.symbolStack[i]} ${st}`).join(' ');
 
   return (
     <div>
-      {/* ACTION & GOTO Parsing Table with Embedded Collisions */}
+      <LRLayoutSwitch layout={layout} onChange={onLayoutChange} lang={lang} />
+
+      {/* Parsing table (f/g or ACTION/GOTO) with the conflicts */}
       <div className="card">
         <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -101,7 +123,7 @@ export const LRView: React.FC<LRViewProps> = ({
             </div>
 
             <LatexExportButton
-              getLatex={() => exportLRTableToLatex(activeTable, lang)}
+              getLatex={() => exportLRTableToLatex(activeTable, lang, layout)}
               filename={`${selectedVariant.toLowerCase().replace(/[^a-z0-9]/g, '_')}_table.tex`}
               label={lang === 'cz' ? 'Export tabulky' : 'Export Table'}
               lang={lang}
@@ -112,12 +134,12 @@ export const LRView: React.FC<LRViewProps> = ({
         <p className="hint-text" style={{ marginBottom: '12px' }}>{t.lrVariantHints[selectedVariant]}</p>
 
         <div style={{ marginBottom: '14px' }}>
-          {activeTable.conflicts.length > 0 ? (
+          {conflicts.length > 0 ? (
             <div className="notice-box error">
               <div className="notice-title" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <AlertTriangle size={15} />
-                  {t.conflictsInVariant.replace('{variant}', selectedVariant).replace('{count}', activeTable.conflicts.length.toString())}
+                  {t.conflictsInVariant.replace('{variant}', selectedVariant).replace('{count}', conflicts.length.toString())}
                 </span>
                 <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontWeight: 400 }}>
                   {t.statesCount} <strong>{activeTable.states.length}</strong> • {t.conflictCellsHighlighted}
@@ -125,23 +147,23 @@ export const LRView: React.FC<LRViewProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
-                {activeTable.conflicts.map((c, idx) => (
+                {conflicts.map((c, idx) => (
                   <div key={idx} className="conflict-detail-card" style={{ color: 'var(--color-text-primary)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 700, color: 'var(--color-danger)' }}>
                         {c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}
                       </span>
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
-                        ACTION[<strong>{c.stateId}</strong>, <strong className="sym-t">{c.symbol}</strong>]
+                        <strong>{actionCellName(c.stateId, c.symbol)}</strong>
                       </span>
                     </div>
                     <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>{t.conflictingActions}:</span>
                       {c.actions.map((act, actIdx) => (
                         <span key={actIdx} className="rule-chip" style={{ color: 'var(--color-text-primary)', borderColor: 'var(--color-border)' }}>
-                          <strong>{formatAction(act)}</strong>
+                          <strong>{fmt(act)}</strong>
                           {act.production && <> ({formatProduction(act.production)})</>}
-                          {act.type === 'shift' && <> ({t.shiftTo} {act.targetState})</>}
+                          {act.type === 'shift' && !lecture && <> ({t.shiftTo} {act.targetState})</>}
                         </span>
                       ))}
                     </div>
@@ -162,15 +184,16 @@ export const LRView: React.FC<LRViewProps> = ({
           )}
         </div>
 
-        {/* Active Table Lookup Banner */}
-        {currentStep?.lookupState !== undefined && currentStep?.lookupSymbol && (
+        {/* Table entries used by the current step */}
+        {currentStep?.lookupState !== undefined && currentStep.lookupSymbol !== undefined && (
           <div className="active-lookup-banner">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{t.activeTableLookup}</span>
-              <span>ACTION[<span className="active-lookup-badge">{currentStep.lookupState}</span>, <span className="active-lookup-badge">{currentStep.lookupSymbol}</span>]</span>
-              {currentStep.gotoNt && currentStep.gotoState !== undefined && currentStep.gotoFromState !== undefined && (
+              <span className="active-lookup-badge">{actionCellName(currentStep.lookupState, currentStep.lookupSymbol)}</span>
+              {currentStep.gotoSymbol && currentStep.gotoFromState !== undefined && (
                 <span>
-                  GOTO[<span className="active-lookup-badge">{currentStep.gotoFromState}</span>, <span className="active-lookup-badge">{currentStep.gotoNt}</span>] = {currentStep.gotoState}
+                  <span className="active-lookup-badge">{transitionCellName(currentStep.gotoFromState, currentStep.gotoSymbol)}</span>
+                  {currentStep.gotoState !== undefined && <> = {name(currentStep.gotoState)}</>}
                 </span>
               )}
             </div>
@@ -182,40 +205,44 @@ export const LRView: React.FC<LRViewProps> = ({
             <thead>
               <tr>
                 <th rowSpan={2} style={{ width: '60px', textAlign: 'center' }}>{t.stateLabel}</th>
-                <th colSpan={activeTable.terminals.length} style={{ textAlign: 'center' }}>ACTION</th>
-                <th colSpan={activeTable.nonTerminals.length} style={{ textAlign: 'center' }}>GOTO</th>
+                <th colSpan={actColumns.length} style={{ textAlign: 'center' }}>{lecture ? t.fTableTitle : 'ACTION'}</th>
+                <th colSpan={trColumns.length} className="table-part-start" style={{ textAlign: 'center' }}>{lecture ? t.gTableTitle : 'GOTO'}</th>
               </tr>
               <tr>
-                {activeTable.terminals.map(term => (
-                  <th key={term} className={currentStep?.lookupSymbol === term ? 'table-col-active' : ''} style={{ textAlign: 'center' }}>
-                    <code>{term}</code>
+                {actColumns.map(col => (
+                  <th key={`a_${col}`} className={currentStep?.lookupSymbol === col ? 'table-col-active' : ''} style={{ textAlign: 'center' }}>
+                    {col === LR0_ACTION_COLUMN ? t.lr0ActionColumn : <code>{col}</code>}
                   </th>
                 ))}
-                {activeTable.nonTerminals.map(nt => (
-                  <th key={nt} className={currentStep?.gotoNt === nt ? 'table-col-active' : ''} style={{ textAlign: 'center', color: 'var(--color-primary)' }}>
-                    <code>{nt}</code>
+                {trColumns.map((sym, i) => (
+                  <th
+                    key={`g_${sym}`}
+                    className={[currentStep?.gotoSymbol === sym ? 'table-col-active' : '', i === 0 ? 'table-part-start' : ''].join(' ')}
+                    style={{ textAlign: 'center', color: grammar.nonTerminals.has(sym) ? 'var(--color-primary)' : undefined }}
+                  >
+                    <code>{sym}</code>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {activeTable.states.map(s => {
-                const actRow = activeTable.actionTable.get(s);
-                const gotoRow = activeTable.gotoTable.get(s);
+                const actRow = actTable.get(s);
+                const trRow = trTable.get(s);
                 const isRowActive = currentStep?.lookupState === s;
-                const isGotoRow = currentStep?.gotoFromState === s && currentStep?.gotoNt !== undefined;
+                const isTransitionRow = currentStep?.gotoFromState === s && currentStep?.gotoSymbol !== undefined;
 
                 return (
                   <tr key={s} className={isRowActive ? 'table-row-active' : ''}>
-                    <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{s}</td>
-                    {activeTable.terminals.map(term => {
-                      const actions = actRow?.get(term) || [];
-                      const isConflict = conflictCells.has(`${s}|${term}`);
-                      const isCellActive = isRowActive && currentStep?.lookupSymbol === term;
+                    <td style={{ textAlign: 'center', fontWeight: 700, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{name(s)}</td>
+                    {actColumns.map(col => {
+                      const actions = actRow?.get(col) || [];
+                      const isConflict = conflictCells.has(`${s}|${col}`);
+                      const isCellActive = isRowActive && currentStep?.lookupSymbol === col;
                       const isAccept = actions.some(a => a.type === 'accept');
                       return (
                         <td
-                          key={term}
+                          key={`a_${col}`}
                           className={isCellActive ? 'table-cell-active' : ''}
                           style={{
                             textAlign: 'center',
@@ -227,26 +254,27 @@ export const LRView: React.FC<LRViewProps> = ({
                             fontWeight: isCellActive || isConflict || isAccept ? 700 : 400
                           }}
                         >
-                          {actions.map(formatAction).join(' / ')}
+                          {actions.map(fmt).join(' / ')}
                         </td>
                       );
                     })}
-                    {activeTable.nonTerminals.map(nt => {
-                      const target = gotoRow?.get(nt);
-                      const isGotoCellActive = isGotoRow && currentStep?.gotoNt === nt;
+                    {trColumns.map((sym, i) => {
+                      const target = trRow?.get(sym);
+                      const isCellActive = isTransitionRow && currentStep?.gotoSymbol === sym;
                       return (
                         <td
-                          key={nt}
-                          className={isGotoCellActive ? 'table-cell-active' : ''}
+                          key={`g_${sym}`}
+                          className={[isCellActive ? 'table-cell-active' : '', i === 0 ? 'table-part-start' : ''].join(' ')}
                           style={{
                             textAlign: 'center',
                             fontFamily: 'var(--font-mono)',
                             fontSize: '11.5px',
-                            color: isGotoCellActive ? '#ffffff' : 'var(--color-primary)',
-                            fontWeight: isGotoCellActive ? 700 : 600
+                            whiteSpace: 'nowrap',
+                            color: isCellActive ? '#ffffff' : 'var(--color-primary)',
+                            fontWeight: isCellActive ? 700 : 600
                           }}
                         >
-                          {target !== undefined ? target : ''}
+                          {target !== undefined ? name(target) : ''}
                         </td>
                       );
                     })}
@@ -257,7 +285,7 @@ export const LRView: React.FC<LRViewProps> = ({
           </table>
         </div>
         <div className="hint-text" style={{ marginTop: '8px' }}>
-          {t.lrLegend}
+          {lecture ? t.lrLegendLecture : t.lrLegend}
           {' '}
           {grammar.productions.map((p, i) => (
             <React.Fragment key={p.id}>
@@ -322,7 +350,7 @@ export const LRView: React.FC<LRViewProps> = ({
                   const isTop = idx === currentStep.stateStack.length - 1;
                   return (
                     <span key={idx} className={`badge ${isTop ? 'chip-top-stack' : 'badge-primary'}`}>
-                      {st}
+                      {name(st)}
                       {isTop && <span className="chip-tag-top">{t.topOfStackBadge}</span>}
                     </span>
                   );
@@ -330,14 +358,17 @@ export const LRView: React.FC<LRViewProps> = ({
               </div>
             </div>
 
-            <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.symbolStack}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {currentStep.symbolStack.map((sym, idx) => (
-                  <span key={idx} className={`badge ${grammar.nonTerminals.has(sym) ? 'badge-primary' : 'badge-success'}`}>{sym}</span>
-                ))}
+            {/* The named states already spell the symbols; the Dragon Book layout keeps a separate symbol stack */}
+            {!lecture && (
+              <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.symbolStack}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {currentStep.symbolStack.map((sym, idx) => (
+                    <span key={idx} className={`badge ${grammar.nonTerminals.has(sym) ? 'badge-primary' : 'badge-success'}`}>{sym}</span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
               <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.remainingInput}</div>

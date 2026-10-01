@@ -22,6 +22,8 @@ interface AutomatonGraphVisualizerProps {
   selectedStateId?: number | null;
   onSelectState?: (stateId: number) => void;
   conflictStates?: Set<number>;
+  /** Node titles by state id (lecture names such as E₁, or "State 3") */
+  nodeTitles?: string[];
   lang?: Language;
 }
 
@@ -83,6 +85,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
   selectedStateId,
   onSelectState,
   conflictStates,
+  nodeTitles,
   lang = 'en'
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -271,7 +274,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                 <rect className={`g-node ${stateCls}`} width={node.width} height={node.height} rx={8} />
                 <rect className={`g-node-header ${isSelected ? 'selected' : ''}`} x={1} y={1} width={node.width - 2} height={HEADER_H - 1} rx={7} />
                 <text className={`g-node-title ${isSelected ? 'selected' : hasConflict ? 'conflict' : ''}`} x={10} y={18}>
-                  {isCz ? 'Stav' : 'State'} {node.id}{tags.length > 0 ? `  (${tags.join(', ')})` : ''}
+                  {nodeTitles?.[node.id] ?? `${isCz ? 'Stav' : 'State'} ${node.id}`}{tags.length > 0 ? `  (${tags.join(', ')})` : ''}
                 </text>
 
                 {separatorAt > 0 && (

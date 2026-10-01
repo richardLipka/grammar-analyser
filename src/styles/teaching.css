@@ -603,3 +603,31 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* LR screens: lecture tables f/g or Dragon Book ACTION/GOTO */
+.lr-layout-switch {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-surface);
+}
+
+.lr-layout-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.lr-layout-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+/* First column of the transition table, right after the actions */
+.data-table .table-part-start {
+  border-left: 2px solid var(--color-text-muted);
+}

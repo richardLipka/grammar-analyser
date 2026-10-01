@@ -4,10 +4,17 @@
  * Every step records the configuration (state stack, symbol stack, remaining
  * input) in which the action is taken, as in the textbook trace tables, and
  * the parse forest after the action has been applied.
+ *
+ * Two algorithms, matching the two table layouts (see lrTable.ts):
+ * - lecture: 1. f(X, u) (f(X) for LR(0)) gives shift, reduce i or accept;
+ *   2. the symbol Y to push (the terminal read, or the left-hand side of the
+ *   rule) selects the next state g(X', Y). Accept needs the whole input read.
+ * - dragon: ACTION[s, a] shifts directly to its target state; after a
+ *   reduction GOTO[s', A] gives the next state.
  */
 
 import { Grammar, Production, END_MARKER, formatProduction } from '../ast/grammar';
-import { LRTable } from './lrTable';
+import { LRTable, LRLayout, LR0_ACTION_COLUMN, stateLabel } from './lrTable';
 import { DerivationNode } from '../generator/wordGenerator';
 
 /** Symbol shown at the root of a parse forest with more than one tree. */
@@ -21,11 +28,13 @@ export interface LRParseStep {
   action: string;
   actionCz?: string;
   production?: Production;
+  /** Row and column of the action looked up (ACTION or f; LR0_ACTION_COLUMN for f of LR(0)). */
   lookupState?: number;
   lookupSymbol?: string;
+  /** The transition used: GOTO (dragon, after a reduction) or g (lecture, after every action). */
   gotoState?: number;
-  gotoNt?: string;
-  /** State on top of the stack after popping |α| entries, i.e. the GOTO row used. */
+  gotoSymbol?: string;
+  /** Row of that transition: the top of the stack after popping |α| entries, or the state that shifted. */
   gotoFromState?: number;
   isError?: boolean;
   isAccepted?: boolean;
@@ -49,10 +58,13 @@ export function simulateLRParse(
   inputTokens: string[],
   g: Grammar,
   table: LRTable,
+  layout: LRLayout = 'dragon',
   maxSteps: number = 500 + 50 * inputTokens.length
 ): LRSimulationResult {
   const steps: LRParseStep[] = [];
   const input = [...inputTokens, END_MARKER];
+  const lecture = layout === 'lecture';
+  const name = (state: number) => stateLabel(table, state, layout);
 
   const stateStack: number[] = [0];
   const symbolStack: string[] = [END_MARKER];
@@ -75,35 +87,34 @@ export function simulateLRParse(
     };
   };
 
+  const fail = (step: Omit<LRParseStep, 'step' | 'isError' | 'tree'>, errorMessage: string, errorMessageCz: string): LRSimulationResult => {
+    steps.push({ step: stepIndex++, ...step, isError: true, tree: forest() });
+    return { accepted: false, steps, errorMessage, errorMessageCz };
+  };
+
   while (stepIndex < maxSteps) {
     const currentState = stateStack[stateStack.length - 1];
     const lookahead = input[inputPtr];
+    // LR(0) in the lecture layout decides by the state alone
+    const column = lecture && table.variant === 'LR(0)' ? LR0_ACTION_COLUMN : lookahead;
     const config = {
       stateStack: [...stateStack],
       symbolStack: [...symbolStack],
       remainingInput: input.slice(inputPtr),
       lookupState: currentState,
-      lookupSymbol: lookahead,
+      lookupSymbol: column,
       rightParse: [...rightParse]
     };
+    const cell = column === LR0_ACTION_COLUMN ? `f(${name(currentState)})` : lecture
+      ? `f(${name(currentState)}, ${lookahead})`
+      : `ACTION[${currentState}, '${lookahead}']`;
 
-    const availableActions = table.actionTable.get(currentState)?.get(lookahead) || [];
+    const availableActions = (lecture ? table.fTable : table.actionTable).get(currentState)?.get(column) || [];
 
     if (availableActions.length === 0) {
-      steps.push({
-        step: stepIndex++,
-        ...config,
-        action: `Error: ACTION[${currentState}, '${lookahead}'] is empty`,
-        actionCz: `Chyba: ACTION[${currentState}, '${lookahead}'] je prázdná položka`,
-        isError: true,
-        tree: forest()
-      });
-      return {
-        accepted: false,
-        steps,
-        errorMessage: `Syntax error at token '${lookahead}': no valid action in state ${currentState}.`,
-        errorMessageCz: `Syntaktická chyba na symbolu '${lookahead}': ve stavu ${currentState} neexistuje platná akce.`
-      };
+      return fail({ ...config, action: `Error: ${cell} is empty`, actionCz: `Chyba: ${cell} je prázdná položka` },
+        `Syntax error at token '${lookahead}': no valid action in state ${name(currentState)}.`,
+        `Syntaktická chyba na symbolu '${lookahead}': ve stavu ${name(currentState)} neexistuje platná akce.`);
     }
 
     const action = availableActions[0];
@@ -112,8 +123,23 @@ export function simulateLRParse(
     const conflictNoteCz = conflictCount ? ` (kolize: buňka obsahuje ${conflictCount} akce, použije se první)` : '';
 
     if (action.type === 'shift') {
-      const targetState = action.targetState!;
-      stateStack.push(targetState);
+      let targetState = action.targetState;
+      if (lecture) {
+        // f only says "shift": read the symbol, then g(X, a) gives the state to push
+        const g0 = `g(${name(currentState)}, ${lookahead})`;
+        if (lookahead === END_MARKER) {
+          return fail({ ...config, action: `Error: shift, but the input has been read`, actionCz: `Chyba: přesun, ale vstup je již přečten`, conflictCount },
+            `Unexpected end of input in state ${name(currentState)}.`,
+            `Neočekávaný konec vstupu ve stavu ${name(currentState)}.`);
+        }
+        targetState = table.gTable.get(currentState)?.get(lookahead);
+        if (targetState === undefined) {
+          return fail({ ...config, action: `Shift '${lookahead}'; error: ${g0} is empty`, actionCz: `Přesun '${lookahead}'; chyba: ${g0} je prázdná položka`, gotoFromState: currentState, gotoSymbol: lookahead, conflictCount },
+            `Syntax error at token '${lookahead}': state ${name(currentState)} has no transition for it.`,
+            `Syntaktická chyba na symbolu '${lookahead}': stav ${name(currentState)} pro něj nemá přechod.`);
+        }
+      }
+      stateStack.push(targetState!);
       symbolStack.push(lookahead);
       inputPtr++;
       treeStack.push({ id: `lr_node_${nodeCounter++}`, symbol: lookahead, isTerminal: true });
@@ -121,8 +147,13 @@ export function simulateLRParse(
       steps.push({
         step: stepIndex++,
         ...config,
-        action: `Shift '${lookahead}', go to state ${targetState}${conflictNote}`,
-        actionCz: `Přesun '${lookahead}', přechod do stavu ${targetState}${conflictNoteCz}`,
+        action: lecture
+          ? `Shift '${lookahead}', g(${name(currentState)}, ${lookahead}) = ${name(targetState!)}${conflictNote}`
+          : `Shift '${lookahead}', go to state ${targetState}${conflictNote}`,
+        actionCz: lecture
+          ? `Přesun '${lookahead}', g(${name(currentState)}, ${lookahead}) = ${name(targetState!)}${conflictNoteCz}`
+          : `Přesun '${lookahead}', přechod do stavu ${targetState}${conflictNoteCz}`,
+        ...(lecture ? { gotoFromState: currentState, gotoSymbol: lookahead, gotoState: targetState } : {}),
         conflictCount,
         tree: forest()
       });
@@ -143,25 +174,13 @@ export function simulateLRParse(
       }
 
       const topState = stateStack[stateStack.length - 1];
-      const gotoState = table.gotoTable.get(topState)?.get(prod.lhs);
+      const gotoState = (lecture ? table.gTable : table.gotoTable).get(topState)?.get(prod.lhs);
+      const gotoCell = lecture ? `g(${name(topState)}, ${prod.lhs})` : `GOTO[${topState}, ${prod.lhs}]`;
 
       if (gotoState === undefined) {
-        steps.push({
-          step: stepIndex++,
-          ...config,
-          action: `Error: GOTO[${topState}, ${prod.lhs}] is empty`,
-          actionCz: `Chyba: GOTO[${topState}, ${prod.lhs}] je prázdné`,
-          production: prod,
-          gotoFromState: topState,
-          isError: true,
-          tree: forest()
-        });
-        return {
-          accepted: false,
-          steps,
-          errorMessage: `GOTO table missing transition for non-terminal '${prod.lhs}' from state ${topState}.`,
-          errorMessageCz: `V tabulce GOTO chybí přechod pro neterminál '${prod.lhs}' ze stavu ${topState}.`
-        };
+        return fail({ ...config, action: `Error: ${gotoCell} is empty`, actionCz: `Chyba: ${gotoCell} je prázdné`, production: prod, gotoFromState: topState, gotoSymbol: prod.lhs },
+          `The transition table has no entry for non-terminal '${prod.lhs}' in state ${name(topState)}.`,
+          `V tabulce přechodů chybí položka pro neterminál '${prod.lhs}' ve stavu ${name(topState)}.`);
       }
 
       stateStack.push(gotoState);
@@ -179,11 +198,11 @@ export function simulateLRParse(
       steps.push({
         step: stepIndex++,
         ...config,
-        action: `Reduce by (${prod.id}) ${formatProduction(prod)}, GOTO[${topState}, ${prod.lhs}] = ${gotoState}${conflictNote}`,
-        actionCz: `Redukce podle (${prod.id}) ${formatProduction(prod)}, přechod GOTO[${topState}, ${prod.lhs}] = ${gotoState}${conflictNoteCz}`,
+        action: `Reduce by (${prod.id}) ${formatProduction(prod)}, ${gotoCell} = ${name(gotoState)}${conflictNote}`,
+        actionCz: `Redukce podle (${prod.id}) ${formatProduction(prod)}, ${lecture ? '' : 'přechod '}${gotoCell} = ${name(gotoState)}${conflictNoteCz}`,
         production: prod,
         gotoState,
-        gotoNt: prod.lhs,
+        gotoSymbol: prod.lhs,
         gotoFromState: topState,
         conflictCount,
         rightParse: [...rightParse],
@@ -192,7 +211,12 @@ export function simulateLRParse(
       continue;
     }
 
-    // accept
+    // accept: only when the whole input has been read (LR(0) decides without looking at it)
+    if (lookahead !== END_MARKER) {
+      return fail({ ...config, action: `Accept, but the input has not been read: reject`, actionCz: `Přijetí, ale vstup není přečten: odmítnutí`, conflictCount },
+        `The parser reached the accepting state ${name(currentState)} before the end of the input.`,
+        `Analyzátor dosáhl přijímajícího stavu ${name(currentState)} před koncem vstupu.`);
+    }
     const finalTree = treeStack.length > 0 ? treeStack[treeStack.length - 1] : undefined;
     steps.push({
       step: stepIndex++,

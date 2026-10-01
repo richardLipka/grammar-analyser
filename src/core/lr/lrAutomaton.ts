@@ -22,12 +22,54 @@ export interface LRState {
   isAccepting?: boolean;
 }
 
+/**
+ * Name of a state as in the KIV/FJP lectures: the symbol that leads into the
+ * state (every state except the initial one is entered by exactly one symbol),
+ * with a subscript when several states share it (E₁, E₂); the initial state is #.
+ */
+export interface LRStateName {
+  symbol: string;
+  index?: number;
+  /** symbol + subscript index, e.g. "E₁" */
+  text: string;
+}
+
 export interface LRAutomaton {
   variant: LRVariant;
   states: LRState[];
   augmentedStartSymbol: string;
   augmentedProduction: Production;
   symbols: string[]; // all non-terminals + terminals
+  /** Lecture names of the states, indexed by state id */
+  stateNames: LRStateName[];
+}
+
+export const INITIAL_STATE_SYMBOL = '#';
+
+const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉';
+
+export function toSubscript(n: number): string {
+  return String(n).split('').map(d => SUBSCRIPT_DIGITS[Number(d)]).join('');
+}
+
+/** Names the states by the symbols leading into them, numbering repeated symbols in creation order. */
+export function nameStates(states: LRState[]): LRStateName[] {
+  const entry = new Map<number, string>();
+  for (const s of states) {
+    for (const [sym, target] of s.transitions) entry.set(target, sym);
+  }
+  const total = new Map<string, number>();
+  for (const sym of entry.values()) total.set(sym, (total.get(sym) || 0) + 1);
+  const used = new Map<string, number>();
+  return states.map(s => {
+    const symbol = entry.get(s.id);
+    if (symbol === undefined) return { symbol: INITIAL_STATE_SYMBOL, text: INITIAL_STATE_SYMBOL };
+    // A terminal '#' would read like the initial state, so it is always numbered
+    if (total.get(symbol) === 1 && symbol !== INITIAL_STATE_SYMBOL) return { symbol, text: symbol };
+    const index = (used.get(symbol) || 0) + 1;
+    used.set(symbol, index);
+    return { symbol, index, text: symbol + toSubscript(index) };
+  });
 }
 
 /**
@@ -165,7 +207,8 @@ export function buildLR0Automaton(g: Grammar, variant: 'LR(0)' | 'SLR(1)' = 'LR(
     states,
     augmentedStartSymbol: augGrammar.startSymbol,
     augmentedProduction: augmentedProd,
-    symbols: allSymbols
+    symbols: allSymbols,
+    stateNames: nameStates(states)
   };
 }
 
@@ -321,7 +364,8 @@ export function buildLR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAuto
     states,
     augmentedStartSymbol: augGrammar.startSymbol,
     augmentedProduction: augmentedProd,
-    symbols: allSymbols
+    symbols: allSymbols,
+    stateNames: nameStates(states)
   };
 }
 
@@ -433,6 +477,7 @@ export function buildLALR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAu
     states: mergedStates,
     augmentedStartSymbol: lr1.augmentedStartSymbol,
     augmentedProduction: lr1.augmentedProduction,
-    symbols: lr1.symbols
+    symbols: lr1.symbols,
+    stateNames: nameStates(mergedStates)
   };
 }

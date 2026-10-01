@@ -191,3 +191,17 @@ Suggested:
 - **Grammar links.** `?g=<grammar>&w=<word>&tab=ll&e=eps` opens and analyses a grammar immediately; `preset`, `lang` and `theme` are also accepted, both in the query and after `#`. The *Odkaz* (Link) button copies the link for the current grammar, input word and tab. If copying is not allowed, it puts the link in the address bar. Tests: `src/test/urlState.test.ts`, and the slide notation in `src/test/formats.test.ts`.
 - **One rule per line.** A grammar from a link is shown in the editor with every rule on its own line; alternatives stay together. The rules may be separated by `;` or by a space before the next `A ->`, as in `S->aAS|b A->a|bSA`. The parser accepts both separators when they are typed in the editor too.
 - **Author credit.** The header shows the FAV mark (linking to KIV), © 2026 Richard Lipka (linking to home.zcu.cz/~lipka), the e-mail, the MIT licence and GitHub, as in the author's other teaching tools. The mark uses the theme's text colour. `LICENSE` excludes the university mark from the MIT terms.
+
+## 6. LR tables as in the KIV/FJP lectures
+
+I checked the tables against *11 a 12 LR.pdf*: the SLR(1) tables of G12 and G13, the LALR(1) table of G14 and the SLR(1) conflict of G14 matched the lecture entry by entry. The LR(1) automata had the textbook sizes (22 and 14 states). There was one classification bug and one difference of presentation:
+
+- **Strict LR(0).** The accept action was placed only in the `$` column. A state such as {S' → S•, S → S•a} therefore did not count as a conflict. The app called `S → S a | b` and the lecture's G13 `S → S(A) | e` LR(0), although by the lecture's definition neither is LR(0): S' → S• is a complete item, and an LR(0) language must be prefix-free. For the expression grammar the conflict in E₁ was missed. Accept is now an action of the state (in the Dragon Book layout it fills the whole row like the reductions), and the simulator rejects an accept with unread input.
+- **The lecture layout** is now the default:
+  - States are named by the symbol that leads into them, with subscripts for repeated symbols. The initial state is `#`. For G12–G14 the names are the lecture's own.
+  - The table of actions f contains P / R*i* / A, without target states. For LR(0) it has one column, decided by the state alone.
+  - The table of transitions g covers all terminals and non-terminals.
+  - The simulator runs the lecture's two steps (f, then g for the symbol pushed), and its stack reads `# E₁ + T₂`.
+- **The Dragon Book layout** (numbered states, `s5` / `r2` / `acc`, GOTO for non-terminals) stays available. A switch at the top of the LR, automaton and LaTeX screens selects the layout, and the choice is remembered.
+
+The tests in `src/test/lrLecture.test.ts` use the lecture's examples G11–G14 and its traces. G11 is the only difference: the lecture numbers the two `b` states the other way round, because it indexes the occurrences of `b` in the rules rather than the item sets.

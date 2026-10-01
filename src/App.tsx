@@ -9,7 +9,7 @@ import {
   buildLALR1Automaton,
   LRAutomaton
 } from './core/lr/lrAutomaton';
-import { buildLRTable, LRTable } from './core/lr/lrTable';
+import { buildLRTable, LRTable, LRLayout } from './core/lr/lrTable';
 import { PRESET_GRAMMARS, PresetGrammar } from './core/presets/presetGrammars';
 import { Language, TRANSLATIONS } from './i18n/translations';
 
@@ -113,6 +113,7 @@ const CUSTOM_PRESET_ID = '__custom__';
 // Only an explicit choice is remembered, so the defaults (Czech, light theme) apply until the user changes them.
 const THEME_KEY = 'grammar-analyser.theme';
 const LANG_KEY = 'grammar-analyser.lang';
+const LR_LAYOUT_KEY = 'grammar-analyser.lrLayout';
 
 /** Symbols that are awkward to type (touch screens, keyboards without these characters). */
 const EDITOR_SYMBOLS: { insert: string; close?: string; label: string; titleEn: string; titleCz: string; spaced?: boolean }[] = [
@@ -152,6 +153,8 @@ export const App: React.FC = () => {
   const [sampleInput, setSampleInput] = useState(setup.sampleInput);
   const [activeTab, setActiveTab] = useState<TabId>(setup.url.tab ?? 'overview');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
+  // LR tables and states: lecture f/g with named states (default) or Dragon Book ACTION/GOTO
+  const [lrLayout, setLrLayoutState] = useState<LRLayout>(() => readStored(LR_LAYOUT_KEY, ['lecture', 'dragon'] as const, 'lecture'));
   // A theme or language given in the link applies to this visit only
   const [theme, setThemeState] = useState<Theme>(() => setup.url.theme ?? readStored(THEME_KEY, ['dark', 'light', 'projector'] as const, 'light'));
   const [lang, setLangState] = useState<Language>(() => setup.url.lang ?? readStored(LANG_KEY, ['en', 'cz'] as const, 'cz'));
@@ -170,6 +173,10 @@ export const App: React.FC = () => {
   const setLang = (value: Language) => {
     setLangState(value);
     writeStored(LANG_KEY, value);
+  };
+  const setLrLayout = (value: LRLayout) => {
+    setLrLayoutState(value);
+    writeStored(LR_LAYOUT_KEY, value);
   };
 
   useEffect(() => {
@@ -671,6 +678,7 @@ export const App: React.FC = () => {
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
+                    lrLayout={lrLayout}
                     onNavigateToTab={(tab, variant) => {
                       if (variant) setLrVariant(variant);
                       setActiveTab(tab);
@@ -707,6 +715,8 @@ export const App: React.FC = () => {
                     lang={lang}
                     selectedVariant={lrVariant}
                     onSelectVariant={setLrVariant}
+                    layout={lrLayout}
+                    onLayoutChange={setLrLayout}
                   />
                 )}
 
@@ -724,6 +734,8 @@ export const App: React.FC = () => {
                     lang={lang}
                     selectedVariant={lrVariant}
                     onSelectVariant={setLrVariant}
+                    layout={lrLayout}
+                    onLayoutChange={setLrLayout}
                   />
                 )}
 
@@ -741,6 +753,8 @@ export const App: React.FC = () => {
                       'LR(1)': analysisData.lr1Table
                     }}
                     lang={lang}
+                    lrLayout={lrLayout}
+                    onLrLayoutChange={setLrLayout}
                   />
                 )}
               </div>

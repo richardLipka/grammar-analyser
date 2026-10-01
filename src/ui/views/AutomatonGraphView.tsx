@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
-import { LRTable, formatAction } from '../../core/lr/lrTable';
+import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
+import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
 import { AutomatonGraphVisualizer, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Network, Info, ArrowRight, AlertTriangle } from 'lucide-react';
@@ -21,6 +22,8 @@ interface AutomatonGraphViewProps {
   lang: Language;
   selectedVariant?: LRVariantName;
   onSelectVariant?: (v: LRVariantName) => void;
+  layout: LRLayout;
+  onLayoutChange: (layout: LRLayout) => void;
 }
 
 export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
@@ -35,7 +38,9 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   lr1Table,
   lang,
   selectedVariant: controlledVariant,
-  onSelectVariant
+  onSelectVariant,
+  layout,
+  onLayoutChange
 }) => {
   const t = TRANSLATIONS[lang];
   const [internalVariant, setInternalVariant] = useState<LRVariantName>('SLR(1)');
@@ -52,11 +57,19 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
 
   useEffect(() => setSelectedStateId(0), [activeAutomaton]);
 
-  const conflictStates = new Set(activeTable.conflicts.map(c => c.stateId));
+  const lecture = layout === 'lecture';
+  const conflicts = lecture ? activeTable.fConflicts : activeTable.conflicts;
+  const conflictStates = new Set(conflicts.map(c => c.stateId));
   const selectedState = activeAutomaton.states.find(s => s.id === selectedStateId);
   const withLookaheads = selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)';
   const items = selectedState ? stateDisplayItems(selectedState, withLookaheads) : [];
-  const stateConflicts = activeTable.conflicts.filter(c => c.stateId === selectedStateId);
+  const stateConflicts = conflicts.filter(c => c.stateId === selectedStateId);
+  // Lecture: states named by their entry symbols (#, E₁); Dragon Book: numbers
+  const name = (id: number) => stateLabel(activeTable, id, layout);
+  const fmt = (a: Parameters<typeof formatLayoutAction>[0]) => formatLayoutAction(a, layout, lang);
+  const actColumns = lecture ? activeTable.fColumns : activeTable.terminals;
+  const actTable = lecture ? activeTable.fTable : activeTable.actionTable;
+  const nodeTitles = activeAutomaton.states.map(s => (lecture ? name(s.id) : `${t.stateLabel} ${s.id}`));
 
   // LR(0) and SLR(1) share the canonical LR(0) collection; LALR(1) has the same states with lookaheads.
   const sameStatesNote = selectedVariant === 'SLR(1)' || selectedVariant === 'LR(0)'
@@ -67,6 +80,8 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
 
   return (
     <div>
+      <LRLayoutSwitch layout={layout} onChange={onLayoutChange} lang={lang} />
+
       <div className="card" style={{ marginBottom: '12px' }}>
         <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -96,7 +111,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
           {sameStatesNote && <> · {sameStatesNote}</>}
           {conflictStates.size > 0 && (
             <span style={{ color: 'var(--color-danger)', fontWeight: 700 }}>
-              {' '}· {t.graphConflictStates.replace('{states}', [...conflictStates].join(', '))}
+              {' '}· {t.graphConflictStates.replace('{states}', [...conflictStates].map(name).join(', '))}
             </span>
           )}
         </p>
@@ -107,6 +122,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         selectedStateId={selectedStateId}
         onSelectState={setSelectedStateId}
         conflictStates={conflictStates}
+        nodeTitles={nodeTitles}
         lang={lang}
       />
 
@@ -115,7 +131,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
           <div className="card-title">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Info size={16} color="var(--color-primary)" />
-              <span>{t.inspectingState.replace('{id}', selectedState.id.toString())} {selectedState.id === 0 ? t.startState : ''}</span>
+              <span>{t.inspectingState.replace('{id}', name(selectedState.id))} {selectedState.id === 0 ? t.startState : ''}</span>
             </div>
             <span className="badge badge-primary">{selectedVariant}</span>
           </div>
@@ -174,26 +190,26 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                     className="btn btn-secondary"
                     style={{ fontSize: '12px', padding: '4px 8px' }}
                     onClick={() => setSelectedStateId(targetId)}
-                    title={`GOTO(${selectedState.id}, ${sym}) = ${targetId}`}
+                    title={lecture ? `g(${name(selectedState.id)}, ${sym}) = ${name(targetId)}` : `GOTO(${selectedState.id}, ${sym}) = ${targetId}`}
                   >
                     <span className={grammar.terminals.has(sym) ? 'sym-t' : 'sym-nt'}>{sym}</span>
                     <ArrowRight size={12} style={{ margin: '0 4px' }} />
-                    <span>{t.stateLabel} {targetId}</span>
+                    <span>{lecture ? name(targetId) : `${t.stateLabel} ${targetId}`}</span>
                   </button>
                 ))}
               </div>
 
               <div style={{ marginTop: '14px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
-                  {t.tableRowForState.replace('{id}', selectedState.id.toString())}
+                  {t.tableRowForState.replace('{id}', name(selectedState.id))}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {activeTable.terminals.map(term => {
-                    const acts = activeTable.actionTable.get(selectedState.id)?.get(term) || [];
+                  {actColumns.map(col => {
+                    const acts = actTable.get(selectedState.id)?.get(col) || [];
                     if (acts.length === 0) return null;
                     return (
-                      <span key={term} className={`badge ${acts.length > 1 ? 'badge-danger' : 'badge-primary'}`}>
-                        {term} &rarr; {acts.map(formatAction).join(' / ')}
+                      <span key={col} className={`badge ${acts.length > 1 ? 'badge-danger' : 'badge-primary'}`}>
+                        {col === LR0_ACTION_COLUMN ? `f(${name(selectedState.id)})` : lecture ? `f(${name(selectedState.id)}, ${col})` : col} &rarr; {acts.map(fmt).join(' / ')}
                       </span>
                     );
                   })}
@@ -208,7 +224,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                   </div>
                   {stateConflicts.map((c, i) => (
                     <div key={i} style={{ marginTop: '4px', color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
-                      {c.type} [{c.symbol}]: {c.actions.map(a => a.production ? `${formatAction(a)} (${formatProduction(a.production)})` : formatAction(a)).join(' vs ')}
+                      {c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}{c.symbol !== LR0_ACTION_COLUMN ? ` [${c.symbol}]` : ''}: {c.actions.map(a => a.production ? `${fmt(a)} (${formatProduction(a.production)})` : fmt(a)).join(' × ')}
                     </div>
                   ))}
                 </div>

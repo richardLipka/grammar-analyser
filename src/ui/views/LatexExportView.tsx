@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Grammar } from '../../core/ast/grammar';
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { LLTable } from '../../core/ll/llTable';
-import { LRTable } from '../../core/lr/lrTable';
+import { LRTable, LRLayout } from '../../core/lr/lrTable';
 import {
   exportGrammarToLatex,
   exportSetsToLatex,
@@ -20,11 +20,13 @@ interface LatexExportViewProps {
   llTable: LLTable;
   lrTables: Record<LRVariantName, LRTable>;
   lang: Language;
+  lrLayout: LRLayout;
+  onLrLayoutChange: (layout: LRLayout) => void;
 }
 
 type LatexSection = 'all' | 'grammar' | 'sets' | 'llTable' | 'lrTable';
 
-export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analysis, llTable, lrTables, lang }) => {
+export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analysis, llTable, lrTables, lang, lrLayout, onLrLayoutChange }) => {
   const t = TRANSLATIONS[lang];
   const [section, setSection] = useState<LatexSection>('all');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
@@ -40,7 +42,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
       case 'llTable':
         return exportLLTableToLatex(llTable, lang, grammar);
       case 'lrTable':
-        return exportLRTableToLatex(lrTable, lang);
+        return exportLRTableToLatex(lrTable, lang, lrLayout);
       case 'all':
         return [
           '% ==========================================',
@@ -61,7 +63,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
           '\n\\vspace{1em}\n',
           exportLLTableToLatex(llTable, lang, grammar),
           '\n\\vspace{1em}\n',
-          exportLRTableToLatex(lrTable, lang),
+          exportLRTableToLatex(lrTable, lang, lrLayout),
           '\n\\end{document}'
         ].join('\n');
     }
@@ -146,6 +148,18 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
                 onClick={() => setLrVariant(v)}
               >
                 {v}
+              </button>
+            ))}
+            <span style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border)', margin: '0 4px' }} />
+            {(['lecture', 'dragon'] as const).map(l => (
+              <button
+                key={l}
+                className={`btn ${lrLayout === l ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                aria-pressed={lrLayout === l}
+                onClick={() => onLrLayoutChange(l)}
+              >
+                {l === 'lecture' ? t.lrLayoutLecture : t.lrLayoutDragon}
               </button>
             ))}
           </div>

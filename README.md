@@ -64,7 +64,10 @@
   - Interactive top-down stack simulator with a clickable trace table, auto-play, keyboard stepping and live parse tree
 - **LR(k) Analyser & Parser**:
   - $\text{LR}(0)$, $\text{SLR}(1)$, $\text{LALR}(1)$, and $\text{LR}(1)$ canonical collections
-  - $\text{ACTION}$ and $\text{GOTO}$ parsing table generation
+  - Two table layouts, switched at the top of the LR screens (tables, automaton, LaTeX):
+    - **KIV/FJP lectures (default)**: states named by the symbol that leads into them ($E_1, E_2, \dots$; the initial state is $\#$), a table of actions $f$ (P = shift, R$i$ = reduce, A = accept; for LR(0) one action per state) and a table of transitions $g$ over all terminals and non-terminals
+    - **Dragon Book**: numbered states, $\text{ACTION}[s, a]$ with `s5` / `r2` / `acc` and $\text{GOTO}[s, A]$ for non-terminals
+  - Strict LR(0): $S' \to S\bullet$ is a complete item, so it conflicts with a shift or another reduction in the same state (an LR(0) language is prefix-free)
   - Shift/Reduce and Reduce/Reduce conflict detection
   - Interactive SVG State Machine Graph (powered by Dagre) with kernel/closure items, conflict states, pan, zoom, and state inspection
   - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
