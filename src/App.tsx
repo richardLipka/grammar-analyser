@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Grammar } from './core/ast/grammar';
-import { parseGrammar, ParseError } from './core/parser/grammarParser';
+import { parseGrammar, oneRulePerLine, ParseError } from './core/parser/grammarParser';
 import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
 import { buildLLTable, LLTable } from './core/ll/llTable';
 import {
@@ -23,6 +23,7 @@ import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
+import { FavLogo } from './ui/components/FavLogo';
 import { exportGrammarToLatex } from './core/export/latexExport';
 import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 
@@ -133,7 +134,8 @@ function initialSetup() {
     /* no usable location */
   }
   const linkedPreset = PRESET_GRAMMARS.find(p => p.id === url.preset);
-  const grammarText = url.grammar ?? (linkedPreset ?? PRESET_GRAMMARS[0]).grammarText;
+  // A linked grammar is often written on one line ("S->aAS|b;A->a|bSA"): one rule per line in the editor
+  const grammarText = url.grammar !== undefined ? oneRulePerLine(url.grammar) : (linkedPreset ?? PRESET_GRAMMARS[0]).grammarText;
   const preset = PRESET_GRAMMARS.find(p => p.grammarText === grammarText);
   return {
     url,
@@ -337,6 +339,37 @@ export const App: React.FC = () => {
           <div>
             <div className="brand-title">{t.appTitle}</div>
             <div className="brand-subtitle">{t.appSubtitle}</div>
+          </div>
+        </div>
+
+        {/* Author and affiliation, as in the author's other teaching tools */}
+        <div className="header-credit">
+          <a
+            className="header-logo"
+            href="https://www.kiv.zcu.cz/cs"
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t.affiliation}
+            aria-label={t.affiliation}
+          >
+            <FavLogo />
+          </a>
+          <div className="header-credit-text">
+            <div>
+              © 2026{' '}
+              <a href="https://home.zcu.cz/~lipka/" target="_blank" rel="noopener noreferrer">Richard Lipka</a>
+              <span className="credit-extra">
+                <span aria-hidden="true"> · </span>
+                <a href="mailto:lipka@fav.zcu.cz">lipka@fav.zcu.cz</a>
+              </span>
+            </div>
+            <div>
+              <a href="https://github.com/richardLipka/grammar-analyser/blob/master/LICENSE" target="_blank" rel="noopener noreferrer">
+                {t.licence}
+              </a>
+              <span aria-hidden="true"> · </span>
+              <a href="https://github.com/richardLipka/grammar-analyser" target="_blank" rel="noopener noreferrer">GitHub</a>
+            </div>
           </div>
         </div>
 

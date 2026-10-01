@@ -4,7 +4,7 @@
  * the KIV/FJP conventions e = ε and E’).
  */
 import { describe, it, expect } from 'vitest';
-import { parseGrammar, detectDialect } from '../core/parser/grammarParser';
+import { parseGrammar, detectDialect, oneRulePerLine } from '../core/parser/grammarParser';
 import { Grammar } from '../core/ast/grammar';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLLTable } from '../core/ll/llTable';
@@ -414,5 +414,38 @@ B --> 1      (5)`;
     expect(rules(g)).toEqual(['A1 -> A2 A3', 'A1 -> a', 'A2 -> A3 A1', 'A2 -> b', 'A3 -> A1 A2', 'A3 -> c']);
     const h = parseOk("S -> AS'A | a\nS' -> b").grammar!;
     expect(rules(h)).toEqual(["S -> A S' A", 'S -> a', "S' -> b"]);
+  });
+});
+
+describe('One rule per line (grammars from links)', () => {
+  it('breaks a one-line grammar at ; and before the next left-hand side', () => {
+    expect(oneRulePerLine('S-->aAS|b;A-->a|bSA')).toBe('S-->aAS|b\nA-->a|bSA');
+    expect(oneRulePerLine('S -> aAS | b A -> a | bSA')).toBe('S -> aAS | b\nA -> a | bSA');
+    expect(oneRulePerLine("E->TE' E'->+TE'|e T->FT'")).toBe("E->TE'\nE'->+TE'|e\nT->FT'");
+    expect(oneRulePerLine('S --> aAS (1); (2) S --> b')).toBe('S --> aAS (1)\n(2) S --> b');
+    expect(oneRulePerLine('<S> ::= a <A> <A> ::= b')).toBe('<S> ::= a <A>\n<A> ::= b');
+    expect(oneRulePerLine('S->a;A->b // note')).toBe('S->a\nA->b // note');
+  });
+
+  it('leaves everything else as it is', () => {
+    for (const text of [
+      'S -> a S\n  | b\nA -> c',
+      'E -> E + T | T',
+      'S -> a ; b',
+      'S -> a | A -> b',
+      'S -> "A ->" b',
+      '%token NUM\n%%\ne : e \'+\' NUM | NUM ;',
+      'grammar G; s : A B ;'
+    ]) {
+      expect(oneRulePerLine(text)).toBe(text);
+    }
+  });
+
+  it('parses rules separated by a space like rules on separate lines', () => {
+    const res = parseOk('S -> aAS | b A -> a | bSA');
+    expect(rules(res.grammar!)).toEqual(['S -> a A S', 'S -> b', 'A -> a', 'A -> b S A']);
+    expect(rules(parseOk("E->TE' E'->+TE'|e T->FT' T'->*FT'|e F->(E)|a").grammar!)).toEqual([
+      "E -> T E'", "E' -> + T E'", "E' ->", "T -> F T'", "T' -> * F T'", "T' ->", 'F -> ( E )', 'F -> a'
+    ]);
   });
 });

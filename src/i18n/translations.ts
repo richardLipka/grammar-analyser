@@ -15,6 +15,8 @@ export const TRANSLATIONS = {
   en: {
     appTitle: 'Grammar Analyser',
     appSubtitle: 'Interactive laboratory for formal languages, grammars and parsing',
+    affiliation: 'Department of Computer Science and Engineering, Faculty of Applied Sciences, University of West Bohemia',
+    licence: 'Free to use in schools (MIT licence)',
     editorTitle: 'Grammar',
     editorPlaceholder: 'Enter the rules (e.g. E → E + T | T)',
     syntaxHintTitle: 'Writing a grammar:',
@@ -353,6 +355,8 @@ export const TRANSLATIONS = {
   cz: {
     appTitle: 'Analyzátor gramatik',
     appSubtitle: 'Interaktivní laboratoř formálních jazyků, gramatik a syntaktické analýzy',
+    affiliation: 'Katedra informatiky a výpočetní techniky, Fakulta aplikovaných věd, Západočeská univerzita v Plzni',
+    licence: 'Volně k použití ve školách (licence MIT)',
     editorTitle: 'Gramatika',
     editorPlaceholder: 'Zadejte přepisovací pravidla (např. E → E + T | T)',
     syntaxHintTitle: 'Zápis gramatiky:',

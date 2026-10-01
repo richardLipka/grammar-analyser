@@ -545,18 +545,72 @@ function findRuleOperator(line: string): { index: number; op: string } | null {
   return LHS_RE.test(line.slice(0, index).trim()) ? { index, op } : null;
 }
 
-/** Splits "S -> aAS | b; A -> a | bSA" at each ; (kept as the terminator) that is followed by a new rule. */
-function splitRulesOnLine(line: string): string[] {
-  const parts: string[] = [];
+// A new rule "A ->" after white space inside a right-hand side; only arrows, since ':' and '=' are common terminals
+const NEXT_RULE_RE = /\s+(?:<[^<>]+>|[\p{L}_][\p{L}\p{N}_]*'*)\s*(?:-->|->|→|⟶|::=)/uy;
+
+/**
+ * Where further rules start on one line: after a ';' that is followed by a rule
+ * ("S -> aAS | b; A -> a | bSA"), or at white space before "A ->" once the
+ * current rule has a right-hand side ("S -> aAS | b A -> a | bSA").
+ */
+function ruleBreaks(line: string): { at: number; semicolon: boolean }[] {
+  const breaks: { at: number; semicolon: boolean }[] = [];
   let start = 0;
+  let rhsFrom = -1; // where the right-hand side of the current rule begins
+  const updateRhs = () => {
+    const seg = line.slice(start);
+    let from = start + seg.length - seg.trimStart().length;
+    const label = line.slice(from).match(LEADING_LABEL_RE);
+    if (label && findRuleOperator(line.slice(from + label[0].length))) from += label[0].length;
+    const op = findRuleOperator(line.slice(from));
+    rhsFrom = op ? from + op.index + op.op.length : -1;
+  };
+  updateRhs();
   scanQuotes(line, (i, inQuote) => {
-    if (!inQuote && line[i] === ';' && findRuleOperator(line.slice(i + 1).trim().replace(LEADING_LABEL_RE, ''))) {
-      parts.push(line.slice(start, i + 1).trim());
-      start = i + 1;
+    if (inQuote) return;
+    if (line[i] === ';') {
+      if (findRuleOperator(line.slice(i + 1).trim().replace(LEADING_LABEL_RE, ''))) {
+        breaks.push({ at: i + 1, semicolon: true });
+        start = i + 1;
+        updateRhs();
+      }
+      return;
+    }
+    if (rhsFrom !== -1 && i > rhsFrom && /\s/.test(line[i]) && !/\s/.test(line[i - 1])) {
+      NEXT_RULE_RE.lastIndex = i;
+      const rhs = line.slice(rhsFrom, i).trim();
+      if (NEXT_RULE_RE.test(line) && rhs.length > 0 && !rhs.endsWith('|')) {
+        breaks.push({ at: i, semicolon: false });
+        start = i;
+        updateRhs();
+      }
     }
   });
-  parts.push(line.slice(start).trim());
-  return parts;
+  return breaks;
+}
+
+/** Splits a line holding several rules; a separating ; stays at the end of its rule as the terminator. */
+function splitRulesOnLine(line: string): string[] {
+  const cuts = [0, ...ruleBreaks(line).map(b => b.at), line.length];
+  return cuts.slice(1).map((end, k) => line.slice(cuts[k], end).trim());
+}
+
+/**
+ * Puts every rule of a textbook-notation grammar on its own line (alternatives
+ * stay together): "S-->aAS|b;A-->a|bSA" becomes "S-->aAS|b" and "A-->a|bSA".
+ * Used for grammars that arrive in a link. Yacc and ANTLR input is returned unchanged.
+ */
+export function oneRulePerLine(text: string): string {
+  if (detectDialect(text) !== 'plain') return text;
+  return text.split(/\r?\n/).flatMap(line => {
+    const breaks = ruleBreaks(stripLineComment(line));
+    if (breaks.length === 0) return [line];
+    const cuts = [0, ...breaks.map(b => b.at), line.length];
+    return cuts.slice(1).map((end, k) => {
+      const piece = line.slice(cuts[k], end).trim();
+      return breaks[k]?.semicolon ? piece.replace(/;$/, '').trimEnd() : piece;
+    });
+  }).join('\n');
 }
 
 function cleanSymbol(sym: string): string {

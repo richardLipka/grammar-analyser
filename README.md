@@ -24,7 +24,7 @@
   - A standalone `e` (KIV/FJP notation for ε): the editor asks whether it means ε or the terminal e; until answered it is read as ε
   - Compact textbook notation `S → aSb | ab`, `E' → +TE'`, `A → 0A1`, `A1 → A2A3`: when every left-hand side is a capital letter with optional digits and primes, words are split into the defined non-terminals (longest match) and single characters
   - Rule numbers copied from slides are labels, not symbols: `S --> aAS    (1)`, `(1) S -> …`, `1. S -> …`; a warning appears when they differ from the analyser's numbering
-  - Several rules on one line separated by `;` (`S -> aAS | b; A -> a | bSA`)
+  - Several rules on one line, separated by `;` (`S -> aAS | b; A -> a | bSA`) or by a space before the next `A ->` (`S -> aAS | b A -> a | bSA`)
   - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
   - Comments: `// ...`, `# ...`, `/* ... */`
   - Unicode identifiers (`Výraz`, `Člen`)
@@ -86,7 +86,7 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 
 | Parameter | Meaning |
 |---|---|
-| `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A` or rules separated by `;`. A `+` stays a plus sign. |
+| `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
 | `w` (or `word`) | The input word for the LL and LR simulators, symbols separated by spaces |
 | `tab` | `overview`, `first-follow`, `transformations`, `ll`, `lr`, `graph`, `words`, `latex` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
@@ -145,4 +145,11 @@ src/
 ---
 
 ## 📄 License
-MIT
+
+MIT — see [LICENSE](LICENSE). Free to use, adapt and share in schools.
+
+© 2026 [Richard Lipka](https://home.zcu.cz/~lipka/) &lt;lipka@fav.zcu.cz&gt;
+Department of Computer Science and Engineering, Faculty of Applied Sciences,
+University of West Bohemia.
+
+The faculty mark shown in the header belongs to the university and is not covered by the MIT licence.

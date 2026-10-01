@@ -2,6 +2,8 @@
   "name": "grammar-analyser",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
+  "author": "Richard Lipka <lipka@fav.zcu.cz> (https://home.zcu.cz/~lipka/)",
   "type": "module",
   "scripts": {
     "dev": "vite",

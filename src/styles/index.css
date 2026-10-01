@@ -257,6 +257,80 @@ body {
   gap: 10px;
 }
 
+/* Author credit between the title and the settings */
+.header-credit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-right: 14px;
+  border-right: 1px solid var(--color-border);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.header-logo {
+  display: inline-flex;
+  color: var(--color-text-primary);
+  line-height: 0;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.header-logo svg {
+  height: 28px;
+  width: auto;
+}
+
+.header-logo:focus-visible,
+.header-credit-text a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.header-credit-text a {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header-credit-text a:hover {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* Narrow screens: the logo and the name stay, the e-mail, licence and GitHub links go */
+@media (max-width: 900px) {
+  .header-credit-text > div:last-child,
+  .header-credit-text .credit-extra {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .header-credit {
+    margin-left: 0;
+    padding-right: 0;
+    border-right: none;
+    gap: 6px;
+    font-size: 10.5px;
+  }
+
+  .header-logo svg {
+    height: 20px;
+  }
+
+  /* the credit and the settings share one row under the title */
+  .app-header {
+    column-gap: 8px;
+  }
+
+  .header-credit + .header-controls {
+    margin-left: auto;
+    gap: 6px;
+  }
+}
+
 /* Layout Container */
 .main-layout {
   flex: 1 1 auto;
