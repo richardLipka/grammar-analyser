@@ -487,7 +487,8 @@ describe('Bilingual Output Support', () => {
       // Grammar export
       const latexGrammar = exportGrammarToLatex(g);
       expect(latexGrammar).toContain('\\begin{align*}');
-      expect(latexGrammar).toContain('S &\\to');
+      expect(latexGrammar).toContain('\\mathit{S} &\\to');
+      expect(latexGrammar).toContain('\\mathtt{a}');
 
       // Sets export
       const latexSets = exportSetsToLatex(g, analysis, 'en');
@@ -520,7 +521,7 @@ describe('Bilingual Output Support', () => {
       };
       const latexTree = exportParseTreeToTikz(treeNode);
       expect(latexTree).toContain('\\begin{forest}');
-      expect(latexTree).toContain('[S [a] [S [c]] [b]]');
+      expect(latexTree).toContain('[{$\\mathit{S}$} [{$\\mathtt{a}$}] [{$\\mathit{S}$} [{$\\mathtt{c}$}]] [{$\\mathtt{b}$}]]');
       expect(latexTree).toContain('\\end{forest}');
     });
   });

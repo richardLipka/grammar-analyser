@@ -1,200 +1,160 @@
 /**
  * Interactive SVG Automaton Graph Visualizer powered by Dagre layout
  * Supports:
- * - Zoom & Pan (mouse drag & wheel)
+ * - Zoom (towards the cursor) & pan, fit to view
  * - State selection & inspection
- * - Dot marker • highlight
- * - Transition symbol pill badges
+ * - Kernel items separated from closure items, complete (reduce) items highlighted
+ * - States with conflicts in the selected table outlined in red
+ * - One edge per pair of states, labelled with all its symbols
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import dagre from 'dagre';
 import { LRAutomaton, LRState } from '../../core/lr/lrAutomaton';
-import {
-  formatLR0Item,
-  formatLR1Item,
-  groupLR1Items,
-  GroupedLR1Item,
-  formatGroupedLR1Item,
-  LR0Item
-} from '../../core/lr/lrItem';
+import { groupLR1Items, LR0Item, GroupedLR1Item } from '../../core/lr/lrItem';
 import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon } from 'lucide-react';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 import { Language } from '../../i18n/translations';
+import { usePanZoom } from './usePanZoom';
 
 interface AutomatonGraphVisualizerProps {
   automaton: LRAutomaton;
   selectedStateId?: number | null;
   onSelectState?: (stateId: number) => void;
+  conflictStates?: Set<number>;
   lang?: Language;
 }
 
+interface DisplayItem {
+  lhs: string;
+  before: string[];
+  after: string[];
+  lookaheads?: string[];
+  isKernel: boolean;
+  isComplete: boolean;
+}
+
 interface LayoutNode {
-  id: string;
+  id: number;
   x: number;
   y: number;
   width: number;
   height: number;
   state: LRState;
+  items: DisplayItem[];
 }
 
 interface LayoutEdge {
-  from: string;
-  to: string;
-  symbol: string;
+  from: number;
+  to: number;
+  label: string;
   points: { x: number; y: number }[];
+  labelPos: { x: number; y: number };
+}
+
+const HEADER_H = 28;
+const LINE_H = 19;
+const CHAR_W = 6.9;
+const MARGIN = 30;
+
+/** Items of a state, kernel items first (S' -> •S and items with the dot inside). */
+export function stateDisplayItems(state: LRState, withLookaheads: boolean): DisplayItem[] {
+  const base: (LR0Item & { lookaheads?: string[] })[] = withLookaheads
+    ? groupLR1Items(state.items1 || []).map((g: GroupedLR1Item) => ({ production: g.production, dotIndex: g.dotIndex, lookaheads: g.lookaheads }))
+    : state.items0;
+  const items = base.map(it => ({
+    lhs: it.production.lhs,
+    before: it.production.rhs.slice(0, it.dotIndex),
+    after: it.production.rhs.slice(it.dotIndex),
+    lookaheads: it.lookaheads,
+    isKernel: it.dotIndex > 0 || it.production.id === 0,
+    isComplete: it.dotIndex === it.production.rhs.length
+  }));
+  return [...items.filter(i => i.isKernel), ...items.filter(i => !i.isKernel)];
+}
+
+function itemLength(it: DisplayItem): number {
+  const core = `${it.lhs} → ${[...it.before, '•', ...it.after].join(' ')}`;
+  return it.lookaheads ? core.length + 4 + it.lookaheads.join(', ').length : core.length;
 }
 
 export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> = ({
   automaton,
   selectedStateId,
   onSelectState,
+  conflictStates,
   lang = 'en'
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [nodes, setNodes] = useState<LayoutNode[]>([]);
-  const [edges, setEdges] = useState<LayoutEdge[]>([]);
-  const [graphBounds, setGraphBounds] = useState({ width: 800, height: 600 });
   const [isExportingPng, setIsExportingPng] = useState(false);
-  
-  // Pan and zoom state
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 40, y: 40 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStart = useRef({ x: 0, y: 0 });
+  const markerId = useId().replace(/:/g, '');
+  const isCz = lang === 'cz';
+  const withLookaheads = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)';
 
-  useEffect(() => {
-    if (!automaton || automaton.states.length === 0) return;
-
+  const layout = useMemo(() => {
     const g = new dagre.graphlib.Graph();
-    g.setGraph({
-      rankdir: 'LR',
-      nodesep: 40,
-      ranksep: 80,
-      marginx: 20,
-      marginy: 20
-    });
+    g.setGraph({ rankdir: 'LR', nodesep: 36, ranksep: 90, marginx: 10, marginy: 10 });
     g.setDefaultEdgeLabel(() => ({}));
 
-    // Calculate node dimensions
-    automaton.states.forEach(s => {
-      let lineCount = 0;
-      let maxLen = 14;
+    const itemsByState = new Map<number, DisplayItem[]>();
+    for (const s of automaton.states) {
+      const items = stateDisplayItems(s, withLookaheads);
+      itemsByState.set(s.id, items);
+      const maxLen = Math.max(14, ...items.map(itemLength));
+      const hasSeparator = items.some(i => i.isKernel) && items.some(i => !i.isKernel);
+      g.setNode(String(s.id), {
+        width: Math.max(170, Math.round(maxLen * CHAR_W + 26)),
+        height: HEADER_H + 10 + items.length * LINE_H + (hasSeparator ? 6 : 0)
+      });
+    }
 
-      if (automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)') {
-        const grouped = groupLR1Items(s.items1 || []);
-        lineCount = grouped.length;
-        for (const it of grouped) {
-          const formatted = formatGroupedLR1Item(it);
-          if (formatted.length > maxLen) maxLen = formatted.length;
-        }
-      } else {
-        lineCount = s.items0.length;
-        for (const it of s.items0) {
-          const formatted = formatLR0Item(it);
-          if (formatted.length > maxLen) maxLen = formatted.length;
-        }
+    // Merge parallel transitions (same source and target) into one labelled edge
+    const merged = new Map<string, { from: number; to: number; symbols: string[] }>();
+    for (const s of automaton.states) {
+      for (const [sym, target] of s.transitions.entries()) {
+        const key = `${s.id}->${target}`;
+        if (!merged.has(key)) merged.set(key, { from: s.id, to: target, symbols: [] });
+        merged.get(key)!.symbols.push(sym);
       }
-
-      const width = Math.max(240, Math.round(maxLen * 7.5 + 32));
-      const height = Math.max(76, 36 + lineCount * 20 + 8);
-
-      g.setNode(s.id.toString(), { width, height });
-    });
-
-    // Add transitions
-    automaton.states.forEach(s => {
-      for (const [sym, targetId] of s.transitions.entries()) {
-        g.setEdge(s.id.toString(), targetId.toString(), { label: sym });
-      }
-    });
+    }
+    for (const e of merged.values()) {
+      const label = e.symbols.join(', ');
+      g.setEdge(String(e.from), String(e.to), { label, width: label.length * 7 + 12, height: 18, labelpos: 'c' });
+    }
 
     dagre.layout(g);
 
-    // Collect layouted nodes
-    const layoutNodes: LayoutNode[] = [];
-    automaton.states.forEach(s => {
-      const nodeData = g.node(s.id.toString());
-      if (nodeData) {
-        layoutNodes.push({
-          id: s.id.toString(),
-          x: nodeData.x,
-          y: nodeData.y,
-          width: nodeData.width,
-          height: nodeData.height,
-          state: s
-        });
-      }
+    const nodes: LayoutNode[] = automaton.states.map(s => {
+      const n = g.node(String(s.id));
+      return { id: s.id, x: n.x, y: n.y, width: n.width, height: n.height, state: s, items: itemsByState.get(s.id)! };
     });
-
-    // Collect layouted edges
-    const layoutEdges: LayoutEdge[] = [];
-    automaton.states.forEach(s => {
-      for (const [sym, targetId] of s.transitions.entries()) {
-        const edgeData = g.edge(s.id.toString(), targetId.toString());
-        if (edgeData && edgeData.points) {
-          layoutEdges.push({
-            from: s.id.toString(),
-            to: targetId.toString(),
-            symbol: sym,
-            points: edgeData.points
-          });
-        }
-      }
+    const edges: LayoutEdge[] = [...merged.values()].map(e => {
+      const data = g.edge(String(e.from), String(e.to));
+      const points = data?.points || [];
+      const mid = points[Math.floor(points.length / 2)] || { x: 0, y: 0 };
+      const labelPos = data && typeof data.x === 'number' && typeof data.y === 'number' ? { x: data.x, y: data.y } : mid;
+      return { from: e.from, to: e.to, label: e.symbols.join(', '), points, labelPos };
     });
+    const info = g.graph();
+    return { nodes, edges, width: info.width || 800, height: info.height || 600 };
+  }, [automaton, withLookaheads]);
 
-    const gInfo = g.graph();
-    setGraphBounds({
-      width: (gInfo.width || 800) + 100,
-      height: (gInfo.height || 600) + 100
-    });
-
-    setNodes(layoutNodes);
-    setEdges(layoutEdges);
-  }, [automaton]);
-
-  // Mouse interaction handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    dragStart.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      setPan({
-        x: e.clientX - dragStart.current.x,
-        y: e.clientY - dragStart.current.y
-      });
-    }
-  };
-
-  const handleMouseUp = () => setIsDragging(false);
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.1 : 0.9;
-    setZoom(prev => Math.min(2.5, Math.max(0.3, prev * factor)));
-  };
-
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 40, y: 40 });
-  };
+  const { view, fit, zoomBy, onPointerDown, isDragging, wasDragged } = usePanZoom(
+    containerRef,
+    { width: layout.width, height: layout.height },
+    layout.nodes.length > 0
+  );
 
   const filename = `${automaton.variant.toLowerCase().replace(/[^a-z0-9]/g, '_')}_graph`;
+  const exportBounds = { width: Math.ceil(layout.width + 2 * MARGIN), height: Math.ceil(layout.height + 2 * MARGIN) };
+  const exportTransform = `translate(${MARGIN}, ${MARGIN})`;
 
-  const handleExportSvg = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!svgRef.current) return;
-    exportSvgFile(svgRef.current, filename, graphBounds);
-  };
-
-  const handleExportPng = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleExportPng = async () => {
     if (!svgRef.current || isExportingPng) return;
     setIsExportingPng(true);
     try {
-      await exportPngFile(svgRef.current, filename, graphBounds, 2);
+      await exportPngFile(svgRef.current, filename, exportBounds, 2, exportTransform);
     } catch (err) {
       console.error('Failed to export PNG:', err);
     } finally {
@@ -202,70 +162,43 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     }
   };
 
+  const edgePath = (pts: { x: number; y: number }[]) => {
+    if (pts.length === 0) return '';
+    if (pts.length < 3) return `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')}`;
+    // Smooth the dagre polyline with quadratic segments through the midpoints
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i].x + pts[i + 1].x) / 2;
+      const my = (pts[i].y + pts[i + 1].y) / 2;
+      d += ` Q ${pts[i].x},${pts[i].y} ${i === pts.length - 2 ? pts[i + 1].x : mx},${i === pts.length - 2 ? pts[i + 1].y : my}`;
+    }
+    return d;
+  };
+
   return (
     <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: '520px',
-        overflow: 'hidden',
-        backgroundColor: 'var(--color-bg-surface)',
-        borderRadius: 'var(--radius-lg)',
-        border: '1px solid var(--color-border)',
-        cursor: isDragging ? 'grabbing' : 'grab',
-        userSelect: 'none'
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
+      ref={containerRef}
+      className="graph-canvas"
+      style={{ height: '540px', cursor: isDragging ? 'grabbing' : 'grab' }}
+      onPointerDown={onPointerDown}
     >
-      {/* Zoom / Reset / Export Toolbar */}
-      <div style={{
-        position: 'absolute',
-        top: '12px',
-        right: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        zIndex: 10,
-        backgroundColor: 'var(--color-bg-elevated)',
-        padding: '4px',
-        borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--color-border)'
-      }}>
-        <button
-          className="btn-icon"
-          title="Zoom In"
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2.5, z * 1.15)); }}
-        >
+      <div className="graph-toolbar">
+        <button className="btn-icon" title={isCz ? 'Přiblížit' : 'Zoom in'} onClick={() => zoomBy(1.2)}>
           <ZoomIn size={16} />
         </button>
-        <button
-          className="btn-icon"
-          title="Zoom Out"
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.3, z * 0.85)); }}
-        >
+        <button className="btn-icon" title={isCz ? 'Oddálit' : 'Zoom out'} onClick={() => zoomBy(1 / 1.2)}>
           <ZoomOut size={16} />
         </button>
-        <button
-          className="btn-icon"
-          title="Reset View"
-          onClick={(e) => { e.stopPropagation(); resetView(); }}
-        >
+        <button className="btn-icon" title={isCz ? 'Zobrazit celý automat' : 'Fit whole automaton'} onClick={fit}>
           <Maximize2 size={16} />
         </button>
-
         <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border)', margin: '0 2px' }} />
-
-        {/* Subtle SVG & PNG Export Buttons */}
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
-          title={lang === 'cz' ? 'Exportovat graf jako vektorový SVG' : 'Export graph as vector SVG'}
-          onClick={handleExportSvg}
+          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', gap: '4px' }}
+          title={isCz ? 'Exportovat graf jako vektorový SVG' : 'Export graph as vector SVG'}
+          onClick={() => svgRef.current && exportSvgFile(svgRef.current, filename, exportBounds, exportTransform)}
         >
           <Download size={12} />
           <span>SVG</span>
@@ -273,8 +206,8 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
-          title={lang === 'cz' ? 'Exportovat graf jako PNG (vysoké rozlišení)' : 'Export graph as high-res PNG'}
+          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', gap: '4px' }}
+          title={isCz ? 'Exportovat graf jako PNG (vysoké rozlišení)' : 'Export graph as high-res PNG'}
           onClick={handleExportPng}
           disabled={isExportingPng}
         >
@@ -283,88 +216,47 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
         </button>
       </div>
 
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        style={{ width: '100%', height: '100%' }}
-      >
+      <svg ref={svgRef} width="100%" height="100%">
         <defs>
-          <marker
-            id="arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--color-text-muted)" />
+          <marker id={`${markerId}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path className="g-arrow" d="M 0 1 L 10 5 L 0 9 z" />
           </marker>
-          <marker
-            id="arrow-selected"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--color-primary)" />
+          <marker id={`${markerId}-arrow-active`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path className="g-arrow active" d="M 0 1 L 10 5 L 0 9 z" />
           </marker>
         </defs>
 
-        <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-          {/* Edges */}
-          {edges.map((edge, idx) => {
-            const isConnected = selectedStateId !== undefined &&
-              (Number(edge.from) === selectedStateId || Number(edge.to) === selectedStateId);
-
-            const pathD = `M ${edge.points.map(p => `${p.x},${p.y}`).join(' L ')}`;
-            const mid = edge.points[Math.floor(edge.points.length / 2)] || { x: 0, y: 0 };
-
+        <g data-viewport="" transform={`translate(${view.x}, ${view.y}) scale(${view.k})`}>
+          {layout.edges.map((edge, idx) => {
+            const active = selectedStateId !== undefined && selectedStateId !== null &&
+              (edge.from === selectedStateId || edge.to === selectedStateId);
+            const mid = edge.labelPos;
+            const labelW = edge.label.length * 7 + 12;
             return (
               <g key={`edge_${idx}`}>
                 <path
-                  d={pathD}
-                  fill="none"
-                  stroke={isConnected ? 'var(--color-primary)' : 'var(--color-border)'}
-                  strokeWidth={isConnected ? 2.5 : 1.5}
-                  markerEnd={isConnected ? 'url(#arrow-selected)' : 'url(#arrow)'}
+                  className={`g-edge ${active ? 'active' : ''}`}
+                  d={edgePath(edge.points)}
+                  markerEnd={`url(#${markerId}-arrow${active ? '-active' : ''})`}
                 />
-                {/* Edge Symbol Badge */}
-                <rect
-                  x={mid.x - 12}
-                  y={mid.y - 10}
-                  width={24}
-                  height={18}
-                  rx={4}
-                  fill="var(--color-bg-elevated)"
-                  stroke={isConnected ? 'var(--color-primary)' : 'var(--color-border)'}
-                  strokeWidth={1}
-                />
-                <text
-                  x={mid.x}
-                  y={mid.y + 3}
-                  textAnchor="middle"
-                  fill="var(--color-text-primary)"
-                  fontSize="10"
-                  fontFamily="var(--font-mono)"
-                  fontWeight="600"
-                >
-                  {edge.symbol}
-                </text>
+                <rect className={`g-label-bg ${active ? 'active' : ''}`} x={mid.x - labelW / 2} y={mid.y - 9} width={labelW} height={18} rx={4} />
+                <text className="g-label" x={mid.x} y={mid.y + 4} textAnchor="middle">{edge.label}</text>
               </g>
             );
           })}
 
-          {/* Nodes */}
-          {nodes.map(node => {
-            const isSelected = selectedStateId === node.state.id;
-            const isAccepting = node.state.isAccepting;
-            const items = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)'
-              ? groupLR1Items(node.state.items1 || [])
-              : node.state.items0;
+          {layout.nodes.map(node => {
+            const isSelected = selectedStateId === node.id;
+            const isAccepting = !!node.state.isAccepting;
+            const hasConflict = !!conflictStates?.has(node.id);
+            const stateCls = isSelected ? 'selected' : hasConflict ? 'conflict' : isAccepting ? 'accepting' : '';
+            const firstClosure = node.items.findIndex(i => !i.isKernel);
+            const separatorAt = firstClosure > 0 ? firstClosure : -1;
+            const tags = [
+              node.id === 0 ? (isCz ? 'počáteční' : 'initial') : '',
+              isAccepting ? (isCz ? 'přijímající' : 'accept') : '',
+              hasConflict ? (isCz ? '⚠ kolize' : '⚠ conflict') : ''
+            ].filter(Boolean);
 
             return (
               <g
@@ -372,73 +264,39 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                 transform={`translate(${node.x - node.width / 2}, ${node.y - node.height / 2})`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectState?.(node.state.id);
+                  if (!wasDragged()) onSelectState?.(node.id);
                 }}
                 style={{ cursor: 'pointer' }}
               >
-                {/* State Card Box */}
-                <rect
-                  width={node.width}
-                  height={node.height}
-                  rx={8}
-                  fill={isSelected ? 'var(--color-primary-subtle)' : 'var(--color-bg-card)'}
-                  stroke={isSelected ? 'var(--color-primary)' : (isAccepting ? 'var(--color-success)' : 'var(--color-border)')}
-                  strokeWidth={isSelected ? 2.5 : (isAccepting ? 2 : 1.5)}
-                  filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"
-                />
-
-                {/* State Header */}
-                <rect
-                  width={node.width}
-                  height={28}
-                  rx={7}
-                  fill={isSelected ? 'var(--color-primary)' : (isAccepting ? 'var(--color-success-subtle)' : 'var(--color-bg-elevated)')}
-                />
-                <line x1={0} y1={28} x2={node.width} y2={28} stroke={isSelected ? 'var(--color-primary)' : 'var(--color-border)'} strokeWidth={1} />
-                <text
-                  x={12}
-                  y={18}
-                  fill={isSelected ? '#ffffff' : (isAccepting ? 'var(--color-success)' : 'var(--color-text-primary)')}
-                  fontSize="12"
-                  fontWeight="700"
-                  fontFamily="var(--font-sans)"
-                >
-                  State {node.state.id} {node.state.id === 0 ? '(Initial)' : ''} {isAccepting ? '(Accept)' : ''}
+                <rect className={`g-node ${stateCls}`} width={node.width} height={node.height} rx={8} />
+                <rect className={`g-node-header ${isSelected ? 'selected' : ''}`} x={1} y={1} width={node.width - 2} height={HEADER_H - 1} rx={7} />
+                <text className={`g-node-title ${isSelected ? 'selected' : hasConflict ? 'conflict' : ''}`} x={10} y={18}>
+                  {isCz ? 'Stav' : 'State'} {node.id}{tags.length > 0 ? `  (${tags.join(', ')})` : ''}
                 </text>
 
-                {/* Items List */}
-                {items.map((item, itIdx) => {
-                  if (automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)') {
-                    const gItem = item as GroupedLR1Item;
-                    const lr0Str = formatLR0Item({ production: gItem.production, dotIndex: gItem.dotIndex });
-                    const lasStr = gItem.lookaheads.join(', ');
+                {separatorAt > 0 && (
+                  <line
+                    className="g-closure-sep"
+                    x1={8}
+                    x2={node.width - 8}
+                    y1={HEADER_H + 8 + separatorAt * LINE_H - 2}
+                    y2={HEADER_H + 8 + separatorAt * LINE_H - 2}
+                  />
+                )}
 
-                    return (
-                      <text
-                        key={`item_${itIdx}`}
-                        x={12}
-                        y={48 + itIdx * 20}
-                        fontSize="11"
-                        fontFamily="var(--font-mono)"
-                      >
-                        <tspan fill="var(--color-text-secondary)">[{lr0Str}, </tspan>
-                        <tspan fill="var(--color-primary)" fontWeight="700">{lasStr}</tspan>
-                        <tspan fill="var(--color-text-secondary)">]</tspan>
-                      </text>
-                    );
-                  }
-
-                  const lr0Str = formatLR0Item(item as LR0Item);
+                {node.items.map((it, itIdx) => {
+                  const y = HEADER_H + 20 + itIdx * LINE_H + (separatorAt > 0 && itIdx >= separatorAt ? 6 : 0);
                   return (
-                    <text
-                      key={`item_${itIdx}`}
-                      x={12}
-                      y={48 + itIdx * 20}
-                      fill="var(--color-text-secondary)"
-                      fontSize="11"
-                      fontFamily="var(--font-mono)"
-                    >
-                      {lr0Str}
+                    <text key={`item_${itIdx}`} className={`g-item ${it.isComplete ? 'reduce' : ''}`} x={10} y={y}>
+                      <tspan>{`${it.lhs} → ${it.before.join(' ')}${it.before.length ? ' ' : ''}`}</tspan>
+                      <tspan className="g-item-dot">•</tspan>
+                      <tspan>{it.after.length ? ` ${it.after.join(' ')}` : ''}</tspan>
+                      {it.lookaheads && (
+                        <>
+                          <tspan>{' , '}</tspan>
+                          <tspan className="g-item-la">{it.lookaheads.join(' / ')}</tspan>
+                        </>
+                      )}
                     </text>
                   );
                 })}

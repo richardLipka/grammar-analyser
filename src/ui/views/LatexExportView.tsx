@@ -12,26 +12,24 @@ import {
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { FileText, Copy, Check, Download } from 'lucide-react';
 
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+
 interface LatexExportViewProps {
   grammar: Grammar;
   analysis: GrammarAnalysis;
   llTable: LLTable;
-  slr1Table: LRTable;
+  lrTables: Record<LRVariantName, LRTable>;
   lang: Language;
 }
 
 type LatexSection = 'all' | 'grammar' | 'sets' | 'llTable' | 'lrTable';
 
-export const LatexExportView: React.FC<LatexExportViewProps> = ({
-  grammar,
-  analysis,
-  llTable,
-  slr1Table,
-  lang
-}) => {
+export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analysis, llTable, lrTables, lang }) => {
   const t = TRANSLATIONS[lang];
   const [section, setSection] = useState<LatexSection>('all');
+  const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
   const [copied, setCopied] = useState(false);
+  const lrTable = lrTables[lrVariant];
 
   const getLatex = (): string => {
     switch (section) {
@@ -40,9 +38,9 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
       case 'sets':
         return exportSetsToLatex(grammar, analysis, lang);
       case 'llTable':
-        return exportLLTableToLatex(llTable, lang);
+        return exportLLTableToLatex(llTable, lang, grammar);
       case 'lrTable':
-        return exportLRTableToLatex(slr1Table, lang);
+        return exportLRTableToLatex(lrTable, lang);
       case 'all':
         return [
           '% ==========================================',
@@ -51,6 +49,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           '% ==========================================\n',
           '\\documentclass{article}',
           '\\usepackage[utf8]{inputenc}',
+          '\\usepackage[T1]{fontenc}',
           '\\usepackage{amsmath, amssymb}',
           '\\usepackage{multirow}',
           '\\usepackage{forest}',
@@ -60,9 +59,9 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           '\n\\vspace{1em}\n',
           exportSetsToLatex(grammar, analysis, lang),
           '\n\\vspace{1em}\n',
-          exportLLTableToLatex(llTable, lang),
+          exportLLTableToLatex(llTable, lang, grammar),
           '\n\\vspace{1em}\n',
-          exportLRTableToLatex(slr1Table, lang),
+          exportLRTableToLatex(lrTable, lang),
           '\n\\end{document}'
         ].join('\n');
     }
@@ -70,10 +69,14 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
 
   const latexCode = getLatex();
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(latexCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(latexCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Clipboard write failed:', err);
+    }
   };
 
   const handleDownload = () => {
@@ -82,14 +85,24 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
     const a = document.createElement('a');
     a.href = url;
     a.download = `grammar_analysis_${section}.tex`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  const sections: { id: LatexSection; label: string }[] = [
+    { id: 'all', label: t.completeArticle },
+    { id: 'grammar', label: t.grammarAlign },
+    { id: 'sets', label: t.firstFollowTable },
+    { id: 'llTable', label: t.llTableTab },
+    { id: 'lrTable', label: t.lrTableTab }
+  ];
 
   return (
     <div>
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FileText size={18} color="var(--color-primary)" />
             <span>{t.tabLatex}</span>
@@ -107,46 +120,37 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           </div>
         </div>
 
-        {/* Section Selectors */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '14px' }}>
-          <button
-            className={`btn ${section === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '12px' }}
-            onClick={() => setSection('all')}
-          >
-            {t.completeArticle}
-          </button>
-          <button
-            className={`btn ${section === 'grammar' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '12px' }}
-            onClick={() => setSection('grammar')}
-          >
-            {t.grammarAlign}
-          </button>
-          <button
-            className={`btn ${section === 'sets' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '12px' }}
-            onClick={() => setSection('sets')}
-          >
-            {t.firstFollowTable}
-          </button>
-          <button
-            className={`btn ${section === 'llTable' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '12px' }}
-            onClick={() => setSection('llTable')}
-          >
-            {t.llTableTab}
-          </button>
-          <button
-            className={`btn ${section === 'lrTable' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '12px' }}
-            onClick={() => setSection('lrTable')}
-          >
-            {t.slrTableTab}
-          </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+          {sections.map(s => (
+            <button
+              key={s.id}
+              className={`btn ${section === s.id ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '12px' }}
+              aria-pressed={section === s.id}
+              onClick={() => setSection(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
 
-        {/* LaTeX Code Display */}
+        {(section === 'all' || section === 'lrTable') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <span className="hint-text">{t.lrTableVariant}</span>
+            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
+              <button
+                key={v}
+                className={`btn ${lrVariant === v ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                aria-pressed={lrVariant === v}
+                onClick={() => setLrVariant(v)}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        )}
+
         <pre style={{
           backgroundColor: 'var(--color-bg-base)',
           padding: '16px',
@@ -154,7 +158,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({
           fontFamily: 'var(--font-mono)',
           fontSize: '12.5px',
           lineHeight: '1.6',
-          overflowX: 'auto',
+          overflow: 'auto',
           border: '1px solid var(--color-border)',
           maxHeight: '480px'
         }}>

@@ -1,40 +1,94 @@
 /**
  * Academic Exporter: Generates compile-ready LaTeX for university exams,
  * problem sets, and lecture handouts.
+ *
+ * Conventions: grammar symbols are typeset in math mode, terminals in
+ * \mathtt, non-terminals in \mathit, ε as \varepsilon and the end marker as \$.
+ * Required packages: amsmath (align*), multirow (LR tables), forest (trees).
  */
 
-import { Grammar, Production, formatProduction, formatRhs, END_MARKER } from '../ast/grammar';
+import { Grammar, END_MARKER, EPSILON } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { LLTable } from '../ll/llTable';
 import { LRTable, formatAction } from '../lr/lrTable';
 import { DerivationNode } from '../generator/wordGenerator';
 
-export function exportGrammarToLatex(g: Grammar): string {
-  const lines: string[] = [
-    '% Grammar Definition',
-    '\\begin{align*}'
-  ];
+/** Escapes a string for use inside \mathtt{...} / \mathit{...} / \text{...}. */
+function escapeInner(str: string): string {
+  return [...str].map(ch => {
+    switch (ch) {
+      case '\\': return '\\backslash{}';
+      case '{': return '\\{';
+      case '}': return '\\}';
+      case '_': return '\\_';
+      case '^': return '\\text{\\textasciicircum}';
+      case '%': return '\\%';
+      case '&': return '\\&';
+      case '#': return '\\#';
+      case '$': return '\\$';
+      case '~': return '\\text{\\textasciitilde}';
+      case "'": return '\\prime{}';
+      default: return ch;
+    }
+  }).join('');
+}
 
-  // Group by LHS
+/** Typesets one grammar symbol in math mode. */
+export function latexSymbol(sym: string, isTerminal: boolean): string {
+  if (sym === EPSILON || sym === '') return '\\varepsilon';
+  if (sym === END_MARKER) return '\\$';
+  if (!isTerminal) {
+    // Keep primes as real primes: E' -> E'
+    const m = sym.match(/^(.*?)('*)$/);
+    const base = m ? m[1] : sym;
+    const primes = m ? m[2] : '';
+    return `\\mathit{${escapeInner(base)}}${primes}`;
+  }
+  return `\\mathtt{${escapeInner(sym)}}`;
+}
+
+function latexRhs(rhs: string[], g: Pick<Grammar, 'nonTerminals'>): string {
+  if (rhs.length === 0) return '\\varepsilon';
+  return rhs.map(sym => latexSymbol(sym, !g.nonTerminals.has(sym))).join('\\,');
+}
+
+/** A k-lookahead string ("a b", "" = ε) in math mode. */
+function latexLookahead(la: string): string {
+  const parts = la.split(' ').filter(Boolean);
+  if (parts.length === 0) return '\\varepsilon';
+  return parts.map(p => latexSymbol(p, true)).join('\\,');
+}
+
+function latexSetOf(items: Iterable<string>): string {
+  const arr = [...items];
+  if (arr.length === 0) return '$\\emptyset$';
+  return `$\\{${arr.map(latexLookahead).join(',\\ ')}\\}$`;
+}
+
+export function exportGrammarToLatex(g: Grammar): string {
+  const order: string[] = [];
   const groups = new Map<string, string[][]>();
   for (const p of g.productions) {
-    if (!groups.has(p.lhs)) groups.set(p.lhs, []);
+    if (!groups.has(p.lhs)) {
+      groups.set(p.lhs, []);
+      order.push(p.lhs);
+    }
     groups.get(p.lhs)!.push(p.rhs);
   }
+  // Start symbol first
+  order.sort((a, b) => (a === g.startSymbol ? -1 : b === g.startSymbol ? 1 : 0));
 
-  const entries: string[] = [];
-  for (const [lhs, alts] of groups.entries()) {
-    const formattedAlts = alts.map(rhs => {
-      if (rhs.length === 0) return '\\varepsilon';
-      return rhs.map(sym => escapeLatex(sym)).join(' \\; ');
-    }).join(' \\;\\mid\\; ');
+  const entries = order.map(lhs => {
+    const alts = groups.get(lhs)!.map(rhs => latexRhs(rhs, g)).join(' \\mid ');
+    return `  ${latexSymbol(lhs, false)} &\\to ${alts}`;
+  });
 
-    entries.push(`  ${escapeLatex(lhs)} &\\to ${formattedAlts}`);
-  }
-
-  lines.push(entries.join(' \\\\\n'));
-  lines.push('\\end{align*}');
-  return lines.join('\n');
+  return [
+    '% Grammar Definition (requires \\usepackage{amsmath})',
+    '\\begin{align*}',
+    entries.join(' \\\\\n'),
+    '\\end{align*}'
+  ].join('\n');
 }
 
 export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis, lang: 'en' | 'cz' = 'en'): string {
@@ -45,18 +99,14 @@ export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis, lang: '
     '\\centering',
     '\\begin{tabular}{|c|c|l|l|}',
     '\\hline',
-    `\\textbf{Symbol} & \\textbf{${isCz ? 'Nulovatelný' : 'Nullable'}} & \\textbf{FIRST} & \\textbf{FOLLOW} \\\\ \\hline`
+    `\\textbf{${isCz ? 'Symbol' : 'Symbol'}} & \\textbf{${isCz ? 'Nulovatelný' : 'Nullable'}} & $\\mathrm{FIRST}_1$ & $\\mathrm{FOLLOW}_1$ \\\\ \\hline`
   ];
 
   for (const nt of g.nonTerminals) {
     const isNullable = analysis.nullable.has(nt) ? (isCz ? 'Ano' : 'Yes') : (isCz ? 'Ne' : 'No');
-    const firstSet = analysis.first1.get(nt) || new Set();
-    const followSet = analysis.follow1.get(nt) || new Set();
-
-    const firstStr = `\\{ ${[...firstSet].map(escapeLatex).join(', ')} \\}`;
-    const followStr = `\\{ ${[...followSet].map(escapeLatex).join(', ')} \\}`;
-
-    lines.push(`  ${escapeLatex(nt)} & ${isNullable} & ${firstStr} & ${followStr} \\\\ \\hline`);
+    const firstSet = analysis.first1.get(nt) || new Set<string>();
+    const followSet = analysis.follow1.get(nt) || new Set<string>();
+    lines.push(`  $${latexSymbol(nt, false)}$ & ${isNullable} & ${latexSetOf(firstSet)} & ${latexSetOf(followSet)} \\\\ \\hline`);
   }
 
   lines.push('\\end{tabular}');
@@ -65,8 +115,9 @@ export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis, lang: '
   return lines.join('\n');
 }
 
-export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en'): string {
+export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en', g?: Pick<Grammar, 'nonTerminals'>): string {
   const isCz = lang === 'cz';
+  const nts = g ?? { nonTerminals: new Set(llTable.nonTerminals) };
   const cols = llTable.terminals;
   const colFormat = '|c|' + cols.map(() => 'c|').join('');
 
@@ -76,7 +127,7 @@ export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en')
     '\\centering',
     `\\begin{tabular}{${colFormat}}`,
     '\\hline',
-    `\\textbf{NT} & ${cols.map(c => `\\textbf{${escapeLatex(c)}}`).join(' & ')} \\\\ \\hline`
+    ` & ${cols.map(c => `$${latexSymbol(c, true)}$`).join(' & ')} \\\\ \\hline`
   ];
 
   for (const nt of llTable.nonTerminals) {
@@ -84,10 +135,9 @@ export function exportLLTableToLatex(llTable: LLTable, lang: 'en' | 'cz' = 'en')
     const cells = cols.map(c => {
       const prods = row?.get(c) || [];
       if (prods.length === 0) return '';
-      return prods.map(p => `$${p.lhs} \\to ${p.rhs.length === 0 ? '\\varepsilon' : p.rhs.map(escapeLatex).join(' ')}$`).join(', ');
+      return prods.map(p => `$${latexSymbol(p.lhs, false)} \\to ${latexRhs(p.rhs, nts)}$`).join(', ');
     });
-
-    lines.push(`  \\textbf{${escapeLatex(nt)}} & ${cells.join(' & ')} \\\\ \\hline`);
+    lines.push(`  $${latexSymbol(nt, false)}$ & ${cells.join(' & ')} \\\\ \\hline`);
   }
 
   lines.push('\\end{tabular}');
@@ -103,30 +153,24 @@ export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en'): 
   const colFormat = '|c|' + termCols.map(() => 'c|').join('') + '|' + ntCols.map(() => 'c|').join('');
 
   const lines: string[] = [
-    `% ${table.variant} Parsing Table`,
+    `% ${table.variant} Parsing Table (requires \\usepackage{multirow})`,
     '\\begin{table}[h]',
     '\\centering',
     `\\begin{tabular}{${colFormat}}`,
     '\\hline',
-    `\\multirow{2}{*}{\\textbf{${isCz ? 'Stav' : 'State'}}} & \\multicolumn{${termCols.length}}{|c|}{\\textbf{ACTION}} & \\multicolumn{${ntCols.length}}{|c|}{\\textbf{GOTO}} \\\\ \\cline{2-${1 + termCols.length + ntCols.length}}`,
-    ` & ${termCols.map(t => `\\textbf{${escapeLatex(t)}}`).join(' & ')} & ${ntCols.map(nt => `\\textbf{${escapeLatex(nt)}}`).join(' & ')} \\\\ \\hline`
+    `\\multirow{2}{*}{\\textbf{${isCz ? 'Stav' : 'State'}}} & \\multicolumn{${termCols.length}}{c||}{\\textbf{ACTION}} & \\multicolumn{${ntCols.length}}{c|}{\\textbf{GOTO}} \\\\ \\cline{2-${1 + termCols.length + ntCols.length}}`,
+    ` & ${termCols.map(t => `$${latexSymbol(t, true)}$`).join(' & ')} & ${ntCols.map(nt => `$${latexSymbol(nt, false)}$`).join(' & ')} \\\\ \\hline`
   ];
 
   for (const s of table.states) {
     const actRow = table.actionTable.get(s);
     const gotoRow = table.gotoTable.get(s);
-
-    const actCells = termCols.map(t => {
-      const actions = actRow?.get(t) || [];
-      return actions.map(formatAction).join('/');
-    });
-
+    const actCells = termCols.map(t => (actRow?.get(t) || []).map(formatAction).join('/'));
     const gotoCells = ntCols.map(nt => {
       const target = gotoRow?.get(nt);
       return target !== undefined ? target.toString() : '';
     });
-
-    lines.push(`  \\textbf{${s}} & ${actCells.join(' & ')} & ${gotoCells.join(' & ')} \\\\ \\hline`);
+    lines.push(`  ${s} & ${actCells.join(' & ')} & ${gotoCells.join(' & ')} \\\\ \\hline`);
   }
 
   lines.push('\\end{tabular}');
@@ -136,31 +180,19 @@ export function exportLRTableToLatex(table: LRTable, lang: 'en' | 'cz' = 'en'): 
 }
 
 export function exportParseTreeToTikz(node: DerivationNode): string {
-  function nodeToTikz(n: DerivationNode): string {
-    const escaped = escapeLatex(n.symbol);
+  // Node contents are braced so that ',' '=' '[' ']' in terminals cannot break forest's syntax.
+  function nodeToForest(n: DerivationNode): string {
+    const content = n.isForestRoot ? '{}, phantom' : `{$${latexSymbol(n.symbol, n.isTerminal)}$}`;
     if (!n.children || n.children.length === 0) {
-      return `[${escaped}]`;
+      return `[${content}]`;
     }
-    const childrenStr = n.children.map(nodeToTikz).join(' ');
-    return `[${escaped} ${childrenStr}]`;
+    return `[${content} ${n.children.map(nodeToForest).join(' ')}]`;
   }
 
   return [
-    '% Parse Tree in LaTeX (Requires \\usepackage{forest})',
+    '% Parse Tree in LaTeX (requires \\usepackage{forest})',
     '\\begin{forest}',
-    `  ${nodeToTikz(node)}`,
+    `  ${nodeToForest(node)}`,
     '\\end{forest}'
   ].join('\n');
-}
-
-function escapeLatex(str: string): string {
-  if (str === 'ε' || str === 'eps') return '\\varepsilon';
-  if (str === '$') return '\\$';
-  return str
-    .replace(/\\/g, '\\textbackslash ')
-    .replace(/_/g, '\\_')
-    .replace(/\^/g, '\\textasciicircum ')
-    .replace(/%/g, '\\%')
-    .replace(/&/g, '\\&')
-    .replace(/#/g, '\\#');
 }

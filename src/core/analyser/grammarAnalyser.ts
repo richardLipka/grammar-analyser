@@ -21,6 +21,16 @@ export interface GrammarAnalysis {
   first2: Map<string, Set<string>>;
   follow2: Map<string, Set<string>>;
   predict2: Map<number, Set<string>>;
+  leftRecursion: LeftRecursionInfo;
+  /** Non-terminals A with A ⇒+ A (cyclic grammars are ambiguous and not LR(k)/LL(k)). */
+  cyclic: Set<string>;
+}
+
+export interface LeftRecursionInfo {
+  /** A has a rule A -> A α. */
+  immediate: Set<string>;
+  /** A ⇒+ A α through other non-terminals or a nullable prefix, without an immediate rule. */
+  indirect: Set<string>;
 }
 
 export function analyzeGrammar(g: Grammar): GrammarAnalysis {
@@ -36,6 +46,9 @@ export function analyzeGrammar(g: Grammar): GrammarAnalysis {
   const follow2 = computeFollowK(g, first2, 2);
   const predict2 = computePredictK(g, first2, follow2, 2);
 
+  const leftRecursion = computeLeftRecursion(g, nullable);
+  const cyclic = computeCyclic(g, nullable);
+
   return {
     nullable,
     endable,
@@ -45,8 +58,66 @@ export function analyzeGrammar(g: Grammar): GrammarAnalysis {
     predict1,
     first2,
     follow2,
-    predict2
+    predict2,
+    leftRecursion,
+    cyclic
   };
+}
+
+/** Non-terminals that can reach themselves in the given successor relation. */
+function nodesOnCycles(nodes: Iterable<string>, succ: Map<string, Set<string>>): Set<string> {
+  const result = new Set<string>();
+  for (const start of nodes) {
+    const stack = [...(succ.get(start) || [])];
+    const seen = new Set<string>();
+    while (stack.length > 0) {
+      const x = stack.pop()!;
+      if (x === start) {
+        result.add(start);
+        break;
+      }
+      if (seen.has(x)) continue;
+      seen.add(x);
+      for (const y of succ.get(x) || []) stack.push(y);
+    }
+  }
+  return result;
+}
+
+/**
+ * Left recursion: A ⇒+ A α. A rule A -> X1 ... Xk B β with X1..Xk nullable
+ * gives the edge A → B; A is left-recursive when it lies on a cycle.
+ */
+export function computeLeftRecursion(g: Grammar, nullable: Set<string>): LeftRecursionInfo {
+  const succ = new Map<string, Set<string>>();
+  for (const nt of g.nonTerminals) succ.set(nt, new Set());
+  for (const p of g.productions) {
+    for (const sym of p.rhs) {
+      if (!g.nonTerminals.has(sym)) break;
+      succ.get(p.lhs)!.add(sym);
+      if (!nullable.has(sym)) break;
+    }
+  }
+  const all = nodesOnCycles(g.nonTerminals, succ);
+  const immediate = new Set(
+    g.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs)
+  );
+  const indirect = new Set([...all].filter(nt => !immediate.has(nt)));
+  return { immediate, indirect };
+}
+
+/** Cycles A ⇒+ A: rule A -> α B β with α and β nullable gives the edge A → B. */
+export function computeCyclic(g: Grammar, nullable: Set<string>): Set<string> {
+  const succ = new Map<string, Set<string>>();
+  for (const nt of g.nonTerminals) succ.set(nt, new Set());
+  for (const p of g.productions) {
+    p.rhs.forEach((sym, i) => {
+      if (!g.nonTerminals.has(sym)) return;
+      const others = [...p.rhs.slice(0, i), ...p.rhs.slice(i + 1)];
+      if (others.every(o => nullable.has(o))) succ.get(p.lhs)!.add(sym);
+    });
+  }
+  return nodesOnCycles(g.nonTerminals, succ);
 }
 
 /**

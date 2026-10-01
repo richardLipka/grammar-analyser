@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Grammar, formatGrammarGrouped, formatProduction, formatRhs, cloneGrammar } from '../../core/ast/grammar';
+import { Grammar, formatGrammarGrouped, formatGrammarForEditor, cloneGrammar } from '../../core/ast/grammar';
 import {
   reduceGrammar,
   removeEpsilonRules,
@@ -13,9 +13,16 @@ import {
   TransformationResult,
   TransformationStep
 } from '../../core/processor/grammarProcessor';
+import {
+  computeEndable,
+  computeReachable,
+  computeNullable,
+  computeLeftRecursion
+} from '../../core/analyser/grammarAnalyser';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { Sparkles, Check, BookOpen, RotateCcw, SkipBack, Layers, HelpCircle } from 'lucide-react';
+import { Sparkles, Check, BookOpen, RotateCcw, SkipBack, Layers, HelpCircle, CheckCircle2, Circle } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
+import { SymbolSeq } from '../components/Symbols';
 import { exportGrammarToLatex } from '../../core/export/latexExport';
 
 interface TransformationsViewProps {
@@ -24,14 +31,31 @@ interface TransformationsViewProps {
   lang: Language;
 }
 
-export const TransformationsView: React.FC<TransformationsViewProps> = ({
-  grammar,
-  onApplyGrammarText,
-  lang
-}) => {
+/** Normal-form properties of a grammar, shown as a checklist under the result. */
+function grammarForms(g: Grammar) {
+  const startOnRhs = g.productions.some(p => p.rhs.includes(g.startSymbol));
+  const allowedEps = (lhs: string, len: number) => len > 0 || (lhs === g.startSymbol && !startOnRhs);
+  const endable = computeEndable(g);
+  const reachable = computeReachable(g);
+  const lr = computeLeftRecursion(g, computeNullable(g));
+  return {
+    reduced: [...g.nonTerminals].every(nt => endable.has(nt) && reachable.has(nt)),
+    epsFree: g.productions.every(p => allowedEps(p.lhs, p.rhs.length)),
+    noUnit: g.productions.every(p => !(p.rhs.length === 1 && g.nonTerminals.has(p.rhs[0]))),
+    noLeftRec: lr.immediate.size === 0 && lr.indirect.size === 0,
+    cnf: g.productions.every(p =>
+      (p.rhs.length === 2 && p.rhs.every(s => g.nonTerminals.has(s))) ||
+      (p.rhs.length === 1 && g.terminals.has(p.rhs[0])) ||
+      (p.rhs.length === 0 && allowedEps(p.lhs, 0))),
+    gnf: g.productions.every(p =>
+      (p.rhs.length > 0 && g.terminals.has(p.rhs[0]) && p.rhs.slice(1).every(s => g.nonTerminals.has(s))) ||
+      (p.rhs.length === 0 && allowedEps(p.lhs, 0)))
+  };
+}
+
+export const TransformationsView: React.FC<TransformationsViewProps> = ({ grammar, onApplyGrammarText, lang }) => {
   const t = TRANSLATIONS[lang];
 
-  // Working grammar state that can be transformed directly step-by-step
   const [workingGrammar, setWorkingGrammar] = useState<Grammar>(() => cloneGrammar(grammar));
   const [steps, setSteps] = useState<TransformationStep[]>([]);
   const [history, setHistory] = useState<Array<{ grammar: Grammar; steps: TransformationStep[] }>>([]);
@@ -43,24 +67,19 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
     setHistory([]);
   }, [grammar]);
 
-  // Handle single-symbol transformation selected from combo box
+  const pushResult = (result: TransformationResult) => {
+    setHistory(prev => [...prev, { grammar: cloneGrammar(workingGrammar), steps: [...steps] }]);
+    setWorkingGrammar(result.transformedGrammar);
+    setSteps(prev => [...prev, ...result.steps]);
+  };
+
   const handleApplySymbol = (nt: string, transId: string) => {
     if (!transId) return;
-    setHistory(prev => [...prev, { grammar: cloneGrammar(workingGrammar), steps: [...steps] }]);
-    const result = applySymbolTransformation(workingGrammar, nt, transId);
-    setWorkingGrammar(result.transformedGrammar);
-    setSteps(prev => [...prev, ...result.steps]);
+    pushResult(applySymbolTransformation(workingGrammar, nt, transId));
   };
 
-  // Handle whole-grammar automatic constructions (CNF, GNF, etc.)
-  const handleApplyAutomatic = (fn: (g: Grammar) => TransformationResult) => {
-    setHistory(prev => [...prev, { grammar: cloneGrammar(workingGrammar), steps: [...steps] }]);
-    const result = fn(workingGrammar);
-    setWorkingGrammar(result.transformedGrammar);
-    setSteps(prev => [...prev, ...result.steps]);
-  };
+  const handleApplyAutomatic = (fn: (g: Grammar) => TransformationResult) => pushResult(fn(workingGrammar));
 
-  // Undo last transformation
   const handleUndo = () => {
     if (history.length === 0) return;
     const lastState = history[history.length - 1];
@@ -69,73 +88,69 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
     setSteps(lastState.steps);
   };
 
-  // Reset to initial editor grammar
   const handleReset = () => {
     setHistory([]);
     setWorkingGrammar(cloneGrammar(grammar));
     setSteps([]);
   };
 
-  const formattedWorking = formatGrammarGrouped(workingGrammar);
-  const nonTerminalsList = [...workingGrammar.nonTerminals];
+  const nonTerminalsList = [
+    ...[...workingGrammar.nonTerminals].filter(nt => nt === workingGrammar.startSymbol),
+    ...[...workingGrammar.nonTerminals].filter(nt => nt !== workingGrammar.startSymbol)
+  ];
+  const forms = grammarForms(workingGrammar);
+  const formBadges: { ok: boolean; label: string }[] = [
+    { ok: forms.reduced, label: t.formReduced },
+    { ok: forms.epsFree, label: t.formEpsFree },
+    { ok: forms.noUnit, label: t.formNoUnit },
+    { ok: forms.noLeftRec, label: t.formNoLeftRec },
+    { ok: forms.cnf, label: t.formCNF },
+    { ok: forms.gnf, label: t.formGNF }
+  ];
+
+  const automatic: { label: string; fn: (g: Grammar) => TransformationResult; accent?: boolean; hint: string }[] = [
+    { label: t.btnCNF, fn: convertToChomsky, accent: true, hint: t.hintCNF },
+    { label: t.btnGNF, fn: convertToGreibach, accent: true, hint: t.hintGNF },
+    { label: t.btnRemoveLeftRec, fn: removeLeftRecursion, hint: t.hintLeftRec },
+    { label: t.btnLeftFactor, fn: leftFactorGrammar, hint: t.hintLeftFactor },
+    { label: t.btnRemoveEps, fn: removeEpsilonRules, hint: t.hintEps },
+    { label: t.btnRemoveUnits, fn: removeUnitRules, hint: t.hintUnits },
+    { label: t.btnReduce, fn: reduceGrammar, hint: t.hintReduce }
+  ];
 
   return (
     <div>
       {/* Direct Grammar Rules & Symbol Transformations */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>{t.directGrammarRulesTitle}</span>
             <Layers size={18} color="var(--color-primary)" />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={handleUndo}
-              disabled={history.length === 0}
-              title={t.undoStep}
-              style={{ padding: '6px 12px', fontSize: '12px' }}
-            >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={handleUndo} disabled={history.length === 0} title={t.undoStep} style={{ padding: '6px 12px', fontSize: '12px' }}>
               <SkipBack size={14} />
               <span>{t.undoStep}</span>
               {history.length > 0 && ` (${history.length})`}
             </button>
-
-            <button
-              className="btn btn-secondary"
-              onClick={handleReset}
-              disabled={history.length === 0 && steps.length === 0}
-              title={t.resetToInitial}
-              style={{ padding: '6px 12px', fontSize: '12px' }}
-            >
+            <button className="btn btn-secondary" onClick={handleReset} disabled={history.length === 0 && steps.length === 0} title={t.resetToInitial} style={{ padding: '6px 12px', fontSize: '12px' }}>
               <RotateCcw size={14} />
               <span>{t.resetToInitial}</span>
             </button>
-
-            <LatexExportButton
-              getLatex={() => exportGrammarToLatex(workingGrammar)}
-              filename="transformed_grammar.tex"
-              label={lang === 'cz' ? 'LaTeX export' : 'LaTeX Export'}
-              title={lang === 'cz' ? 'Exportovat transformovanou gramatiku jako LaTeX' : 'Export transformed grammar as LaTeX'}
-            />
           </div>
         </div>
 
-        <div style={{ fontSize: '12.5px', color: 'var(--color-text-secondary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <HelpCircle size={15} color="var(--color-primary)" />
+        <div className="hint-text" style={{ marginBottom: '14px', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+          <HelpCircle size={15} color="var(--color-primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
           <span>{t.directTransformHint}</span>
         </div>
 
-        {/* List of rules per symbol with interactive combo box */}
         <div className="symbol-rules-list">
           {nonTerminalsList.map(nt => {
             const ntProds = workingGrammar.productions.filter(p => p.lhs === nt);
             const availableTrans = getAvailableTransformationsForSymbol(workingGrammar, nt);
             const isStart = nt === workingGrammar.startSymbol;
-            const rhsListStr = ntProds.length > 0
-              ? ntProds.map(p => formatRhs(p.rhs)).join('  |  ')
-              : 'ε';
 
             return (
               <div key={nt} className="symbol-rule-card">
@@ -153,6 +168,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
                       className={`transform-combo ${availableTrans.length > 0 ? 'has-action' : ''}`}
                       value=""
                       disabled={availableTrans.length === 0}
+                      aria-label={t.chooseSymbolTransformPlaceholder.replace('{symbol}', nt).replace('{count}', availableTrans.length.toString())}
                       onChange={(e) => handleApplySymbol(nt, e.target.value)}
                     >
                       <option value="">
@@ -161,11 +177,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
                           : t.noTransformationsForSymbol}
                       </option>
                       {availableTrans.map(tr => (
-                        <option
-                          key={tr.id}
-                          value={tr.id}
-                          title={lang === 'cz' ? tr.descriptionCz : tr.descriptionEn}
-                        >
+                        <option key={tr.id} value={tr.id} title={lang === 'cz' ? tr.descriptionCz : tr.descriptionEn}>
                           {lang === 'cz' ? tr.labelCz : tr.labelEn}
                         </option>
                       ))}
@@ -174,9 +186,18 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
                 </div>
 
                 <div className="symbol-productions">
-                  <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>{nt}</span>
-                  <span style={{ margin: '0 8px', color: 'var(--color-text-muted)' }}>-&gt;</span>
-                  <span>{rhsListStr}</span>
+                  <span className="sym-nt">{nt}</span>
+                  <span className="sym-arrow">→</span>
+                  {ntProds.length > 0 ? (
+                    ntProds.map((p, i) => (
+                      <React.Fragment key={p.id}>
+                        {i > 0 && <span className="sym-arrow">|</span>}
+                        <SymbolSeq symbols={p.rhs} nonTerminals={workingGrammar.nonTerminals} />
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <span style={{ color: 'var(--color-danger)', fontStyle: 'italic' }}>{t.noRulesLabel}</span>
+                  )}
                 </div>
               </div>
             );
@@ -192,81 +213,47 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
         </div>
 
         <div className="automatic-actions-grid">
-          {/* Prominent GNF and CNF construction buttons */}
-          <button
-            className="btn btn-accent"
-            onClick={() => handleApplyAutomatic(convertToChomsky)}
-            style={{ padding: '9px 14px' }}
-          >
-            <Sparkles size={16} />
-            <span>{t.btnCNF}</span>
-          </button>
-
-          <button
-            className="btn btn-accent"
-            onClick={() => handleApplyAutomatic(convertToGreibach)}
-            style={{ padding: '9px 14px' }}
-          >
-            <Sparkles size={16} />
-            <span>{t.btnGNF}</span>
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleApplyAutomatic(removeLeftRecursion)}
-          >
-            {t.btnRemoveLeftRec}
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleApplyAutomatic(leftFactorGrammar)}
-          >
-            {t.btnLeftFactor}
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleApplyAutomatic(removeEpsilonRules)}
-          >
-            {t.btnRemoveEps}
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleApplyAutomatic(removeUnitRules)}
-          >
-            {t.btnRemoveUnits}
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={() => handleApplyAutomatic(reduceGrammar)}
-          >
-            {t.btnReduce}
-          </button>
+          {automatic.map(a => (
+            <button
+              key={a.label}
+              className={`btn ${a.accent ? 'btn-accent' : 'btn-secondary'}`}
+              onClick={() => handleApplyAutomatic(a.fn)}
+              style={{ padding: '9px 14px' }}
+              title={a.hint}
+            >
+              {a.accent && <Sparkles size={16} />}
+              <span>{a.label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Resulting Transformed Grammar & Apply Action */}
       <div className="card" style={{ border: '2px solid var(--color-primary)' }}>
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <span>{t.transformedOutputTitle}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <LatexExportButton
               getLatex={() => exportGrammarToLatex(workingGrammar)}
               filename="transformed_grammar.tex"
               label={lang === 'cz' ? 'LaTeX export' : 'LaTeX Export'}
+              lang={lang}
               title={lang === 'cz' ? 'Exportovat transformovanou gramatiku do LaTeXu' : 'Export transformed grammar to LaTeX'}
             />
-            <button
-              className="btn btn-primary"
-              onClick={() => onApplyGrammarText(formattedWorking)}
-            >
+            <button className="btn btn-primary" onClick={() => onApplyGrammarText(formatGrammarForEditor(workingGrammar))}>
               <Check size={16} />
               {t.applyToEditor}
             </button>
           </div>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+          {formBadges.map(b => (
+            <span key={b.label} className={`badge ${b.ok ? 'badge-success' : 'badge-primary'}`} style={{ opacity: b.ok ? 1 : 0.7 }}>
+              {b.ok ? <CheckCircle2 size={12} /> : <Circle size={12} />}
+              {b.label}
+            </span>
+          ))}
         </div>
 
         <pre style={{
@@ -278,7 +265,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
           overflowX: 'auto',
           border: '1px solid var(--color-border)'
         }}>
-          {formattedWorking}
+          {formatGrammarGrouped(workingGrammar)}
         </pre>
       </div>
 
@@ -291,9 +278,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
 
         {steps.length === 0 ? (
           <div style={{ padding: '16px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' }}>
-            {lang === 'cz'
-              ? 'Dosud nebyla provedena žádná transformace. Zvolte transformaci u libovolného symbolu výše nebo klikněte na automatickou konstrukci.'
-              : 'No transformations have been applied yet. Select a transformation for any symbol above or click an automatic construction.'}
+            {t.noTransformationsYet}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -316,25 +301,37 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
                 {(step.mathExplanationCz || step.mathExplanation) && (
                   <div style={{
                     marginTop: '6px',
-                    fontSize: '11.5px',
-                    fontStyle: 'italic',
-                    color: 'var(--color-text-muted)',
+                    fontSize: '12px',
+                    color: 'var(--color-text-secondary)',
                     backgroundColor: 'var(--color-bg-elevated)',
                     padding: '6px 10px',
-                    borderRadius: 'var(--radius-sm)'
+                    borderRadius: 'var(--radius-sm)',
+                    fontFamily: 'var(--font-mono)'
                   }}>
                     {lang === 'cz' ? (step.mathExplanationCz || step.mathExplanation) : step.mathExplanation}
                   </div>
                 )}
-                {step.addedRules && step.addedRules.length > 0 && (
-                  <div style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--color-success)' }}>
-                    <strong>{lang === 'cz' ? 'Přidaná pravidla:' : 'Added rules:'}</strong> {step.addedRules.join(', ')}
+                {step.removedRules && step.removedRules.length > 0 && (
+                  <div style={{ marginTop: '8px', fontSize: '11.5px', color: 'var(--color-danger)' }}>
+                    <strong>{t.removedRulesLabel}</strong>
+                    <div className="rule-list">
+                      {step.removedRules.map((r, i) => <span key={i} className="rule-chip">{r}</span>)}
+                    </div>
                   </div>
                 )}
-                {step.removedRules && step.removedRules.length > 0 && (
-                  <div style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--color-danger)' }}>
-                    <strong>{t.removedRulesLabel}</strong> {step.removedRules.join(', ')}
+                {step.addedRules && step.addedRules.length > 0 && (
+                  <div style={{ marginTop: '6px', fontSize: '11.5px', color: 'var(--color-success)' }}>
+                    <strong>{t.addedRulesLabel}</strong>
+                    <div className="rule-list">
+                      {step.addedRules.map((r, i) => <span key={i} className="rule-chip">{r}</span>)}
+                    </div>
                   </div>
+                )}
+                {step.intermediateGrammar && (
+                  <details className="proof-details">
+                    <summary>{t.grammarAfterStep}</summary>
+                    <pre>{formatGrammarGrouped(step.intermediateGrammar)}</pre>
+                  </details>
                 )}
               </div>
             ))}

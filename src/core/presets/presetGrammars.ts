@@ -56,25 +56,24 @@ F -> "(" E ")" | "id"`,
     id: 'lr0_vs_slr1',
     nameEn: 'Distinguishing LR(0) from SLR(1)',
     nameCz: 'Rozlišení LR(0) a SLR(1)',
-    descriptionEn: 'Classic grammar separating LR(0) and SLR(1). Has a Shift/Reduce conflict in LR(0) that is completely resolved by FOLLOW sets in SLR(1).',
-    descriptionCz: 'Klasická gramatika oddělující LR(0) a SLR(1). V LR(0) vykazuje konflikt posun/redukce, který množiny FOLLOW v SLR(1) zcela vyřeší.',
+    descriptionEn: 'After reading T the LR(0) automaton must choose between shifting "+" and reducing E -> T (shift/reduce conflict). SLR(1) reduces only on FOLLOW(E) = { $ }, which removes the conflict.',
+    descriptionCz: 'Po přečtení T musí LR(0) automat volit mezi posunem "+" a redukcí E -> T (konflikt posun/redukce). SLR(1) redukuje jen na FOLLOW(E) = { $ }, čímž konflikt zmizí.',
     category: 'LR',
-    grammarText: `S -> L "=" R | R
-L -> "*" R | "id"
-R -> L`,
-    sampleInput: '* id = id'
+    grammarText: `E -> T "+" E | T
+T -> "id"`,
+    sampleInput: 'id + id + id'
   },
   {
     id: 'slr1_vs_lalr1',
     nameEn: 'Distinguishing SLR(1) from LALR(1)',
     nameCz: 'Rozlišení SLR(1) a LALR(1)',
-    descriptionEn: 'Grammar that is NOT SLR(1) due to a Reduce/Reduce conflict, but is conflict-free in LALR(1) and LR(1).',
-    descriptionCz: 'Gramatika, která není SLR(1) kvůli konfliktu redukce/redukce, ale v LALR(1) a LR(1) je zcela bez konfliktů.',
+    descriptionEn: 'Dragon Book example: in the state with S -> L • "=" R and R -> L • the symbol "=" is in FOLLOW(R), so SLR(1) has a shift/reduce conflict. The LALR(1) lookahead of R -> L • is only $, so LALR(1) and LR(1) are conflict-free.',
+    descriptionCz: 'Příklad z Dračí knihy: ve stavu s položkami S -> L • "=" R a R -> L • patří "=" do FOLLOW(R), proto má SLR(1) konflikt posun/redukce. LALR(1) lookahead položky R -> L • je jen $, takže LALR(1) i LR(1) jsou bez konfliktů.',
     category: 'LR',
-    grammarText: `S -> "a" A "c" | "b" B "c" | "a" B "d" | "b" A "d"
-A -> "e"
-B -> "e"`,
-    sampleInput: 'a e c'
+    grammarText: `S -> L "=" R | R
+L -> "*" R | "id"
+R -> L`,
+    sampleInput: '* id = id'
   },
   {
     id: 'lalr1_vs_lr1',
@@ -92,8 +91,8 @@ B -> "c"`,
     id: 'palindromes',
     nameEn: 'Even & Odd Palindromes',
     nameCz: 'Palindromy (liché a sudé)',
-    descriptionEn: 'Linear context-free grammar generating palindromic strings over {a, b}.',
-    descriptionCz: 'Lineární bezkontextová gramatika generující palindromy nad abecedou {a, b}.',
+    descriptionEn: 'Unambiguous linear grammar of palindromes over {a, b}. The language is not deterministic, so no LL(k) or LR(k) table can be conflict-free: a parser cannot know where the middle is.',
+    descriptionCz: 'Jednoznačná lineární gramatika palindromů nad {a, b}. Jazyk není deterministický, proto žádná LL(k) ani LR(k) tabulka nemůže být bez konfliktů: analyzátor nepozná, kde je střed.',
     category: 'Transformations',
     grammarText: `S -> "a" S "a" | "b" S "b" | "a" | "b" | ε`,
     sampleInput: 'a b a'
@@ -110,5 +109,39 @@ A -> "a" A | ε
 B -> "b" B | C
 C -> "c" | ε`,
     sampleInput: 'a b c'
-  }
+  },
+  {
+    id: 'll1_not_slr1',
+    nameEn: 'LL(1) but not SLR(1)',
+    nameCz: 'LL(1), ale ne SLR(1)',
+    descriptionEn: 'LL(1) does not imply SLR(1): in the initial state the reductions A -> ε and B -> ε both apply on FOLLOW(A) = FOLLOW(B) = { a, b } (reduce/reduce conflict). LALR(1) separates them by the lookaheads a and b.',
+    descriptionCz: 'Z LL(1) neplyne SLR(1): v počátečním stavu lze redukovat A -> ε i B -> ε na FOLLOW(A) = FOLLOW(B) = { a, b } (konflikt redukce/redukce). LALR(1) je rozliší lookaheady a a b.',
+    category: 'LL',
+    grammarText: `S -> A "a" A "b" | B "b" B "a"
+A -> ε
+B -> ε`,
+    sampleInput: 'a b'
+  },
+  {
+    id: 'll2_not_strong',
+    nameEn: 'LL(2) but not Strong LL(2)',
+    nameCz: 'LL(2), ale ne silná LL(2)',
+    descriptionEn: 'Classic example of Aho and Ullman: FOLLOW₂(A) = { a a, b a } mixes the two contexts of A, so the strong LL(2) table has a conflict on "b a". With the local follow sets { a a } and { b a } (true LL(2) test) the alternatives of A are always distinguished.',
+    descriptionCz: 'Klasický příklad Aha a Ullmana: FOLLOW₂(A) = { a a, b a } směšuje oba kontexty A, proto má silná LL(2) tabulka konflikt na "b a". S lokálními množinami následníků { a a } a { b a } (přesný test LL(2)) se alternativy A vždy rozliší.',
+    category: 'LL',
+    grammarText: `S -> "a" A "a" "a" | "b" A "b" "a"
+A -> "b" | ε`,
+    sampleInput: 'b b b a'
+  },
+  {
+    id: 'indirect_left_recursion',
+    nameEn: 'Indirect Left Recursion (Paull\'s Algorithm)',
+    nameCz: 'Nepřímá levá rekurze (Paullův algoritmus)',
+    descriptionEn: 'Dragon Book example: A is immediately left-recursive (A -> A c), S only indirectly (S => A a => S d a). Use "Eliminate Left Recursion" in Transformations to follow Paull\'s algorithm step by step.',
+    descriptionCz: 'Příklad z Dračí knihy: A je přímo levorekurzivní (A -> A c), S jen nepřímo (S => A a => S d a). Funkce „Odstranit levou rekurzi“ v Transformacích ukáže Paullův algoritmus krok za krokem.',
+    category: 'Transformations',
+    grammarText: `S -> A "a" | "b"
+A -> A "c" | S "d" | ε`,
+    sampleInput: 'b d a'
+  },
 ];

@@ -1,12 +1,16 @@
 import React from 'react';
-import { Grammar, formatProduction } from '../../core/ast/grammar';
+import { Grammar } from '../../core/ast/grammar';
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { LLTable } from '../../core/ll/llTable';
 import { LRTable } from '../../core/lr/lrTable';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { CheckCircle2, Info, ShieldCheck, AlertTriangle, ArrowRight } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
+import { ProductionText } from '../components/Symbols';
 import { exportGrammarToLatex } from '../../core/export/latexExport';
+
+type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
 interface OverviewViewProps {
   grammar: Grammar;
@@ -17,7 +21,7 @@ interface OverviewViewProps {
   lalr1Table: LRTable;
   lr1Table: LRTable;
   lang: Language;
-  onNavigateToTab?: (tab: 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex', lrVariant?: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => void;
+  onNavigateToTab?: (tab: TabId, lrVariant?: LRVariantName) => void;
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({
@@ -36,17 +40,22 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   // General Issues & Diagnostic Problems
   const unproductiveNts = [...grammar.nonTerminals].filter(nt => !analysis.endable.has(nt));
   const unreachableSymbols = [...grammar.nonTerminals, ...grammar.terminals].filter(s => !analysis.reachable.has(s));
-  const leftRecursiveNts = [
-    ...new Set(grammar.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs))
-  ];
-  const hasAnyGeneralIssues = unproductiveNts.length > 0 || unreachableSymbols.length > 0 || leftRecursiveNts.length > 0;
+  const immediateLR = [...analysis.leftRecursion.immediate];
+  const indirectLR = [...analysis.leftRecursion.indirect];
+  const leftRecursiveCount = immediateLR.length + indirectLR.length;
+  const cyclic = [...analysis.cyclic];
+  const hasAnyGeneralIssues = unproductiveNts.length > 0 || unreachableSymbols.length > 0 || leftRecursiveCount > 0 || cyclic.length > 0;
+  const emptyLanguage = !analysis.endable.has(grammar.startSymbol);
+  const epsInLanguage = analysis.nullable.has(grammar.startSymbol);
 
-  const hasAnyConflicts =
-    !llTable.isLL1 ||
-    !slr1Table.isConflictFree ||
-    !lr0Table.isConflictFree ||
-    !lalr1Table.isConflictFree ||
-    !lr1Table.isConflictFree;
+  const lrBadges: { variant: LRVariantName; label: string; table: LRTable }[] = [
+    { variant: 'LR(0)', label: t.isLR0, table: lr0Table },
+    { variant: 'SLR(1)', label: t.isSLR1, table: slr1Table },
+    { variant: 'LALR(1)', label: t.isLALR1, table: lalr1Table },
+    { variant: 'LR(1)', label: t.isLR1, table: lr1Table }
+  ];
+
+  const hasAnyConflicts = !llTable.isLL1 || lrBadges.some(b => !b.table.isConflictFree);
 
   return (
     <div>
@@ -56,76 +65,47 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <span>{t.classification}</span>
           <ShieldCheck size={18} color="var(--color-primary)" />
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+        <p className="hint-text" style={{ marginBottom: '10px' }}>{t.classificationHint}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
           <BadgeItem
             label={t.isLL1}
             ok={llTable.isLL1}
-            conflictsCount={llTable.conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
+            detail={llTable.isLL1 ? t.passZeroConflicts : `${llTable.conflicts.length} ${t.conflictsCountSuffix}`}
             targetHint={!llTable.isLL1 ? t.clickToViewErrors : t.clickToViewAnalyser}
             onClick={() => onNavigateToTab?.('ll')}
           />
           <BadgeItem
             label={t.isLL2}
             ok={llTable.isLL2}
-            conflictsCount={llTable.ll2Conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
+            detail={
+              llTable.isLL1
+                ? t.ll2ImpliedByLL1
+                : llTable.isLL2
+                  ? (llTable.isStrongLL2 ? t.ll2StrongToo : t.ll2NotStrong)
+                  : `${llTable.ll2Conflicts.length} ${t.conflictsCountSuffix}`
+            }
             targetHint={!llTable.isLL2 ? t.clickToViewErrors : t.clickToViewAnalyser}
             onClick={() => onNavigateToTab?.('ll')}
           />
-          <BadgeItem
-            label={t.isLR0}
-            ok={lr0Table.isConflictFree}
-            conflictsCount={lr0Table.conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
-            targetHint={!lr0Table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
-            onClick={() => onNavigateToTab?.('lr', 'LR(0)')}
-          />
-          <BadgeItem
-            label={t.isSLR1}
-            ok={slr1Table.isConflictFree}
-            conflictsCount={slr1Table.conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
-            targetHint={!slr1Table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
-            onClick={() => onNavigateToTab?.('lr', 'SLR(1)')}
-          />
-          <BadgeItem
-            label={t.isLALR1}
-            ok={lalr1Table.isConflictFree}
-            conflictsCount={lalr1Table.conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
-            targetHint={!lalr1Table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
-            onClick={() => onNavigateToTab?.('lr', 'LALR(1)')}
-          />
-          <BadgeItem
-            label={t.isLR1}
-            ok={lr1Table.isConflictFree}
-            conflictsCount={lr1Table.conflicts.length}
-            passText={t.passZeroConflicts}
-            conflictsSuffix={t.conflictsCountSuffix}
-            targetHint={!lr1Table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
-            onClick={() => onNavigateToTab?.('lr', 'LR(1)')}
-          />
+          {lrBadges.map(b => (
+            <BadgeItem
+              key={b.variant}
+              label={b.label}
+              ok={b.table.isConflictFree}
+              detail={b.table.isConflictFree
+                ? `${t.passZeroConflicts} · ${b.table.states.length} ${t.statesShort}`
+                : `${b.table.conflicts.length} ${t.conflictsCountSuffix} · ${b.table.states.length} ${t.statesShort}`}
+              targetHint={!b.table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
+              onClick={() => onNavigateToTab?.('lr', b.variant)}
+            />
+          ))}
         </div>
       </div>
 
       {/* Active Conflicts Direct Jump Alert Card */}
       {hasAnyConflicts && (
-        <div
-          style={{
-            backgroundColor: 'var(--color-danger-subtle)',
-            border: '1px solid var(--color-danger)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '14px 16px',
-            marginBottom: '16px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-danger)', fontWeight: 700, fontSize: '13.5px' }}>
+        <div className="notice-box error" style={{ marginBottom: '16px', padding: '14px 16px' }}>
+          <div className="notice-title" style={{ fontSize: '13.5px' }}>
             <AlertTriangle size={18} />
             <span>{t.overviewConflictsTitle}</span>
           </div>
@@ -137,64 +117,32 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <button
                 type="button"
                 className="btn btn-danger"
-                style={{ fontSize: '11.5px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ fontSize: '11.5px', padding: '5px 12px' }}
                 onClick={() => onNavigateToTab?.('ll')}
               >
                 <span>{t.viewInLLAnalyser.replace('{count}', llTable.conflicts.length.toString())}</span>
                 <ArrowRight size={13} />
               </button>
             )}
-            {lr0Table.conflicts.length > 0 && (
+            {lrBadges.filter(b => b.table.conflicts.length > 0).map(b => (
               <button
+                key={b.variant}
                 type="button"
                 className="btn btn-danger"
-                style={{ fontSize: '11.5px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                onClick={() => onNavigateToTab?.('lr', 'LR(0)')}
+                style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                onClick={() => onNavigateToTab?.('lr', b.variant)}
               >
-                <span>{t.viewInLRAnalyser.replace('{variant}', 'LR(0)').replace('{count}', lr0Table.conflicts.length.toString())}</span>
+                <span>{t.viewInLRAnalyser.replace('{variant}', b.variant).replace('{count}', b.table.conflicts.length.toString())}</span>
                 <ArrowRight size={13} />
               </button>
-            )}
-            {slr1Table.conflicts.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-danger"
-                style={{ fontSize: '11.5px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                onClick={() => onNavigateToTab?.('lr', 'SLR(1)')}
-              >
-                <span>{t.viewInLRAnalyser.replace('{variant}', 'SLR(1)').replace('{count}', slr1Table.conflicts.length.toString())}</span>
-                <ArrowRight size={13} />
-              </button>
-            )}
-            {lalr1Table.conflicts.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-danger"
-                style={{ fontSize: '11.5px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                onClick={() => onNavigateToTab?.('lr', 'LALR(1)')}
-              >
-                <span>{t.viewInLRAnalyser.replace('{variant}', 'LALR(1)').replace('{count}', lalr1Table.conflicts.length.toString())}</span>
-                <ArrowRight size={13} />
-              </button>
-            )}
-            {lr1Table.conflicts.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-danger"
-                style={{ fontSize: '11.5px', padding: '5px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                onClick={() => onNavigateToTab?.('lr', 'LR(1)')}
-              >
-                <span>{t.viewInLRAnalyser.replace('{variant}', 'LR(1)').replace('{count}', lr1Table.conflicts.length.toString())}</span>
-                <ArrowRight size={13} />
-              </button>
-            )}
+            ))}
           </div>
         </div>
       )}
 
       {/* General Issues & Diagnostic Problems Card */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>{t.grammarReportsTitle}</span>
             <AlertTriangle size={18} color={hasAnyGeneralIssues ? 'var(--color-warning)' : 'var(--color-success)'} />
@@ -207,7 +155,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <span>{[
                   unproductiveNts.length > 0 ? t.unproductiveBadge.replace('{count}', unproductiveNts.length.toString()) : null,
                   unreachableSymbols.length > 0 ? t.unreachableBadge.replace('{count}', unreachableSymbols.length.toString()) : null,
-                  leftRecursiveNts.length > 0 ? t.leftRecursionBadge.replace('{count}', leftRecursiveNts.length.toString()) : null
+                  leftRecursiveCount > 0 ? t.leftRecursionBadge.replace('{count}', leftRecursiveCount.toString()) : null,
+                  cyclic.length > 0 ? t.cyclicBadge.replace('{count}', cyclic.length.toString()) : null
                 ].filter(Boolean).join(' • ')}</span>
               </span>
             ) : (
@@ -219,93 +168,63 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* General Issues Body */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {/* Unproductive / Non-generating Non-Terminals */}
-          {unproductiveNts.length > 0 && (
+          {emptyLanguage && (
             <div className="report-box danger">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertTriangle size={14} />
-                  <span>{t.unproductiveAlert}</span>
-                </div>
-                {onNavigateToTab && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '2px 8px', fontSize: '11px' }}
-                    onClick={() => onNavigateToTab('transformations')}
-                  >
-                    {t.goToTransformations}
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: '12px', marginTop: '3px' }}>
-                {t.unproductiveDesc}
-              </div>
-              <div style={{ marginTop: '5px', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '13px' }}>
-                {`{ ${unproductiveNts.join(', ')} }`}
+              <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertTriangle size={14} />
+                <span>{t.emptyLanguageAlert.replace('{S}', grammar.startSymbol)}</span>
               </div>
             </div>
           )}
 
-          {/* Unreachable Symbols */}
+          {unproductiveNts.length > 0 && (
+            <ReportBox
+              kind="danger"
+              title={t.unproductiveAlert}
+              description={t.unproductiveDesc}
+              symbols={unproductiveNts}
+              action={t.goToTransformations}
+              onAction={onNavigateToTab ? () => onNavigateToTab('transformations') : undefined}
+            />
+          )}
+
           {unreachableSymbols.length > 0 && (
-            <div className="report-box warning">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertTriangle size={14} />
-                  <span>{t.unreachableAlert}</span>
-                </div>
-                {onNavigateToTab && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '2px 8px', fontSize: '11px' }}
-                    onClick={() => onNavigateToTab('transformations')}
-                  >
-                    {t.goToTransformations}
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: '12px', marginTop: '3px' }}>
-                {t.unreachableDesc}
-              </div>
-              <div style={{ marginTop: '5px', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '13px' }}>
-                {`{ ${unreachableSymbols.join(', ')} }`}
-              </div>
-            </div>
+            <ReportBox
+              kind="warning"
+              title={t.unreachableAlert}
+              description={t.unreachableDesc}
+              symbols={unreachableSymbols}
+              action={t.goToTransformations}
+              onAction={onNavigateToTab ? () => onNavigateToTab('transformations') : undefined}
+            />
           )}
 
-          {/* Immediate Left Recursion */}
-          {leftRecursiveNts.length > 0 && (
-            <div className="report-box warning">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-                <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertTriangle size={14} />
-                  <span>{t.leftRecursionAlert}</span>
-                </div>
-                {onNavigateToTab && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '2px 8px', fontSize: '11px' }}
-                    onClick={() => onNavigateToTab('transformations')}
-                  >
-                    {t.goToTransformations}
-                  </button>
-                )}
-              </div>
-              <div style={{ fontSize: '12px', marginTop: '3px' }}>
-                {t.leftRecursionDesc}
-              </div>
-              <div style={{ marginTop: '5px', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '13px' }}>
-                {`{ ${leftRecursiveNts.join(', ')} }`}
-              </div>
-            </div>
+          {leftRecursiveCount > 0 && (
+            <ReportBox
+              kind="warning"
+              title={t.leftRecursionAlert}
+              description={t.leftRecursionDesc}
+              symbols={[
+                ...immediateLR.map(nt => `${nt} (${t.immediateLabel})`),
+                ...indirectLR.map(nt => `${nt} (${t.indirectLabel})`)
+              ]}
+              action={t.goToTransformations}
+              onAction={onNavigateToTab ? () => onNavigateToTab('transformations') : undefined}
+            />
           )}
 
-          {/* Clean State */}
+          {cyclic.length > 0 && (
+            <ReportBox
+              kind="danger"
+              title={t.cyclicAlert}
+              description={t.cyclicDesc}
+              symbols={cyclic}
+              action={t.goToTransformations}
+              onAction={onNavigateToTab ? () => onNavigateToTab('transformations') : undefined}
+            />
+          )}
+
           {!hasAnyGeneralIssues && (
             <div className="report-box success">
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
@@ -330,6 +249,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <div style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>
               {grammar.startSymbol}
             </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+              {epsInLanguage ? t.epsInLanguage : t.epsNotInLanguage}
+            </div>
           </div>
 
           <div>
@@ -353,26 +275,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
         {/* Detailed Property Sets */}
         <div style={{ marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-          <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600 }}>{t.nullableSymbols}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--color-warning)', marginTop: '4px' }}>
-              {analysis.nullable.size > 0 ? `{ ${[...analysis.nullable].join(', ')} }` : `∅ (${t.none})`}
-            </div>
-          </div>
-
-          <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600 }}>{t.endableSymbols}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--color-success)', marginTop: '4px' }}>
-              {`{ ${[...analysis.endable].filter(s => grammar.nonTerminals.has(s)).join(', ')} }`}
-            </div>
-          </div>
-
-          <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600 }}>{t.reachableSymbols}</div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--color-primary)', marginTop: '4px' }}>
-              {`{ ${[...analysis.reachable].join(', ')} }`}
-            </div>
-          </div>
+          <PropertySet title={t.nullableSymbols} hint={t.nullableHint} items={[...analysis.nullable]} none={t.none} color="var(--color-warning)" />
+          <PropertySet
+            title={t.endableSymbols}
+            hint={t.endableHint}
+            items={[...analysis.endable].filter(s => grammar.nonTerminals.has(s))}
+            none={t.none}
+            color="var(--color-success)"
+          />
+          <PropertySet title={t.reachableSymbols} hint={t.reachableHint} items={[...analysis.reachable]} none={t.none} color="var(--color-primary)" />
         </div>
       </div>
 
@@ -380,11 +291,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       <div className="card">
         <div className="card-title">
           <span>{t.productionRules} ({grammar.productions.length})</span>
-          <LatexExportButton
-            getLatex={() => exportGrammarToLatex(grammar)}
-            filename="grammar.tex"
-            lang={lang}
-          />
+          <LatexExportButton getLatex={() => exportGrammarToLatex(grammar)} filename="grammar.tex" lang={lang} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
           {grammar.productions.map(p => (
@@ -394,15 +301,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 padding: '6px 10px',
                 backgroundColor: 'var(--color-bg-base)',
                 borderRadius: 'var(--radius-sm)',
-                fontFamily: 'var(--font-mono)',
                 fontSize: '12.5px',
                 border: '1px solid var(--color-border-subtle)'
               }}
             >
-              <span style={{ color: 'var(--color-text-muted)', marginRight: '8px' }}>({p.id})</span>
-              <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{p.lhs}</span>
-              <span style={{ color: 'var(--color-text-muted)', margin: '0 6px' }}>&rarr;</span>
-              <span>{p.rhs.length === 0 ? 'ε' : p.rhs.join(' ')}</span>
+              <ProductionText production={p} nonTerminals={grammar.nonTerminals} showId />
             </div>
           ))}
         </div>
@@ -411,50 +314,69 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   );
 };
 
+const PropertySet: React.FC<{ title: string; hint: string; items: string[]; none: string; color: string }> = ({
+  title, hint, items, none, color
+}) => (
+  <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)' }}>
+    <div style={{ fontSize: '12px', fontWeight: 700 }}>{title}</div>
+    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '1px' }}>{hint}</div>
+    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color, marginTop: '4px', fontWeight: 600 }}>
+      {items.length > 0 ? `{ ${items.join(', ')} }` : `∅ (${none})`}
+    </div>
+  </div>
+);
+
+const ReportBox: React.FC<{
+  kind: 'danger' | 'warning';
+  title: string;
+  description: string;
+  symbols: string[];
+  action?: string;
+  onAction?: () => void;
+}> = ({ kind, title, description, symbols, action, onAction }) => (
+  <div className={`report-box ${kind}`}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+      <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <AlertTriangle size={14} />
+        <span>{title}</span>
+      </div>
+      {onAction && action && (
+        <button type="button" className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={onAction}>
+          {action}
+        </button>
+      )}
+    </div>
+    <div style={{ fontSize: '12px', marginTop: '3px', color: 'var(--color-text-secondary)' }}>{description}</div>
+    <div style={{ marginTop: '5px', fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: '13px' }}>
+      {`{ ${symbols.join(', ')} }`}
+    </div>
+  </div>
+);
+
 const BadgeItem: React.FC<{
   label: string;
   ok: boolean;
-  conflictsCount: number;
-  passText: string;
-  conflictsSuffix: string;
+  detail: string;
   targetHint?: string;
   onClick?: () => void;
-}> = ({
-  label,
-  ok,
-  conflictsCount,
-  passText,
-  conflictsSuffix,
-  targetHint,
-  onClick
-}) => {
-  return (
-    <button
-      type="button"
-      className={`badge-item-card ${ok ? 'ok' : 'has-conflicts'}`}
-      onClick={onClick}
-      title={targetHint || (ok ? passText : `${conflictsCount} ${conflictsSuffix}`)}
-    >
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {ok ? <CheckCircle2 size={18} color="var(--color-success)" /> : <AlertTriangle size={18} color="var(--color-danger)" />}
+}> = ({ label, ok, detail, targetHint, onClick }) => (
+  <button
+    type="button"
+    className={`badge-item-card ${ok ? 'ok' : 'has-conflicts'}`}
+    onClick={onClick}
+    title={targetHint}
+  >
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      {ok ? <CheckCircle2 size={18} color="var(--color-success)" /> : <AlertTriangle size={18} color="var(--color-danger)" />}
+    </div>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+        <span style={{ fontSize: '13px', fontWeight: 700, color: ok ? 'var(--color-success)' : 'var(--color-danger)' }}>
+          {label}
+        </span>
+        <ArrowRight size={13} className="badge-arrow-icon" color={ok ? 'var(--color-success)' : 'var(--color-danger)'} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: ok ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            {label}
-          </span>
-          <ArrowRight size={13} className="badge-arrow-icon" color={ok ? 'var(--color-success)' : 'var(--color-danger)'} />
-        </div>
-        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
-          {ok ? passText : `${conflictsCount} ${conflictsSuffix}`}
-        </div>
-        {!ok && (
-          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-danger)', marginTop: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {targetHint}
-          </div>
-        )}
-      </div>
-    </button>
-  );
-};
-
+      <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>{detail}</div>
+    </div>
+  </button>
+);

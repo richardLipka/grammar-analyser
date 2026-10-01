@@ -18,6 +18,8 @@ export interface LLParseStep {
   lookupTerminal?: string;
   isError?: boolean;
   isAccepted?: boolean;
+  /** Number of productions in the table cell when it holds a conflict (the first one is used). */
+  conflictCount?: number;
   tree: DerivationNode;
 }
 
@@ -33,7 +35,7 @@ export function simulateLLParse(
   inputTokens: string[],
   g: Grammar,
   llTable: LLTable,
-  maxSteps: number = 200
+  maxSteps: number = 500 + 50 * inputTokens.length
 ): LLSimulationResult {
   const steps: LLParseStep[] = [];
   const input = [...inputTokens, END_MARKER];
@@ -223,13 +225,20 @@ export function simulateLLParse(
         }
       }
 
+      const conflictNote = candidates.length > 1
+        ? ` (conflict: M[${top.symbol}, ${lookahead}] holds ${candidates.length} rules, the first one is used)`
+        : '';
+      const conflictNoteCz = candidates.length > 1
+        ? ` (kolize: M[${top.symbol}, ${lookahead}] obsahuje ${candidates.length} pravidla, použije se první)`
+        : '';
       steps.push({
         step: stepIndex++,
         stack: currentStackSymbols,
         remainingInput: currentRemaining,
-        action: `Apply: ${formatProduction(prod)}`,
-        actionCz: `Aplikovat pravidlo: ${formatProduction(prod)}`,
+        action: `Apply: ${formatProduction(prod)}${conflictNote}`,
+        actionCz: `Aplikovat pravidlo: ${formatProduction(prod)}${conflictNoteCz}`,
         production: prod,
+        conflictCount: candidates.length > 1 ? candidates.length : undefined,
         lookupNt: top.symbol,
         lookupTerminal: lookahead,
         tree: cloneTree(rootNode)
@@ -258,8 +267,8 @@ export function simulateLLParse(
   return {
     accepted: false,
     steps,
-    errorMessage: 'Maximum simulation steps exceeded (possible loop).',
-    errorMessageCz: 'Překročen maximální počet simulačních kroků (možná smyčka).'
+    errorMessage: `Stopped after ${maxSteps} steps: the parser loops (a conflict was resolved by a left-recursive rule).`,
+    errorMessageCz: `Zastaveno po ${maxSteps} krocích: analyzátor se zacyklil (kolize byla vyřešena levorekurzivním pravidlem).`
   };
 }
 

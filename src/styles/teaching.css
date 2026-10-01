@@ -1,0 +1,512 @@
+/**
+ * Components added for the teaching views: notices, symbol colouring, parser
+ * trace tables, proof-log details and the SVG graph/tree styles. All colours
+ * come from the theme tokens in index.css.
+ */
+
+/* Buttons missing from the original palette */
+.btn-danger {
+  background-color: var(--color-danger);
+  color: #ffffff;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+
+.btn:disabled,
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:focus-visible,
+.btn-icon:focus-visible,
+.tab-button:focus-visible,
+.badge-item-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Grammar symbols in monospace text: non-terminals, terminals, ε */
+.sym-nt {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.sym-t {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.sym-eps {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.sym-arrow {
+  color: var(--color-text-muted);
+  margin: 0 6px;
+}
+
+/* Editor notices (warnings are non-blocking, errors stop the analysis) */
+.notice-box {
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notice-box ul {
+  padding-left: 18px;
+  margin-top: 4px;
+}
+
+.notice-box.error {
+  background-color: var(--color-danger-subtle);
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.notice-box.warning {
+  background-color: var(--color-warning-subtle);
+  border: 1px solid var(--color-warning);
+  color: var(--color-text-primary);
+}
+
+.notice-box.warning .notice-title {
+  color: var(--color-warning);
+}
+
+.notice-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.preset-description {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  background-color: var(--color-bg-base);
+  border-left: 3px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.syntax-hint {
+  background-color: var(--color-bg-base);
+  padding: 10px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.syntax-hint code {
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+}
+
+/* Parser trace tables (classic Stack | Input | Action layout) */
+.trace-table-container {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-bg-surface);
+}
+
+.trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.trace-table th {
+  position: sticky;
+  top: 0;
+  background-color: var(--color-bg-elevated);
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  z-index: 1;
+}
+
+.trace-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.trace-table td.trace-num {
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.trace-table td.trace-input {
+  text-align: right;
+}
+
+.trace-table td.trace-action {
+  white-space: normal;
+  min-width: 220px;
+  font-family: var(--font-sans);
+}
+
+.trace-table tr {
+  cursor: pointer;
+}
+
+.trace-table tr:hover td {
+  background-color: var(--color-bg-card);
+}
+
+.trace-table tr.trace-row-active td {
+  background-color: var(--color-primary-subtle);
+  font-weight: 700;
+}
+
+.trace-table tr.trace-row-active td:first-child {
+  box-shadow: inset 4px 0 0 var(--color-primary);
+}
+
+.trace-table tr.trace-row-error td.trace-action {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+.trace-table tr.trace-row-accept td.trace-action {
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.trace-table tr.trace-row-future td {
+  opacity: 0.5;
+}
+
+.conflict-pick-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+/* Proof log: grammar after a step */
+.proof-details {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.proof-details summary {
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.proof-details pre {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.rule-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-top: 4px;
+}
+
+.rule-chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  background-color: var(--color-bg-surface);
+}
+
+/* Derivation: non-terminal rewritten in the next step and the symbols it produced */
+.deriv-next-nt {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  background-color: var(--color-warning-subtle);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.deriv-new-symbols {
+  background-color: var(--color-primary-subtle);
+  border-radius: 3px;
+}
+
+.two-column-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 16px;
+}
+
+/* SVG graphs and trees (colours come from the --graph-* tokens of the active theme) */
+.graph-canvas {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--graph-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  user-select: none;
+  touch-action: none;
+}
+
+.graph-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  background-color: var(--color-bg-elevated);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.graph-toolbar .btn-icon.active {
+  background-color: var(--color-primary-subtle);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.graph-caption {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 5;
+  max-width: calc(100% - 20px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+}
+
+.graph-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-style: italic;
+  background-color: var(--graph-bg);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+}
+
+.g-edge {
+  fill: none;
+  stroke: var(--graph-edge);
+  stroke-width: var(--graph-edge-width);
+}
+
+.g-edge.active {
+  stroke: var(--color-primary);
+  stroke-width: 2.5px;
+}
+
+.g-arrow {
+  fill: var(--graph-edge);
+}
+
+.g-arrow.active {
+  fill: var(--color-primary);
+}
+
+.g-label-bg {
+  fill: var(--graph-label-fill);
+  stroke: var(--graph-edge);
+  stroke-width: 1px;
+}
+
+.g-label-bg.active {
+  stroke: var(--color-primary);
+  stroke-width: 1.5px;
+}
+
+.g-label {
+  fill: var(--graph-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.g-node {
+  fill: var(--graph-node-fill);
+  stroke: var(--graph-node-stroke);
+  stroke-width: var(--graph-node-stroke-width);
+}
+
+.g-node.accepting {
+  stroke: var(--color-success);
+  stroke-width: 2.5px;
+}
+
+.g-node.conflict {
+  stroke: var(--color-danger);
+  stroke-width: 2.5px;
+  stroke-dasharray: 6 3;
+}
+
+.g-node.selected {
+  stroke: var(--color-primary);
+  stroke-width: 3px;
+  stroke-dasharray: none;
+}
+
+.g-node-header {
+  fill: var(--graph-header-fill);
+}
+
+.g-node-header.selected {
+  fill: var(--color-primary);
+}
+
+.g-node-title {
+  fill: var(--graph-text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.g-node-title.selected {
+  fill: #ffffff;
+}
+
+.g-node-title.conflict {
+  fill: var(--color-danger);
+}
+
+.g-item {
+  fill: var(--graph-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.g-item.reduce {
+  fill: var(--graph-reduce-text);
+  font-weight: 700;
+}
+
+.g-item-dot {
+  fill: var(--color-danger);
+  font-weight: 800;
+}
+
+.g-item-la {
+  fill: var(--color-primary);
+  font-weight: 700;
+}
+
+.g-closure-sep {
+  stroke: var(--graph-node-stroke);
+  stroke-width: 0.75px;
+  stroke-dasharray: 3 3;
+}
+
+.t-edge {
+  fill: none;
+  stroke: var(--graph-edge);
+  stroke-width: var(--graph-edge-width);
+}
+
+.t-edge.to-leaf-row {
+  stroke-dasharray: 4 3;
+}
+
+.t-node-nt {
+  fill: var(--graph-nt-fill);
+  stroke: var(--graph-nt-stroke);
+  stroke-width: var(--graph-node-stroke-width);
+}
+
+.t-node-nt.unexpanded {
+  stroke-dasharray: 4 2;
+}
+
+.t-node-t {
+  fill: var(--graph-t-fill);
+  stroke: var(--graph-t-stroke);
+  stroke-width: var(--graph-node-stroke-width);
+}
+
+.t-node-eps {
+  fill: var(--graph-bg);
+  stroke: var(--graph-edge);
+  stroke-width: 1px;
+  stroke-dasharray: 3 2;
+}
+
+.t-text-nt {
+  fill: var(--graph-nt-text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.t-text-t {
+  fill: var(--graph-t-text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.t-text-eps {
+  fill: var(--graph-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+/* Single-column layout: placed last so it overrides the pane scrolling rules of index.css */
+@media (max-width: 1024px) {
+  .left-pane,
+  .right-pane {
+    overflow: visible;
+  }
+}
+
+/* Phones: one scrollable row of tabs instead of several wrapped rows */
+@media (max-width: 640px) {
+  .tabs-header {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 6px 10px;
+  }
+
+  .tab-button {
+    flex-shrink: 0;
+    padding: 7px 10px;
+  }
+}

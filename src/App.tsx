@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Grammar } from './core/ast/grammar';
-import { parseGrammar } from './core/parser/grammarParser';
+import { parseGrammar, ParseError } from './core/parser/grammarParser';
 import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
 import { buildLLTable, LLTable } from './core/ll/llTable';
 import {
@@ -10,7 +10,7 @@ import {
   LRAutomaton
 } from './core/lr/lrAutomaton';
 import { buildLRTable, LRTable } from './core/lr/lrTable';
-import { PRESET_GRAMMARS } from './core/presets/presetGrammars';
+import { PRESET_GRAMMARS, PresetGrammar } from './core/presets/presetGrammars';
 import { Language, TRANSLATIONS } from './i18n/translations';
 
 // Views
@@ -28,11 +28,12 @@ import { exportGrammarToLatex } from './core/export/latexExport';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network,
-  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info
 } from 'lucide-react';
 
 type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
 type Theme = 'dark' | 'light' | 'projector';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
 export interface AnalysisDataResult {
   analysis: GrammarAnalysis;
@@ -59,11 +60,6 @@ function computeAnalysis(grammar: Grammar | null): AnalysisDataResult | null {
     const lalr1Automaton = buildLALR1Automaton(grammar, analysis);
     const lr1Automaton = buildLR1Automaton(grammar, analysis);
 
-    const lr0Table = buildLRTable(lr0Automaton, grammar, analysis);
-    const slr1Table = buildLRTable(slr1Automaton, grammar, analysis);
-    const lalr1Table = buildLRTable(lalr1Automaton, grammar, analysis);
-    const lr1Table = buildLRTable(lr1Automaton, grammar, analysis);
-
     return {
       analysis,
       llTable,
@@ -71,10 +67,10 @@ function computeAnalysis(grammar: Grammar | null): AnalysisDataResult | null {
       slr1Automaton,
       lalr1Automaton,
       lr1Automaton,
-      lr0Table,
-      slr1Table,
-      lalr1Table,
-      lr1Table
+      lr0Table: buildLRTable(lr0Automaton, grammar, analysis),
+      slr1Table: buildLRTable(slr1Automaton, grammar, analysis),
+      lalr1Table: buildLRTable(lalr1Automaton, grammar, analysis),
+      lr1Table: buildLRTable(lr1Automaton, grammar, analysis)
     };
   } catch (err) {
     console.error('Analysis error:', err);
@@ -82,28 +78,59 @@ function computeAnalysis(grammar: Grammar | null): AnalysisDataResult | null {
   }
 }
 
+/** Per-viewer conveniences only; the app works the same when storage is unavailable. */
+function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v !== null && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+const PRESET_CATEGORY_LABELS: Record<PresetGrammar['category'], { en: string; cz: string }> = {
+  Arithmetic: { en: 'Arithmetic expressions', cz: 'Aritmetické výrazy' },
+  LL: { en: 'LL parsing', cz: 'Analýza LL' },
+  LR: { en: 'LR parsing', cz: 'Analýza LR' },
+  Ambiguity: { en: 'Ambiguity', cz: 'Nejednoznačnost' },
+  Transformations: { en: 'Transformations', cz: 'Transformace' }
+};
+
+const CUSTOM_PRESET_ID = '__custom__';
+
 export const App: React.FC = () => {
   const [grammarText, setGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
   const [selectedPresetId, setSelectedPresetId] = useState(PRESET_GRAMMARS[0].id);
   const [sampleInput, setSampleInput] = useState(PRESET_GRAMMARS[0].sampleInput);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
-  const [lrVariant, setLrVariant] = useState<'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)'>('SLR(1)');
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [lang, setLang] = useState<Language>('en');
+  const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
+  const [theme, setTheme] = useState<Theme>(() => readStored('ga-theme', ['dark', 'light', 'projector'] as const, 'dark'));
+  const [lang, setLang] = useState<Language>(() => readStored('ga-lang', ['en', 'cz'] as const, 'en'));
 
   const t = TRANSLATIONS[lang];
 
-  const handleNavigateToAnalyser = (targetTab: 'll' | 'lr', variant?: 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)') => {
-    if (variant) {
-      setLrVariant(variant);
-    }
-    setActiveTab(targetTab);
-  };
-
-  // Set data-theme on root html/body
-  React.useEffect(() => {
+  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    writeStored('ga-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('lang', lang === 'cz' ? 'cs' : 'en');
+    writeStored('ga-lang', lang);
+  }, [lang]);
+
+  // On phones the tab bar is a single scrollable row: keep the active tab visible
+  useEffect(() => {
+    document.querySelector('.tab-button.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }, [activeTab]);
 
   // Recalculation & Stale state management
   const [analyzedGrammarText, setAnalyzedGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
@@ -116,13 +143,13 @@ export const App: React.FC = () => {
 
   // Parse currently edited text for syntax error validation
   const parseResult = useMemo(() => parseGrammar(grammarText), [grammarText]);
+  const canAnalyse = !!parseResult.grammar && parseResult.errors.length === 0;
   const isStale = grammarText.trim() !== analyzedGrammarText.trim();
 
-  // Recalculation logic with timing measurement
   const recalculate = (overrideText?: string) => {
     const textToRun = overrideText !== undefined ? overrideText : grammarText;
     const parsed = parseGrammar(textToRun);
-    if (!parsed.grammar) {
+    if (!parsed.grammar || parsed.errors.length > 0) {
       return;
     }
 
@@ -148,26 +175,16 @@ export const App: React.FC = () => {
     }, 15);
   };
 
-  // Auto-recalculate on grammar changes (debounced 350ms)
-  // If grammar is heavy (> 150ms calculation time), pause auto-recalculation while typing
-  // to prevent UI lag, showing results as invalid (grey) with recalculate button.
+  // Auto-recalculate on grammar changes (debounced 350ms). Heavy grammars
+  // (> 150 ms) wait for the manual button so typing stays responsive.
   useEffect(() => {
-    if (grammarText.trim() === analyzedGrammarText.trim()) {
+    if (grammarText.trim() === analyzedGrammarText.trim() || isHeavyGrammar || !canAnalyse) {
       return;
     }
-
-    if (isHeavyGrammar) {
-      return; // Wait for manual click on recalculate button
-    }
-
-    const timer = setTimeout(() => {
-      recalculate();
-    }, 350);
-
+    const timer = setTimeout(() => recalculate(), 350);
     return () => clearTimeout(timer);
-  }, [grammarText, analyzedGrammarText, isHeavyGrammar]);
+  }, [grammarText, analyzedGrammarText, isHeavyGrammar, canAnalyse]);
 
-  // Load preset handler
   const handleSelectPreset = (presetId: string) => {
     const preset = PRESET_GRAMMARS.find(p => p.id === presetId);
     if (preset) {
@@ -178,14 +195,38 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleEditGrammar = (text: string) => {
+    setGrammarText(text);
+    const preset = PRESET_GRAMMARS.find(p => p.id === selectedPresetId);
+    if (preset && preset.grammarText !== text) {
+      setSelectedPresetId(CUSTOM_PRESET_ID);
+    }
+  };
+
   // Apply transformed grammar handler
   const handleApplyGrammarText = (newText: string) => {
     setGrammarText(newText);
+    setSelectedPresetId(CUSTOM_PRESET_ID);
     recalculate(newText);
   };
 
+  const selectedPreset = PRESET_GRAMMARS.find(p => p.id === selectedPresetId);
+  const categories = [...new Set(PRESET_GRAMMARS.map(p => p.category))];
+  const msg = (e: ParseError) => (lang === 'cz' ? e.messageCz || e.message : e.message);
+
+  const tabs: { id: TabId; icon: React.ReactNode; label: string }[] = [
+    { id: 'overview', icon: <Eye size={15} />, label: t.tabOverview },
+    { id: 'firstFollow', icon: <GitCommit size={15} />, label: t.tabFirstFollow },
+    { id: 'transformations', icon: <Sparkles size={15} />, label: t.tabTransform },
+    { id: 'll', icon: <Layers size={15} />, label: t.tabLL },
+    { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR },
+    { id: 'graph', icon: <Network size={15} />, label: t.tabGraph },
+    { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
+    { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
+  ];
+
   return (
-    <div>
+    <div className="app-shell">
       {/* Top Application Header */}
       <header className="app-header">
         <div className="brand-section">
@@ -203,6 +244,7 @@ export const App: React.FC = () => {
               className={`btn ${lang === 'en' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '3px 8px', fontSize: '11px' }}
               onClick={() => setLang('en')}
+              aria-pressed={lang === 'en'}
             >
               EN
             </button>
@@ -210,6 +252,7 @@ export const App: React.FC = () => {
               className={`btn ${lang === 'cz' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ padding: '3px 8px', fontSize: '11px' }}
               onClick={() => setLang('cz')}
+              aria-pressed={lang === 'cz'}
             >
               CZ
             </button>
@@ -217,25 +260,13 @@ export const App: React.FC = () => {
 
           {/* Theme Selector */}
           <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              className={`btn-icon ${theme === 'dark' ? 'active' : ''}`}
-              title="Dark Theme"
-              onClick={() => setTheme('dark')}
-            >
+            <button className={`btn-icon ${theme === 'dark' ? 'active' : ''}`} title={t.dark} aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>
               <Moon size={16} />
             </button>
-            <button
-              className={`btn-icon ${theme === 'light' ? 'active' : ''}`}
-              title="Light Theme"
-              onClick={() => setTheme('light')}
-            >
+            <button className={`btn-icon ${theme === 'light' ? 'active' : ''}`} title={t.light} aria-pressed={theme === 'light'} onClick={() => setTheme('light')}>
               <Sun size={16} />
             </button>
-            <button
-              className={`btn-icon ${theme === 'projector' ? 'active' : ''}`}
-              title="Classroom / Projector Mode"
-              onClick={() => setTheme('projector')}
-            >
+            <button className={`btn-icon ${theme === 'projector' ? 'active' : ''}`} title={t.projectorMode} aria-pressed={theme === 'projector'} onClick={() => setTheme('projector')}>
               <Monitor size={16} />
             </button>
           </div>
@@ -249,27 +280,40 @@ export const App: React.FC = () => {
           <div className="editor-section">
             {/* Presets Selector */}
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '6px', display: 'block' }}>
+              <label htmlFor="preset-select" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '6px', display: 'block' }}>
                 {t.presets}
               </label>
               <select
+                id="preset-select"
                 className="grammar-textarea"
                 style={{ minHeight: 'unset', height: '36px', padding: '6px 10px', fontSize: '12.5px' }}
                 value={selectedPresetId}
                 onChange={(e) => handleSelectPreset(e.target.value)}
               >
-                {PRESET_GRAMMARS.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {lang === 'cz' ? p.nameCz : p.nameEn}
-                  </option>
+                {selectedPresetId === CUSTOM_PRESET_ID && (
+                  <option value={CUSTOM_PRESET_ID}>{t.customGrammar}</option>
+                )}
+                {categories.map(cat => (
+                  <optgroup key={cat} label={PRESET_CATEGORY_LABELS[cat][lang]}>
+                    {PRESET_GRAMMARS.filter(p => p.category === cat).map(p => (
+                      <option key={p.id} value={p.id}>
+                        {lang === 'cz' ? p.nameCz : p.nameEn}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
+              {selectedPreset && (
+                <div className="preset-description">
+                  {lang === 'cz' ? selectedPreset.descriptionCz : selectedPreset.descriptionEn}
+                </div>
+              )}
             </div>
 
             {/* Grammar Textarea */}
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                <label htmlFor="grammar-editor" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
                   {t.editorTitle}
                 </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -291,7 +335,7 @@ export const App: React.FC = () => {
                     className={`btn ${isStale ? 'btn-primary' : 'btn-secondary'}`}
                     style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
                     onClick={() => recalculate()}
-                    disabled={isCalculating || !parseResult.grammar}
+                    disabled={isCalculating || !canAnalyse}
                     title={t.recalculateAnalysis}
                   >
                     <RefreshCw size={12} className={isCalculating ? 'spin-icon' : ''} />
@@ -301,49 +345,58 @@ export const App: React.FC = () => {
               </div>
 
               <textarea
+                id="grammar-editor"
                 className="grammar-textarea"
-                style={{ flex: 1, minHeight: '260px' }}
+                style={{ flex: 1, minHeight: '220px' }}
                 value={grammarText}
-                onChange={(e) => setGrammarText(e.target.value)}
+                onChange={(e) => handleEditGrammar(e.target.value)}
                 placeholder={t.editorPlaceholder}
                 spellCheck={false}
               />
             </div>
 
-            {/* Parse Errors Banner */}
+            {/* Parse Errors (block the analysis) */}
             {parseResult.errors.length > 0 && (
-              <div style={{
-                backgroundColor: 'var(--color-danger-subtle)',
-                border: '1px solid var(--color-danger)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--color-danger)', fontWeight: 700, fontSize: '12px' }}>
+              <div className="notice-box error" role="alert">
+                <div className="notice-title">
                   <AlertCircle size={15} />
                   <span>{t.syntaxErrorTitle}</span>
                 </div>
-                <ul style={{ paddingLeft: '18px', fontSize: '11.5px', color: 'var(--color-danger)', marginTop: '4px' }}>
-                  {parseResult.errors.map((err: { line: number; message: string }, idx: number) => (
-                    <li key={idx}>{lang === 'cz' ? 'Řádek' : 'Line'} {err.line}: {err.message}</li>
+                <ul>
+                  {parseResult.errors.map((err, idx) => (
+                    <li key={idx}>{lang === 'cz' ? 'Řádek' : 'Line'} {err.line}: {msg(err)}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Warnings (analysis still runs) */}
+            {parseResult.warnings.length > 0 && (
+              <div className="notice-box warning">
+                <div className="notice-title">
+                  <AlertTriangle size={15} />
+                  <span>{t.warningsTitle}</span>
+                </div>
+                <ul>
+                  {parseResult.warnings.map((w, idx) => (
+                    <li key={idx}>{lang === 'cz' ? 'Řádek' : 'Line'} {w.line}: {msg(w)}</li>
                   ))}
                 </ul>
               </div>
             )}
 
             {/* Quick Syntax Hint */}
-            <div style={{
-              backgroundColor: 'var(--color-bg-base)',
-              padding: '10px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '11px',
-              color: 'var(--color-text-muted)',
-              lineHeight: '1.4'
-            }}>
-              <strong>{t.syntaxHintTitle}</strong>
+            <div className="syntax-hint">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '2px' }}>
+                <Info size={13} />
+                <span>{t.syntaxHintTitle}</span>
+              </div>
+              <div>{t.syntaxRules}</div>
               <div>{t.syntaxNonTerminals}</div>
               <div>{t.syntaxTerminals}</div>
               <div>{t.syntaxEps}</div>
               <div>{t.syntaxAlts}</div>
+              <div>{t.syntaxComments}</div>
             </div>
           </div>
         </aside>
@@ -351,64 +404,20 @@ export const App: React.FC = () => {
         {/* Right Pane: Analysis Dashboard & Simulator */}
         <main className="right-pane">
           {/* Navigation Tabs */}
-          <div className="tabs-header">
-            <button
-              className={`tab-button ${activeTab === 'overview' ? 'active' : ''}`}
-              onClick={() => setActiveTab('overview')}
-            >
-              <Eye size={15} />
-              <span>{t.tabOverview}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'firstFollow' ? 'active' : ''}`}
-              onClick={() => setActiveTab('firstFollow')}
-            >
-              <GitCommit size={15} />
-              <span>{t.tabFirstFollow}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'transformations' ? 'active' : ''}`}
-              onClick={() => setActiveTab('transformations')}
-            >
-              <Sparkles size={15} />
-              <span>{t.tabTransform}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'll' ? 'active' : ''}`}
-              onClick={() => setActiveTab('ll')}
-            >
-              <Layers size={15} />
-              <span>{t.tabLL}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'lr' ? 'active' : ''}`}
-              onClick={() => setActiveTab('lr')}
-            >
-              <Cpu size={15} />
-              <span>{t.tabLR}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'graph' ? 'active' : ''}`}
-              onClick={() => setActiveTab('graph')}
-            >
-              <Network size={15} />
-              <span>{t.tabGraph}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'words' ? 'active' : ''}`}
-              onClick={() => setActiveTab('words')}
-            >
-              <BookOpen size={15} />
-              <span>{t.tabWords}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'latex' ? 'active' : ''}`}
-              onClick={() => setActiveTab('latex')}
-            >
-              <FileText size={15} />
-              <span>{t.tabLatex}</span>
-            </button>
-          </div>
+          <nav className="tabs-header" role="tablist">
+            {tabs.map(tab => (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
 
           {/* Active Tab View */}
           <div className="tab-content">
@@ -418,7 +427,7 @@ export const App: React.FC = () => {
                 <div className="outdated-banner-text">
                   <AlertTriangle size={18} />
                   <div>
-                    <div>{t.outdatedResultsBanner}</div>
+                    <div>{canAnalyse || isCalculating ? t.outdatedResultsBanner : t.outdatedInvalidBanner}</div>
                     {isHeavyGrammar && lastCalcDuration > 0 && (
                       <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 400, marginTop: '2px' }}>
                         {t.heavyGrammarNotice.replace('{ms}', lastCalcDuration.toString())}
@@ -430,7 +439,7 @@ export const App: React.FC = () => {
                 <button
                   className="btn btn-primary"
                   onClick={() => recalculate()}
-                  disabled={isCalculating || !parseResult.grammar}
+                  disabled={isCalculating || !canAnalyse}
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px' }}
                 >
                   <RefreshCw size={14} className={isCalculating ? 'spin-icon' : ''} />
@@ -463,25 +472,18 @@ export const App: React.FC = () => {
                 )}
 
                 {activeTab === 'firstFollow' && (
-                  <FirstFollowView
-                    grammar={analyzedGrammar}
-                    analysis={analysisData.analysis}
-                    lang={lang}
-                  />
+                  <FirstFollowView grammar={analyzedGrammar} analysis={analysisData.analysis} lang={lang} />
                 )}
 
                 {activeTab === 'transformations' && (
-                  <TransformationsView
-                    grammar={analyzedGrammar}
-                    onApplyGrammarText={handleApplyGrammarText}
-                    lang={lang}
-                  />
+                  <TransformationsView grammar={analyzedGrammar} onApplyGrammarText={handleApplyGrammarText} lang={lang} />
                 )}
 
                 {activeTab === 'll' && (
                   <LLView
                     grammar={analyzedGrammar}
                     llTable={analysisData.llTable}
+                    analysis={analysisData.analysis}
                     defaultInput={sampleInput}
                     lang={lang}
                   />
@@ -513,22 +515,24 @@ export const App: React.FC = () => {
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
+                    selectedVariant={lrVariant}
+                    onSelectVariant={setLrVariant}
                   />
                 )}
 
-                {activeTab === 'words' && (
-                  <WordGeneratorView
-                    grammar={analyzedGrammar}
-                    lang={lang}
-                  />
-                )}
+                {activeTab === 'words' && <WordGeneratorView grammar={analyzedGrammar} lang={lang} />}
 
                 {activeTab === 'latex' && (
                   <LatexExportView
                     grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     llTable={analysisData.llTable}
-                    slr1Table={analysisData.slr1Table}
+                    lrTables={{
+                      'LR(0)': analysisData.lr0Table,
+                      'SLR(1)': analysisData.slr1Table,
+                      'LALR(1)': analysisData.lalr1Table,
+                      'LR(1)': analysisData.lr1Table
+                    }}
                     lang={lang}
                   />
                 )}

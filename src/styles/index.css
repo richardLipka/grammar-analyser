@@ -58,39 +58,76 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+
+  /* Graphs & trees */
+  --graph-bg: #131824;
+  --graph-edge: #64748b;
+  --graph-edge-width: 1.5px;
+  --graph-node-fill: #1a2234;
+  --graph-node-stroke: #475569;
+  --graph-node-stroke-width: 1.5px;
+  --graph-header-fill: #242e44;
+  --graph-text: #e2e8f0;
+  --graph-text-secondary: #cbd5e1;
+  --graph-label-fill: #242e44;
+  --graph-nt-fill: rgba(56, 189, 248, 0.14);
+  --graph-nt-stroke: #38bdf8;
+  --graph-nt-text: #7dd3fc;
+  --graph-t-fill: rgba(52, 211, 153, 0.14);
+  --graph-t-stroke: #34d399;
+  --graph-t-text: #6ee7b7;
+  --graph-reduce-text: #fbbf24;
 }
 
-/* Light Theme */
+/* Light Theme: strong outlines and dark text for readability (also in exported images) */
 [data-theme='light'] {
-  --color-bg-base: #f8fafc;
+  --color-bg-base: #f1f5f9;
   --color-bg-surface: #ffffff;
-  --color-bg-card: #f1f5f9;
+  --color-bg-card: #f8fafc;
   --color-bg-elevated: #e2e8f0;
   --color-bg-hover: #cbd5e1;
 
-  --color-border: #cbd5e1;
-  --color-border-subtle: #e2e8f0;
+  --color-border: #94a3b8;
+  --color-border-subtle: #cbd5e1;
 
-  --color-text-primary: #0f172a;
-  --color-text-secondary: #334155;
-  --color-text-muted: #64748b;
+  --color-text-primary: #020617;
+  --color-text-secondary: #1e293b;
+  --color-text-muted: #475569;
 
-  --color-primary: #0284c7;
-  --color-primary-hover: #0369a1;
-  --color-primary-subtle: rgba(2, 132, 199, 0.08);
+  --color-primary: #0369a1;
+  --color-primary-hover: #075985;
+  --color-primary-subtle: rgba(3, 105, 161, 0.12);
 
-  --color-success: #059669;
-  --color-success-subtle: rgba(5, 150, 105, 0.08);
+  --color-success: #047857;
+  --color-success-subtle: rgba(4, 120, 87, 0.12);
 
-  --color-warning: #d97706;
-  --color-warning-subtle: rgba(217, 119, 6, 0.08);
+  --color-warning: #b45309;
+  --color-warning-subtle: rgba(180, 83, 9, 0.12);
 
-  --color-danger: #dc2626;
-  --color-danger-subtle: rgba(220, 38, 38, 0.08);
+  --color-danger: #b91c1c;
+  --color-danger-subtle: rgba(185, 28, 28, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.16);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.2);
+
+  --graph-bg: #ffffff;
+  --graph-edge: #1e293b;
+  --graph-edge-width: 1.75px;
+  --graph-node-fill: #ffffff;
+  --graph-node-stroke: #0f172a;
+  --graph-node-stroke-width: 2px;
+  --graph-header-fill: #e2e8f0;
+  --graph-text: #020617;
+  --graph-text-secondary: #0f172a;
+  --graph-label-fill: #ffffff;
+  --graph-nt-fill: #e0f2fe;
+  --graph-nt-stroke: #075985;
+  --graph-nt-text: #0c4a6e;
+  --graph-t-fill: #dcfce7;
+  --graph-t-stroke: #166534;
+  --graph-t-text: #14532d;
+  --graph-reduce-text: #9a3412;
 }
 
 /* Projector / Lecture Mode (High-Contrast) */
@@ -121,6 +158,24 @@
   --color-danger: #cc0000;
   --color-danger-subtle: #fee2e2;
 
+  --graph-bg: #ffffff;
+  --graph-edge: #000000;
+  --graph-edge-width: 2px;
+  --graph-node-fill: #ffffff;
+  --graph-node-stroke: #000000;
+  --graph-node-stroke-width: 2.5px;
+  --graph-header-fill: #e2e8f0;
+  --graph-text: #000000;
+  --graph-text-secondary: #000000;
+  --graph-label-fill: #ffffff;
+  --graph-nt-fill: #e0e7ff;
+  --graph-nt-stroke: #0000aa;
+  --graph-nt-text: #00006e;
+  --graph-t-fill: #dcfce7;
+  --graph-t-stroke: #005500;
+  --graph-t-text: #004400;
+  --graph-reduce-text: #7c2d12;
+
   font-size: 17px;
 }
 
@@ -140,16 +195,26 @@ body {
   overflow-x: hidden;
 }
 
+/* App shell: header on top, editor and results below, each pane scrolls on its own */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* Header & Navbar */
 .app-header {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   padding: 12px 24px;
   background-color: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 100;
 }
 
@@ -194,18 +259,11 @@ body {
 
 /* Layout Container */
 .main-layout {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 420px 1fr;
-  height: calc(100vh - 65px);
+  grid-template-columns: 420px minmax(0, 1fr);
   overflow: hidden;
-}
-
-@media (max-width: 1024px) {
-  .main-layout {
-    grid-template-columns: 1fr;
-    height: auto;
-    overflow: visible;
-  }
 }
 
 /* Left Pane (Editor & Tools) */
@@ -214,8 +272,27 @@ body {
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
   overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  /* Single column: the document scrolls, only the tab bar stays pinned */
+  .app-shell {
+    height: auto;
+    overflow: visible;
+  }
+
+  .main-layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  /* pane overflow is reset at the end of teaching.css, after the .right-pane rule */
+  .left-pane {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
 }
 
 .editor-section {
@@ -251,7 +328,8 @@ body {
 .right-pane {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   background-color: var(--color-bg-base);
 }
@@ -300,25 +378,20 @@ body {
   color: var(--color-primary);
 }
 
-/* Tabs */
+/* Tabs: pinned to the top of the results pane. flex-shrink: 0 keeps the bar at its
+   natural height; with the default shrink it collapsed and the cards slid under it. */
 .tabs-header {
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 50;
+  flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 8px 16px;
   background-color: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
-  overflow-x: auto;
-  scrollbar-width: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-
-@media (max-width: 1024px) {
-  .tabs-header {
-    top: 65px;
-  }
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .tab-button {
@@ -349,7 +422,18 @@ body {
 
 .tab-content {
   padding: 20px;
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .tab-content {
+    padding: 12px;
+  }
+
+  .app-header {
+    padding: 10px 12px;
+  }
 }
 
 /* Cards & Containers */
