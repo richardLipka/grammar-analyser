@@ -26,73 +26,13 @@ import {
 import { generateWords, generateRandomDerivation } from '../core/generator/wordGenerator';
 import { exportSetsToLatex, exportParseTreeToTikz } from '../core/export/latexExport';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { rules, accepts, expectEquivalent } from './earley';
 
 const parse = (text: string): Grammar => {
   const res = parseGrammar(text);
   expect(res.errors).toEqual([]);
   return res.grammar!;
 };
-
-const rules = (g: Grammar) => g.productions.map(p => `${p.lhs} -> ${p.rhs.join(' ')}`.trim());
-
-/** Earley recognizer (with the Aycock–Horspool nullable fix) for any CFG. */
-function accepts(g: Grammar, word: string[]): boolean {
-  const nullable = computeNullable(g);
-  const aug: Production = { id: -1, lhs: '\u0000', rhs: [g.startSymbol] };
-  type Item = { p: Production; dot: number; origin: number };
-  const chart: Item[][] = Array.from({ length: word.length + 1 }, () => []);
-  const keys: Set<string>[] = Array.from({ length: word.length + 1 }, () => new Set());
-  const add = (i: number, it: Item) => {
-    const key = `${it.p.id}|${it.p.lhs}|${it.dot}|${it.origin}`;
-    if (!keys[i].has(key)) {
-      keys[i].add(key);
-      chart[i].push(it);
-    }
-  };
-  add(0, { p: aug, dot: 0, origin: 0 });
-  for (let i = 0; i <= word.length; i++) {
-    for (let k = 0; k < chart[i].length; k++) {
-      const it = chart[i][k];
-      if (it.dot < it.p.rhs.length) {
-        const X = it.p.rhs[it.dot];
-        if (g.nonTerminals.has(X)) {
-          for (const q of g.productions) if (q.lhs === X) add(i, { p: q, dot: 0, origin: i });
-          if (nullable.has(X)) add(i, { p: it.p, dot: it.dot + 1, origin: it.origin });
-        } else if (i < word.length && word[i] === X) {
-          add(i + 1, { p: it.p, dot: it.dot + 1, origin: it.origin });
-        }
-      } else {
-        for (const w of chart[it.origin]) {
-          if (w.dot < w.p.rhs.length && w.p.rhs[w.dot] === it.p.lhs) {
-            add(i, { p: w.p, dot: w.dot + 1, origin: w.origin });
-          }
-        }
-      }
-    }
-  }
-  return keys[word.length].has(`-1|\u0000|1|0`);
-}
-
-function wordsUpTo(alphabet: string[], n: number): string[][] {
-  const result: string[][] = [[]];
-  let layer: string[][] = [[]];
-  for (let len = 1; len <= n; len++) {
-    layer = layer.flatMap(w => alphabet.map(a => [...w, a]));
-    result.push(...layer);
-  }
-  return result;
-}
-
-function expectEquivalent(g1: Grammar, g2: Grammar, maxLen = 6) {
-  const alphabet = [...new Set([...g1.terminals, ...g2.terminals])];
-  for (const w of wordsUpTo(alphabet, maxLen)) {
-    const a = accepts(g1, w);
-    const b = accepts(g2, w);
-    if (a !== b) {
-      throw new Error(`L(G) and L(G') differ on '${w.join(' ') || 'ε'}': ${a} vs ${b}\n${rules(g2).join('\n')}`);
-    }
-  }
-}
 
 describe('Parser edge cases', () => {
   it('keeps quoted "e" as a terminal (it is not ε)', () => {

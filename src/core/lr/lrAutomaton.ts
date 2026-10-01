@@ -3,7 +3,7 @@
  * Builds LR(0), SLR(1), LALR(1), and LR(1) automata.
  */
 
-import { Grammar, Production, END_MARKER, cloneGrammar, EPSILON } from '../ast/grammar';
+import { Grammar, Production, END_MARKER, cloneGrammar, EPSILON, toSubscript } from '../ast/grammar';
 import { GrammarAnalysis, first1OfString } from '../analyser/grammarAnalyser';
 import {
   LR0Item, LR1Item,
@@ -45,12 +45,6 @@ export interface LRAutomaton {
 }
 
 export const INITIAL_STATE_SYMBOL = '#';
-
-const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉';
-
-export function toSubscript(n: number): string {
-  return String(n).split('').map(d => SUBSCRIPT_DIGITS[Number(d)]).join('');
-}
 
 /** Names the states by the symbols leading into them, numbering repeated symbols in creation order. */
 export function nameStates(states: LRState[]): LRStateName[] {

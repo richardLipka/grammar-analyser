@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Grammar } from './core/ast/grammar';
+import { Grammar, formatGrammarForEditor } from './core/ast/grammar';
 import { parseGrammar, oneRulePerLine, ParseError } from './core/parser/grammarParser';
 import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
 import { buildLLTable, LLTable } from './core/ll/llTable';
@@ -25,11 +25,15 @@ import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { FavLogo } from './ui/components/FavLogo';
 import { exportGrammarToLatex } from './core/export/latexExport';
+import { TransformationResult } from './core/processor/grammarProcessor';
+import { WHOLE_GRAMMAR_TRANSFORMATIONS } from './ui/wholeGrammarTransformations';
+import { GrammarClickView } from './ui/components/GrammarClickView';
+import { useGrammarHistory } from './ui/useGrammarHistory';
 import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 
 // Icons
 import {
-  BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle,
+  BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
   Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info
 } from 'lucide-react';
 
@@ -110,6 +114,7 @@ const PRESET_CATEGORY_LABELS: Record<PresetGrammar['category'], { en: string; cz
 
 const CUSTOM_PRESET_ID = '__custom__';
 
+
 // Only an explicit choice is remembered, so the defaults (Czech, light theme) apply until the user changes them.
 const THEME_KEY = 'grammar-analyser.theme';
 const LANG_KEY = 'grammar-analyser.lang';
@@ -163,6 +168,13 @@ export const App: React.FC = () => {
   const eIsEpsilon = eChoice !== 'terminal';
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  // Text editing, or transformations by clicking symbols of the grammar
+  const [editorMode, setEditorMode] = useState<'text' | 'click'>('text');
+  const [notice, setNotice] = useState<string | null>(null);
+  // Undo/redo of the grammar text: typing is committed after a pause, transformations at once
+  const history = useGrammarHistory(setup.grammarText);
+  const grammarTextRef = useRef(setup.grammarText);
+  const typingTimer = useRef<number | undefined>(undefined);
 
   const t = TRANSLATIONS[lang];
 
@@ -246,23 +258,105 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [grammarText, analyzedGrammarText, isHeavyGrammar, canAnalyse]);
 
+  /** Commits typed text that has not been recorded in the history yet. */
+  const flushTyping = () => {
+    if (typingTimer.current !== undefined) {
+      window.clearTimeout(typingTimer.current);
+      typingTimer.current = undefined;
+    }
+    const h = history.get();
+    if (grammarTextRef.current !== h.entries[h.index].text) {
+      history.commit({ text: grammarTextRef.current, kind: 'edit' });
+    }
+  };
+
+  /** Shows a grammar text from the history or from a transformation and analyses it. */
+  const showText = (text: string) => {
+    grammarTextRef.current = text;
+    setGrammarText(text);
+    setSelectedPresetId(PRESET_GRAMMARS.find(p => p.grammarText === text)?.id ?? CUSTOM_PRESET_ID);
+    recalculate(text);
+  };
+
   const handleSelectPreset = (presetId: string) => {
     const preset = PRESET_GRAMMARS.find(p => p.id === presetId);
     if (preset) {
-      setSelectedPresetId(preset.id);
-      setGrammarText(preset.grammarText);
+      flushTyping();
+      history.commit({ text: preset.grammarText, kind: 'preset', titleEn: preset.nameEn, titleCz: preset.nameCz });
       setSampleInput(preset.sampleInput);
-      recalculate(preset.grammarText);
+      showText(preset.grammarText);
     }
   };
 
   const handleEditGrammar = (text: string) => {
+    grammarTextRef.current = text;
     setGrammarText(text);
     const preset = PRESET_GRAMMARS.find(p => p.id === selectedPresetId);
     if (preset && preset.grammarText !== text) {
       setSelectedPresetId(CUSTOM_PRESET_ID);
     }
+    if (typingTimer.current !== undefined) window.clearTimeout(typingTimer.current);
+    typingTimer.current = window.setTimeout(flushTyping, 800);
   };
+
+  /** Applies a transformation directly to the grammar in the editor (one undoable step). */
+  const applyTransformation = (result: TransformationResult, title: { en: string; cz: string }) => {
+    if (result.steps.length === 0) {
+      setNotice(t.nothingChanged);
+      window.setTimeout(() => setNotice(null), 2500);
+      return;
+    }
+    const text = formatGrammarForEditor(result.transformedGrammar);
+    flushTyping();
+    history.commit({ text, kind: 'transform', titleEn: title.en, titleCz: title.cz, steps: result.steps });
+    showText(text);
+  };
+
+  const applyWholeGrammar = (id: string) => {
+    const tr = WHOLE_GRAMMAR_TRANSFORMATIONS.find(x => x.id === id);
+    if (!tr || !parseResult.grammar || parseResult.errors.length > 0) return;
+    applyTransformation(tr.fn(parseResult.grammar), { en: tr.label(TRANSLATIONS.en), cz: tr.label(TRANSLATIONS.cz) });
+  };
+
+  const goToHistory = (i: number) => {
+    flushTyping();
+    const entry = history.goTo(i);
+    if (entry) showText(entry.text);
+  };
+  const undo = () => {
+    flushTyping();
+    goToHistory(history.get().index - 1);
+  };
+  const redo = () => {
+    flushTyping();
+    goToHistory(history.get().index + 1);
+  };
+  const canUndo = history.index > 0 || grammarText !== history.entries[history.index].text;
+  const currentEntry = history.entries[history.index];
+  const canRedo = history.index < history.entries.length - 1;
+
+  /** Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) act on the grammar history. */
+  const handleUndoKeys = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; key: string; preventDefault: () => void }) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      undo();
+    } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+      e.preventDefault();
+      redo();
+    }
+  };
+  // Outside text fields (e.g. after clicking a transformation) the shortcuts work too
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      handleUndoKeys(e);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  });
 
   /** Inserts a palette symbol at the caret (or wraps the selection for paired symbols). */
   const insertSymbol = (sym: (typeof EDITOR_SYMBOLS)[number]) => {
@@ -283,13 +377,6 @@ export const App: React.FC = () => {
       ta?.focus();
       ta?.setSelectionRange(caret, caret);
     });
-  };
-
-  // Apply transformed grammar handler
-  const handleApplyGrammarText = (newText: string) => {
-    setGrammarText(newText);
-    setSelectedPresetId(CUSTOM_PRESET_ID);
-    recalculate(newText);
   };
 
   /** The user's answer to "does e mean ε?"; the analysis is redone at once. */
@@ -498,34 +585,115 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
-              <textarea
-                id="grammar-editor"
-                ref={editorRef}
-                className="grammar-textarea"
-                style={{ flex: 1, minHeight: '220px' }}
-                value={grammarText}
-                onChange={(e) => handleEditGrammar(e.target.value)}
-                placeholder={t.editorPlaceholder}
-                spellCheck={false}
-              />
-
-              {/* Symbol palette: arrow, alternative separator, ε, ... without a keyboard */}
-              <div className="symbol-palette" role="toolbar" aria-label={t.symbolPaletteLabel}>
-                {EDITOR_SYMBOLS.map(sym => (
+              {/* Text editing or transformations by clicking; undo/redo and whole-grammar transformations */}
+              <div className="editor-toolbar">
+                <div className="editor-mode" role="group" aria-label={t.editorModeLabel}>
                   <button
-                    key={sym.label}
                     type="button"
-                    className="symbol-key"
-                    title={lang === 'cz' ? sym.titleCz : sym.titleEn}
-                    aria-label={lang === 'cz' ? sym.titleCz : sym.titleEn}
-                    // keep the caret in the editor (mouse and touch)
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => insertSymbol(sym)}
+                    className={`btn ${editorMode === 'text' ? 'btn-primary' : 'btn-secondary'}`}
+                    aria-pressed={editorMode === 'text'}
+                    onClick={() => setEditorMode('text')}
                   >
-                    {sym.label}
+                    <Type size={12} />
+                    <span>{t.editorModeText}</span>
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    className={`btn ${editorMode === 'click' ? 'btn-primary' : 'btn-secondary'}`}
+                    aria-pressed={editorMode === 'click'}
+                    onClick={() => setEditorMode('click')}
+                  >
+                    <MousePointerClick size={12} />
+                    <span>{t.editorModeClick}</span>
+                  </button>
+                </div>
+                <div className="editor-toolbar-right">
+                  <button type="button" className="btn btn-secondary" onClick={undo} disabled={!canUndo} title={t.undoTitle} aria-label={t.undo}>
+                    <Undo2 size={13} />
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={redo} disabled={!canRedo} title={t.redoTitle} aria-label={t.redo}>
+                    <Redo2 size={13} />
+                  </button>
+                  <select
+                    className="whole-grammar-select"
+                    value=""
+                    disabled={!canAnalyse}
+                    aria-label={t.wholeGrammarMenu}
+                    onChange={(e) => applyWholeGrammar(e.target.value)}
+                  >
+                    <option value="">{t.wholeGrammarMenu}…</option>
+                    {WHOLE_GRAMMAR_TRANSFORMATIONS.map(tr => (
+                      <option key={tr.id} value={tr.id} title={tr.hint(t)}>{tr.label(t)}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {editorMode === 'text' ? (
+                <>
+                  <textarea
+                    id="grammar-editor"
+                    ref={editorRef}
+                    className="grammar-textarea"
+                    style={{ flex: 1, minHeight: '220px' }}
+                    value={grammarText}
+                    onChange={(e) => handleEditGrammar(e.target.value)}
+                    onKeyDown={handleUndoKeys}
+                    placeholder={t.editorPlaceholder}
+                    spellCheck={false}
+                  />
+
+                  {/* Symbol palette: arrow, alternative separator, ε, ... without a keyboard */}
+                  <div className="symbol-palette" role="toolbar" aria-label={t.symbolPaletteLabel}>
+                    {EDITOR_SYMBOLS.map(sym => (
+                      <button
+                        key={sym.label}
+                        type="button"
+                        className="symbol-key"
+                        title={lang === 'cz' ? sym.titleCz : sym.titleEn}
+                        aria-label={lang === 'cz' ? sym.titleCz : sym.titleEn}
+                        // keep the caret in the editor (mouse and touch)
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => insertSymbol(sym)}
+                      >
+                        {sym.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : canAnalyse && parseResult.grammar ? (
+                <>
+                  <GrammarClickView
+                    grammar={parseResult.grammar}
+                    analysis={!isStale && analysisData ? analysisData.analysis : undefined}
+                    llConflicts={!isStale && analysisData ? analysisData.llTable.conflicts : undefined}
+                    lang={lang}
+                    onApply={applyTransformation}
+                  />
+                  <p className="hint-text" style={{ marginTop: '6px' }}>{t.clickModeHint}</p>
+                </>
+              ) : (
+                <div className="click-grammar click-grammar-empty">{t.clickModeErrors}</div>
+              )}
+
+              {notice && <div className="notice-inline" role="status">{notice}</div>}
+
+              {/* Explanation of the transformation that produced the current grammar */}
+              {currentEntry.kind === 'transform' && currentEntry.steps && currentEntry.steps.length > 0 && (() => {
+                const step = currentEntry.steps[currentEntry.steps.length - 1];
+                return (
+                  <div className="last-step-box">
+                    <div className="last-step-head">
+                      <span><strong>{t.lastStepTitle}:</strong> {lang === 'cz' ? currentEntry.titleCz : currentEntry.titleEn}</span>
+                      <button type="button" className="link-button" onClick={() => setActiveTab('transformations')}>{t.showProtocol}</button>
+                    </div>
+                    <p>{lang === 'cz' ? step.descriptionCz || step.description : step.description}</p>
+                    {(step.mathExplanation || step.mathExplanationCz) && (
+                      <div className="last-step-math">{lang === 'cz' ? step.mathExplanationCz || step.mathExplanation : step.mathExplanation}</div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* A standalone e: the empty word (KIV/FJP) or a terminal? */}
@@ -691,7 +859,15 @@ export const App: React.FC = () => {
                 )}
 
                 {activeTab === 'transformations' && (
-                  <TransformationsView grammar={analyzedGrammar} onApplyGrammarText={handleApplyGrammarText} lang={lang} />
+                  <TransformationsView
+                    grammar={analyzedGrammar}
+                    entries={history.entries}
+                    index={history.index}
+                    onApplyWhole={applyWholeGrammar}
+                    onGoTo={goToHistory}
+                    onOpenClickMode={() => setEditorMode('click')}
+                    lang={lang}
+                  />
                 )}
 
                 {activeTab === 'll' && (

@@ -205,3 +205,40 @@ I checked the tables against *11 a 12 LR.pdf*: the SLR(1) tables of G12 and G13,
 - **The Dragon Book layout** (numbered states, `s5` / `r2` / `acc`, GOTO for non-terminals) stays available. A switch at the top of the LR, automaton and LaTeX screens selects the layout, and the choice is remembered.
 
 The tests in `src/test/lrLecture.test.ts` use the lecture's examples G11–G14 and its traces. G11 is the only difference: the lecture numbers the two `b` states the other way round, because it indexes the occurrences of `b` in the rules rather than the item sets.
+
+## 7. Transformations applied directly to the grammar; LL(1) transformations in the literature
+
+**Interface.** The editor has two modes, *Text* and *Úpravy kliknutím* (transform by clicking).
+- In click mode, a click on a non-terminal opens its transformations. On a left-hand side they apply to the whole non-terminal; on a right-hand side they apply to that occurrence. The chosen transformation is applied to the grammar in the editor at once.
+- LL(1) conflicts are marked FF and FFL, and the actions that address them are tagged *řeší kolizi*.
+- Undo and redo (also Ctrl+Z and Ctrl+Y) cover transformations, loaded examples and typing. Typing becomes one step after a short pause.
+- The Transformations tab is now the protocol of all steps with their explanations, and any earlier state can be restored from it. It also keeps the transformations of the whole grammar and the normal-form checklist.
+- The grammar is written back to the editor without quotes where that is unambiguous (`S → a A S | b`), so text in lecture notation stays readable.
+
+**Sources read:**
+- **Ježek, KIV/FJP, *9 a 10 LLk*, pp. 20–22.** The lecture distinguishes FIRST-FIRST and FIRST-FOLLOW conflicts.
+  - FF: removed by left factoring, after rules have been eliminated if necessary.
+  - FFL: removed by *pohlcení terminálu*. `A → α B a β` becomes `A → α [Ba] β`, `[Ba] → α₁ a | … | αₙ a`, which turns the conflict into an FF conflict of `[Ba]`.
+  - It replaces non-terminals with the same generative power (E₁ and E₂) by one of them, and eliminates E′ and T′ by substitution.
+  - It warns that removing an FF conflict can create an FFL conflict and vice versa, and that the transformation to LL(1) is not guaranteed to succeed.
+- **Ježek, KIV/FJP, *8 BKG*.** Two forms of left-recursion removal: without ε (`A → βᵢ | βᵢA'`, `A' → αᵢ | αᵢA'`) and the shorter one with ε.
+- **Vavrečková, SLU, *prekl_05_LL*.** Lists the basic LL(1) transformations: left-recursion removal, factoring, elimination of rules, and *redukce množin FOLLOW*. The last introduces a new non-terminal that takes over part of the FOLLOW set of the conflicting one. The slides call the whole process non-deterministic, with no method guaranteed to succeed.
+- **Standard textbooks.** The Dragon Book (Aho, Lam, Sethi, Ullman, §4.3) covers left-recursion elimination and left factoring as the preparation for predictive parsing. The left-corner transformation (Rosenkrantz & Lewis, 1970) is another way of removing left recursion.
+
+**Implemented:**
+- absorption of the following symbol (`absorbFollowingSymbol`);
+- substitution at one occurrence (`expandOccurrence`);
+- a copy of a non-terminal for one occurrence, which reduces FOLLOW sets (`splitFollowForOccurrence`);
+- merging non-terminals with the same rules (`mergeEquivalentNonTerminal`);
+- left-recursion removal without ε;
+- substitution that also removes a non-terminal nothing refers to any more.
+
+`src/test/ll1Transformations.test.ts` reproduces the lecture examples. Every offered transformation is checked for language equivalence.
+
+**A remark on the lecture's absorption example** (`A → B a C`, `B → e | a b C`, `C → e | c B C`). After the absorption B still has a FIRST-FOLLOW conflict on `a`. The slide says the conflict is gone, but the new rule `[Ba] → a b C a` puts `a` after C, and `C → c B C` passes FOLLOW(C) on to FOLLOW(B). The transformation is correct, and the example illustrates the lecture's own warning that removing one conflict can cause another. C has an FFL conflict on `c` both before and after.
+
+**Not implemented (candidates):**
+- the left-corner transformation, as an alternative to Paull's algorithm;
+- right factoring of common suffixes;
+- removing ambiguity by operator precedence and associativity, which needs the user's decision on the intended meaning;
+- an automatic search for an LL(1) form, which may not terminate and is not guaranteed to succeed.

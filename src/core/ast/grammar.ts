@@ -81,23 +81,43 @@ function quoteTerminal(sym: string): string {
   return sym.includes('"') ? `'${sym}'` : `"${sym}"`;
 }
 
-function editorNonTerminal(sym: string): string {
-  return isPlainIdentifier(sym) ? sym : `<${sym}>`;
+function editorNonTerminal(sym: string, hasRules = true): string {
+  // A non-terminal without rules is bracketed, otherwise it would be read as a terminal
+  return isPlainIdentifier(sym) && hasRules ? sym : `<${sym}>`;
+}
+
+// Terminals that read back as themselves without quotes: lower-case words and
+// digits (not e and the ε keywords, which mean the empty word) and single
+// characters that have no meaning in the textbook notation.
+const BARE_TERMINAL_RE = /^[\p{Ll}\p{N}_][\p{Ll}\p{N}_]*$/u;
+const BARE_PUNCTUATION = new Set(['+', '-', '*', '/', '(', ')', '[', ']', '{', '}', ',', '^', '!', '?', '&', '=', '~', '@', ':']);
+
+function isBareTerminal(sym: string): boolean {
+  return (BARE_TERMINAL_RE.test(sym) && sym !== 'e' && !RESERVED_BARE.has(sym)) || BARE_PUNCTUATION.has(sym);
+}
+
+/** Lower-case and digit subscripts, as in the names of LR states (E₁) and copied non-terminals (B₂). */
+export function toSubscript(n: number): string {
+  return String(n).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[Number(d)]).join('');
 }
 
 /**
- * Formats a grammar so that parsing the text again yields the same grammar:
- * terminals are always quoted and non-terminals that are not plain
- * identifiers are wrapped in angle brackets.
+ * Formats a grammar so that parsing the text again yields the same grammar.
+ * 'plain' (default) writes S → a A S | b: terminals without quotes where that
+ * is unambiguous, quoted otherwise ("e", ":=", "A"). 'quoted' quotes every
+ * terminal. Non-terminals that are not plain identifiers get angle brackets.
  */
-export function formatGrammarForEditor(g: Grammar): string {
-  const fmtSym = (s: string) => (g.nonTerminals.has(s) ? editorNonTerminal(s) : quoteTerminal(s));
+export function formatGrammarForEditor(g: Grammar, style: 'plain' | 'quoted' = 'plain'): string {
+  const withRules = new Set(g.productions.map(p => p.lhs));
+  const fmtSym = (s: string) => g.nonTerminals.has(s)
+    ? editorNonTerminal(s, withRules.has(s))
+    : style === 'plain' && isBareTerminal(s) ? s : quoteTerminal(s);
   const lines: string[] = [];
   for (const lhs of lhsOrder(g)) {
     const alts = g.productions
       .filter(p => p.lhs === lhs)
       .map(p => (p.rhs.length === 0 ? EPSILON : p.rhs.map(fmtSym).join(' ')));
-    lines.push(`${editorNonTerminal(lhs)} -> ${alts.join(' | ')}`);
+    lines.push(`${editorNonTerminal(lhs)} ${style === 'plain' ? '→' : '->'} ${alts.join(' | ')}`);
   }
   return lines.join('\n');
 }

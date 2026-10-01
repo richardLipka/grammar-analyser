@@ -21,7 +21,8 @@ import {
   formatRhs,
   freshName,
   normalizeGrammar,
-  dedupeProductions
+  dedupeProductions,
+  toSubscript
 } from '../ast/grammar';
 import {
   computeNullable,
@@ -51,13 +52,25 @@ export interface TransformationResult {
 
 export type SymbolTransformationType =
   | 'eliminateImmediateLeftRecursion'
+  | 'eliminateImmediateLeftRecursionEpsFree'
   | 'leftFactor'
   | 'eliminateEpsilon'
   | 'eliminateUnit'
   | 'substitute'
   | 'expandLeadingNT'
+  | 'mergeEquivalent'
   | 'removeUnproductive'
-  | 'removeUnreachable';
+  | 'removeUnreachable'
+  // transformations of one occurrence on a right-hand side
+  | 'expandOccurrence'
+  | 'absorbFollowing'
+  | 'splitFollow';
+
+/** An occurrence of a symbol on a right-hand side: the production and the position in it. */
+export interface RhsOccurrence {
+  productionId: number;
+  position: number;
+}
 
 export interface AvailableSymbolTransformation {
   id: string;
@@ -69,6 +82,12 @@ export interface AvailableSymbolTransformation {
   details?: {
     prefix?: string[];
     leadingNt?: string;
+    /** Occurrence the transformation works on (absorption, substitution, copy) */
+    occurrence?: RhsOccurrence;
+    /** Symbol absorbed into [B X] */
+    follower?: string;
+    /** Non-terminal replaced by the clicked one (merging) */
+    other?: string;
   };
 }
 
@@ -1065,6 +1084,14 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
       descriptionEn: `Replaces the left-recursive rules of '${nt}' by right-recursive rules of a new non-terminal '${nt}''.`,
       descriptionCz: `Nahradí levorekurzivní pravidla '${nt}' pravorekurzivními pravidly nového neterminálu '${nt}''.`
     });
+    available.push({
+      id: 'eliminateImmediateLeftRecursionEpsFree',
+      type: 'eliminateImmediateLeftRecursionEpsFree',
+      labelEn: `Eliminate Immediate Left Recursion without ε (${nt} -> β | β ${nt}')`,
+      labelCz: `Odstranit přímou levou rekurzi bez ε-pravidla (${nt} -> β | β ${nt}')`,
+      descriptionEn: `The variant without an ε-rule: ${nt} -> β | β ${nt}', ${nt}' -> α | α ${nt}' (more rules, but no new ε-rule).`,
+      descriptionCz: `Varianta bez ε-pravidla: ${nt} -> β | β ${nt}', ${nt}' -> α | α ${nt}' (více pravidel, ale žádné nové ε-pravidlo).`
+    });
   }
 
   // 2. Left Factorization (detect common prefix among alternatives)
@@ -1146,9 +1173,33 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
       type: 'substitute',
       labelEn: `Substitute / Inline '${nt}' into Referencing Rules`,
       labelCz: `Dosadit '${nt}' do pravidel, ve kterých se vyskytuje`,
-      descriptionEn: `Replaces all occurrences of '${nt}' in other rules with its ${ntProds.length} alternatives.`,
-      descriptionCz: `Nahradí každý výskyt '${nt}' v pravidlech ostatních neterminálů každou z jeho pravých stran (počet: ${ntProds.length}).`
+      descriptionEn: `Replaces all occurrences of '${nt}' in other rules with its ${ntProds.length} alternatives; '${nt}' is removed when nothing refers to it any more.`,
+      descriptionCz: `Nahradí každý výskyt '${nt}' v pravidlech ostatních neterminálů každou z jeho pravých stran (počet: ${ntProds.length}); '${nt}' se odstraní, pokud na něj už nic neodkazuje.`
     });
+  }
+
+  // 6b. Merge a non-terminal with the same rules ("the same generative power")
+  for (const other of equivalentNonTerminals(g, nt)) {
+    available.push({
+      id: `mergeEquivalent:${other}`,
+      type: 'mergeEquivalent',
+      labelEn: `Replace '${other}' by '${nt}' (the same rules)`,
+      labelCz: `Nahradit '${other}' neterminálem '${nt}' (stejná pravidla)`,
+      descriptionEn: `'${other}' and '${nt}' have the same rules (up to renaming one to the other), so they generate the same language; '${other}' is replaced by '${nt}' and its rules are dropped.`,
+      descriptionCz: `'${other}' a '${nt}' mají stejná pravidla (až na přejmenování jednoho na druhý), mají tedy tutéž generativní schopnost; '${other}' se nahradí '${nt}' a jeho pravidla se vypustí.`,
+      details: { other }
+    });
+  }
+
+  // 6c. FIRST-FOLLOW conflicts of a nullable non-terminal: absorb the symbol that follows it
+  if (ntProds.some(p => p.rhs.length === 0)) {
+    for (const p of g.productions) {
+      p.rhs.forEach((s, i) => {
+        if (s === nt && i + 1 < p.rhs.length && available.filter(a => a.type === 'absorbFollowing').length < 8) {
+          available.push(absorbOption(g, { productionId: p.id, position: i }, true));
+        }
+      });
+    }
   }
 
   // 7. Remove Unproductive (Non-generating) Symbol; the start symbol is never removed
@@ -1182,7 +1233,16 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
  * Apply a chosen transformation for a specific non-terminal symbol
  */
 export function applySymbolTransformation(g: Grammar, nt: string, transId: string): TransformationResult {
+  const occurrenceId = transId.match(/^(expandOccurrence|absorb|splitFollow):(\d+):(\d+)$/);
+  if (occurrenceId) {
+    const occ = { productionId: Number(occurrenceId[2]), position: Number(occurrenceId[3]) };
+    if (occurrenceId[1] === 'expandOccurrence') return expandOccurrence(g, occ);
+    if (occurrenceId[1] === 'absorb') return absorbFollowingSymbol(g, occ);
+    return splitFollowForOccurrence(g, occ);
+  }
   if (transId === 'eliminateImmediateLeftRecursion') return eliminateImmediateLeftRecursionForSymbol(g, nt);
+  if (transId === 'eliminateImmediateLeftRecursionEpsFree') return eliminateImmediateLeftRecursionForSymbol(g, nt, false);
+  if (transId.startsWith('mergeEquivalent:')) return mergeEquivalentNonTerminal(g, nt, transId.substring('mergeEquivalent:'.length));
   if (transId.startsWith('leftFactor:')) {
     const prefixKey = transId.substring('leftFactor:'.length);
     return leftFactorSymbol(g, nt, prefixKey ? prefixKey.split(' ') : undefined);
@@ -1205,7 +1265,7 @@ function unchanged(g: Grammar): TransformationResult {
 /**
  * 1. Eliminate immediate left recursion for a specific symbol
  */
-export function eliminateImmediateLeftRecursionForSymbol(g: Grammar, nt: string): TransformationResult {
+export function eliminateImmediateLeftRecursionForSymbol(g: Grammar, nt: string, withEpsilon = true): TransformationResult {
   const table = new RuleTable(g);
   const ntRules = table.get(nt);
   const alphas = ntRules.filter(r => r[0] === nt && r.length > 1).map(r => r.slice(1));
@@ -1213,22 +1273,31 @@ export function eliminateImmediateLeftRecursionForSymbol(g: Grammar, nt: string)
   if (alphas.length === 0 || betas.length === 0) return unchanged(g);
 
   const freshNt = table.addAfter(nt, `${nt}'`, []);
-  table.set(freshNt, [...alphas.map(a => [...a, freshNt]), []]);
-  table.set(nt, betas.map(b => [...b, freshNt]));
+  if (withEpsilon) {
+    table.set(freshNt, [...alphas.map(a => [...a, freshNt]), []]);
+    table.set(nt, betas.map(b => [...b, freshNt]));
+  } else {
+    // KIV/FJP lecture, first variant: A -> β | β A',  A' -> α | α A'
+    table.set(freshNt, [...alphas, ...alphas.map(a => [...a, freshNt])]);
+    table.set(nt, [...betas, ...betas.map(b => [...b, freshNt])]);
+  }
   const result = table.toGrammar();
 
   const selfLoop = ntRules.some(r => r.length === 1 && r[0] === nt);
+  const scheme = withEpsilon
+    ? `${nt} -> ${nt} α | β  ⟹  ${nt} -> β ${freshNt},  ${freshNt} -> α ${freshNt} | ε`
+    : `${nt} -> ${nt} α | β  ⟹  ${nt} -> β | β ${freshNt},  ${freshNt} -> α | α ${freshNt}`;
   return {
     transformedGrammar: result,
     steps: [{
-      title: `Eliminate Immediate Left Recursion for ${nt}`,
-      titleCz: `Odstranění přímé levé rekurze pro ${nt}`,
+      title: `Eliminate Immediate Left Recursion for ${nt}${withEpsilon ? '' : ' (without ε-rules)'}`,
+      titleCz: `Odstranění přímé levé rekurze pro ${nt}${withEpsilon ? '' : ' (bez ε-pravidla)'}`,
       description: `Left-recursive rules of '${nt}' replaced using the fresh non-terminal '${freshNt}'.` +
         (selfLoop ? ` The rule ${nt} -> ${nt} does not change the language and was dropped.` : ''),
       descriptionCz: `Levorekurzivní pravidla '${nt}' nahrazena pomocí nového neterminálu '${freshNt}'.` +
         (selfLoop ? ` Pravidlo ${nt} -> ${nt} nemění jazyk a bylo vypuštěno.` : ''),
-      mathExplanation: `${nt} -> ${nt} α | β  ⟹  ${nt} -> β ${freshNt},  ${freshNt} -> α ${freshNt} | ε`,
-      mathExplanationCz: `${nt} -> ${nt} α | β  ⟹  ${nt} -> β ${freshNt},  ${freshNt} -> α ${freshNt} | ε`,
+      mathExplanation: scheme,
+      mathExplanationCz: scheme,
       addedRules: [...table.get(nt).map(r => fmtRule(nt, r)), ...table.get(freshNt).map(r => fmtRule(freshNt, r))],
       removedRules: ntRules.map(r => fmtRule(nt, r)),
       intermediateGrammar: cloneGrammar(result)
@@ -1424,15 +1493,25 @@ export function substituteSymbol(g: Grammar, nt: string): TransformationResult {
     table.set(lhs, next);
   }
   if (removed.length === 0) return unchanged(g);
-  const result = table.toGrammar();
+  let result = table.toGrammar();
+  // A non-recursive non-terminal is no longer referenced: drop its rules ("vyloučení" in the lectures)
+  const dropped = nt !== g.startSymbol && !computeReachable(result).has(nt);
+  if (dropped) {
+    table.rules.delete(nt);
+    table.order = table.order.filter(x => x !== nt);
+    result = table.toGrammar();
+    removed.push(...ntRules.map(r => fmtRule(nt, r)));
+  }
 
   return {
     transformedGrammar: result,
     steps: [{
       title: `Substitute / Inline ${nt} into referencing rules`,
       titleCz: `Dosazení ${nt} do pravidel, ve kterých se vyskytuje`,
-      description: `Every occurrence of '${nt}' in the rules of other non-terminals was replaced by each of its ${ntRules.length} alternative(s).`,
-      descriptionCz: `Každý výskyt '${nt}' v pravidlech ostatních neterminálů byl nahrazen každou z jeho pravých stran (počet: ${ntRules.length}).`,
+      description: `Every occurrence of '${nt}' in the rules of other non-terminals was replaced by each of its ${ntRules.length} alternative(s).` +
+        (dropped ? ` Nothing refers to '${nt}' any more, so its rules were removed.` : ''),
+      descriptionCz: `Každý výskyt '${nt}' v pravidlech ostatních neterminálů byl nahrazen každou z jeho pravých stran (počet: ${ntRules.length}).` +
+        (dropped ? ` Na '${nt}' už nic neodkazuje, jeho pravidla byla proto odstraněna.` : ''),
       mathExplanation: `For any rule B -> α ${nt} β, substitute ${nt} with each right-hand side of ${nt}.`,
       mathExplanationCz: `Pro každé pravidlo B -> α ${nt} β dosadíme za ${nt} každou pravou stranu ${nt}.`,
       removedRules: removed,
@@ -1530,4 +1609,280 @@ export function removeUnreachableSymbol(g: Grammar, nt: string): TransformationR
       intermediateGrammar: cloneGrammar(result)
     }]
   };
+}
+
+// ---------------------------------------------------------------------------
+// LL(1) transformations of the KIV/FJP lectures (9 a 10 LLk) and of one
+// occurrence on a right-hand side
+// ---------------------------------------------------------------------------
+
+function occurrenceInfo(g: Grammar, occ: RhsOccurrence): { prod: Production; symbol: string; altIndex: number } | null {
+  const prod = g.productions.find(p => p.id === occ.productionId);
+  if (!prod || occ.position < 0 || occ.position >= prod.rhs.length) return null;
+  return {
+    prod,
+    symbol: prod.rhs[occ.position],
+    altIndex: g.productions.filter(p => p.lhs === prod.lhs).indexOf(prod)
+  };
+}
+
+/** The rules of x with `from` renamed to `to`, as a comparable key. */
+function renamedRulesKey(g: Grammar, x: string, from: string, to: string): string {
+  return g.productions
+    .filter(p => p.lhs === x)
+    .map(p => p.rhs.map(s => (s === from ? to : s)).join('\u0000'))
+    .sort()
+    .join('\u0001');
+}
+
+/** Non-terminals other than nt (and not the start symbol) whose rules equal nt's rules once one is renamed to the other. */
+function equivalentNonTerminals(g: Grammar, nt: string): string[] {
+  if (!g.productions.some(p => p.lhs === nt)) return [];
+  return [...g.nonTerminals].filter(other =>
+    other !== nt &&
+    other !== g.startSymbol &&
+    g.productions.some(p => p.lhs === other) &&
+    renamedRulesKey(g, other, other, nt) === renamedRulesKey(g, nt, other, nt));
+}
+
+/**
+ * Replaces the non-terminal `other` by `keep` when both have the same rules
+ * (KIV/FJP: "E1 a E2 mají tutéž generační schopnost").
+ */
+export function mergeEquivalentNonTerminal(g: Grammar, keep: string, other: string): TransformationResult {
+  if (!equivalentNonTerminals(g, keep).includes(other)) return unchanged(g);
+  const removedRules = g.productions.filter(p => p.lhs === other).map(formatProduction);
+  const result = buildGrammar(g, g.productions
+    .filter(p => p.lhs !== other)
+    .map(p => ({ lhs: p.lhs, rhs: p.rhs.map(s => (s === other ? keep : s)) })));
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Replace ${other} by ${keep}`,
+      titleCz: `Nahrazení ${other} neterminálem ${keep}`,
+      description: `'${other}' and '${keep}' have the same rules up to renaming, so they generate the same language. Every '${other}' was replaced by '${keep}' and the rules of '${other}' were dropped.`,
+      descriptionCz: `'${other}' a '${keep}' mají až na přejmenování stejná pravidla, mají tedy tutéž generativní schopnost. Každý výskyt '${other}' byl nahrazen '${keep}' a pravidla '${other}' byla vypuštěna.`,
+      mathExplanation: `rules(${other})[${other} := ${keep}] = rules(${keep})[${other} := ${keep}]  ⟹  L(${other}) = L(${keep})`,
+      mathExplanationCz: `pravidla(${other})[${other} := ${keep}] = pravidla(${keep})[${other} := ${keep}]  ⟹  L(${other}) = L(${keep})`,
+      removedRules,
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/** Replaces every adjacent pair B X in rhs by n. */
+function foldPair(rhs: Alt, B: string, X: string, n: string): Alt {
+  const out: Alt = [];
+  for (let i = 0; i < rhs.length; i++) {
+    if (rhs[i] === B && rhs[i + 1] === X) {
+      out.push(n);
+      i++;
+    } else {
+      out.push(rhs[i]);
+    }
+  }
+  return out;
+}
+
+/** [B X] -> α X for every B -> α, with the pair B X folded into [B X] again (a rule [B X] -> [B X] is useless). */
+function absorbedRules(g: Grammar, B: string, X: string, n: string): Alt[] {
+  return dedupeAlts(g.productions
+    .filter(p => p.lhs === B)
+    .map(p => foldPair([...p.rhs, X], B, X, n))
+    .filter(a => !(a.length === 1 && a[0] === n)));
+}
+
+/** Name of the non-terminal [B X] created by absorbing X after B (reused when it already has exactly these rules). */
+function absorbedName(g: Grammar, B: string, X: string): { name: string; reuse: boolean } {
+  const base = `[${B}${X}]`;
+  if (g.nonTerminals.has(base)) {
+    const expected = absorbedRules(g, B, X, base).map(altKey).sort().join('\u0001');
+    const actual = g.productions.filter(p => p.lhs === base).map(p => altKey(p.rhs)).sort().join('\u0001');
+    if (expected === actual) return { name: base, reuse: true };
+  }
+  return { name: freshName(base, s => g.nonTerminals.has(s) || g.terminals.has(s)), reuse: false };
+}
+
+function absorbOption(g: Grammar, occ: RhsOccurrence, fromLhsMenu = false): AvailableSymbolTransformation {
+  const { prod, symbol: B } = occurrenceInfo(g, occ)!;
+  const X = prod.rhs[occ.position + 1];
+  const { name } = absorbedName(g, B, X);
+  const rule = fmtRule(prod.lhs, prod.rhs);
+  return {
+    id: `absorb:${occ.productionId}:${occ.position}`,
+    type: 'absorbFollowing',
+    labelEn: fromLhsMenu ? `Absorb '${X}' following ${B} in ${rule} (new ${name})` : `Absorb the following '${X}' (new non-terminal ${name})`,
+    labelCz: fromLhsMenu ? `Pohltit '${X}' za ${B} v pravidle ${rule} (nový ${name})` : `Pohltit následující '${X}' (nový neterminál ${name})`,
+    descriptionEn: `Every pair ${B} ${X} is replaced by ${name} with ${name} -> α ${X} for each ${B} -> α. '${X}' no longer follows ${B} there, so a FIRST-FOLLOW conflict of ${B} caused by it disappears; it becomes a FIRST-FIRST conflict of ${name}, which left factoring can remove.`,
+    descriptionCz: `Každá dvojice ${B} ${X} se nahradí neterminálem ${name} s pravidly ${name} -> α ${X} pro každé ${B} -> α (pohlcení terminálu). '${X}' už za ${B} nenásleduje, takže kolize FIRST-FOLLOW neterminálu ${B} způsobená tímto symbolem zmizí; změní se na kolizi FIRST-FIRST v ${name}, kterou lze odstranit levou faktorizací.`,
+    details: { occurrence: occ, follower: X }
+  };
+}
+
+/**
+ * Absorption of the symbol that follows an occurrence of B (KIV/FJP 9 a 10,
+ * "pohlcení terminálu"): A -> α B X β becomes A -> α [BX] β with
+ * [BX] -> α₁ X | … | αₙ X for all B -> αᵢ. Every pair B X is folded, the rules
+ * of B stay (B may be used elsewhere).
+ */
+export function absorbFollowingSymbol(g: Grammar, occ: RhsOccurrence): TransformationResult {
+  const info = occurrenceInfo(g, occ);
+  if (!info || !g.nonTerminals.has(info.symbol) || occ.position + 1 >= info.prod.rhs.length) return unchanged(g);
+  const B = info.symbol;
+  const X = info.prod.rhs[occ.position + 1];
+  if (!g.productions.some(p => p.lhs === B)) return unchanged(g);
+
+  const { name, reuse } = absorbedName(g, B, X);
+  const table = new RuleTable(g);
+  const removed: string[] = [];
+  const added: string[] = [];
+  for (const lhs of [...table.order]) {
+    if (lhs === name) continue;
+    const alts = table.get(lhs);
+    const next = alts.map(a => foldPair(a, B, X, name));
+    next.forEach((a, i) => {
+      if (altKey(a) !== altKey(alts[i])) {
+        removed.push(fmtRule(lhs, alts[i]));
+        added.push(fmtRule(lhs, a));
+      }
+    });
+    table.set(lhs, next);
+  }
+  if (!reuse) {
+    const newRules = absorbedRules(g, B, X, name);
+    table.addAfter('', name, newRules);
+    added.push(...newRules.map(r => fmtRule(name, r)));
+  }
+  const result = table.toGrammar();
+  const unreachable = B !== g.startSymbol && !computeReachable(result).has(B);
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Absorb ${X} following ${B} into ${name}`,
+      titleCz: `Pohlcení ${X} za ${B} do ${name}`,
+      description: `Every pair ${B} ${X} was replaced by the ${reuse ? 'existing' : 'new'} non-terminal ${name}, which generates exactly the words of ${B} followed by ${X}. ` +
+        `${X} no longer enters FOLLOW(${B}) through these rules, so a FIRST-FOLLOW conflict of ${B} on ${X} becomes a FIRST-FIRST conflict of ${name}; left factoring of ${name} may remove it.` +
+        (unreachable ? ` ${B} is now unreachable and can be removed.` : ''),
+      descriptionCz: `Každá dvojice ${B} ${X} byla nahrazena ${reuse ? 'existujícím' : 'novým'} neterminálem ${name}, který generuje právě slova ${B} následovaná ${X}. ` +
+        `${X} tak přes tato pravidla nepatří do FOLLOW(${B}) a kolize FIRST-FOLLOW neterminálu ${B} na ${X} se změní na kolizi FIRST-FIRST v ${name}; tu může odstranit levá faktorizace ${name}.` +
+        (unreachable ? ` ${B} je nyní nedosažitelný a lze jej odstranit.` : ''),
+      mathExplanation: `A -> α ${B} ${X} β,  ${B} -> α₁ | … | αₙ  ⟹  A -> α ${name} β,  ${name} -> α₁ ${X} | … | αₙ ${X}`,
+      mathExplanationCz: `A -> α ${B} ${X} β,  ${B} -> α₁ | … | αₙ  ⟹  A -> α ${name} β,  ${name} -> α₁ ${X} | … | αₙ ${X}`,
+      removedRules: removed,
+      addedRules: added,
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/** Substitutes the right-hand sides of B for one occurrence of B ("eliminace pravidla" at one place). */
+export function expandOccurrence(g: Grammar, occ: RhsOccurrence): TransformationResult {
+  const info = occurrenceInfo(g, occ);
+  if (!info || !g.nonTerminals.has(info.symbol)) return unchanged(g);
+  const { prod, symbol: B, altIndex } = info;
+  const table = new RuleTable(g);
+  const bRules = table.get(B);
+  if (bRules.length === 0) return unchanged(g);
+
+  const variants = bRules.map(beta => [...prod.rhs.slice(0, occ.position), ...beta, ...prod.rhs.slice(occ.position + 1)]);
+  const alts = [...table.get(prod.lhs)];
+  alts.splice(altIndex, 1, ...variants);
+  if (alts.length > MAX_PRODUCTIONS) return unchanged(g);
+  table.set(prod.lhs, alts);
+  const result = table.toGrammar();
+  const rule = fmtRule(prod.lhs, prod.rhs);
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Substitute ${B} in ${rule}`,
+      titleCz: `Dosazení za ${B} v pravidle ${rule}`,
+      description: `The occurrence of ${B} in ${rule} was replaced by each of its ${bRules.length} right-hand side(s).`,
+      descriptionCz: `Za výskyt ${B} v pravidle ${rule} byla dosazena každá z jeho pravých stran (počet: ${bRules.length}).`,
+      mathExplanation: `A -> α ${B} β,  ${B} -> γ₁ | … | γₙ  ⟹  A -> α γ₁ β | … | α γₙ β`,
+      mathExplanationCz: `A -> α ${B} β,  ${B} -> γ₁ | … | γₙ  ⟹  A -> α γ₁ β | … | α γₙ β`,
+      removedRules: [rule],
+      addedRules: variants.map(v => fmtRule(prod.lhs, v)),
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/** Name of a copy of B: B₂, B₃, … */
+function copyName(g: Grammar, B: string): string {
+  for (let k = 2; ; k++) {
+    const name = `${B}${toSubscript(k)}`;
+    if (!g.nonTerminals.has(name) && !g.terminals.has(name)) return name;
+  }
+}
+
+/**
+ * Reduction of FOLLOW sets: one occurrence of B gets a copy B₂ with the same
+ * rules, so FOLLOW(B₂) contains only what can follow this occurrence.
+ */
+export function splitFollowForOccurrence(g: Grammar, occ: RhsOccurrence): TransformationResult {
+  const info = occurrenceInfo(g, occ);
+  if (!info || !g.nonTerminals.has(info.symbol)) return unchanged(g);
+  const { prod, symbol: B, altIndex } = info;
+  const table = new RuleTable(g);
+  const bRules = table.get(B);
+  if (bRules.length === 0) return unchanged(g);
+
+  const copy = copyName(g, B);
+  table.addAfter(B, copy, bRules.map(r => [...r]));
+  const alts = [...table.get(prod.lhs)];
+  const newRhs = prod.rhs.map((s, i) => (i === occ.position ? copy : s));
+  alts[altIndex] = newRhs;
+  table.set(prod.lhs, alts);
+  const result = table.toGrammar();
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Copy ${B} as ${copy} for one occurrence`,
+      titleCz: `Kopie ${B} jako ${copy} pro jeden výskyt`,
+      description: `${copy} has the same rules as ${B} and replaces ${B} in ${fmtRule(prod.lhs, prod.rhs)} only. FOLLOW(${copy}) contains just the symbols that can follow this occurrence, so a FIRST-FOLLOW conflict caused elsewhere does not concern it.`,
+      descriptionCz: `${copy} má stejná pravidla jako ${B} a nahrazuje ${B} jen v pravidle ${fmtRule(prod.lhs, prod.rhs)}. FOLLOW(${copy}) obsahuje jen symboly, které mohou následovat za tímto výskytem, takže se ho netýká kolize FIRST-FOLLOW způsobená jinde (redukce množin FOLLOW).`,
+      mathExplanation: `A -> α ${B} β  ⟹  A -> α ${copy} β,  ${copy} -> (rules of ${B})`,
+      mathExplanationCz: `A -> α ${B} β  ⟹  A -> α ${copy} β,  ${copy} -> (pravidla ${B})`,
+      removedRules: [fmtRule(prod.lhs, prod.rhs)],
+      addedRules: [fmtRule(prod.lhs, newRhs), ...bRules.map(r => fmtRule(copy, r))],
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/** Transformations offered for a clicked non-terminal on a right-hand side. */
+export function getAvailableTransformationsForOccurrence(g: Grammar, occ: RhsOccurrence): AvailableSymbolTransformation[] {
+  const info = occurrenceInfo(g, occ);
+  if (!info || !g.nonTerminals.has(info.symbol)) return [];
+  const { prod, symbol: B } = info;
+  const bRules = g.productions.filter(p => p.lhs === B);
+  if (bRules.length === 0) return [];
+  const rule = fmtRule(prod.lhs, prod.rhs);
+  const list: AvailableSymbolTransformation[] = [{
+    id: `expandOccurrence:${occ.productionId}:${occ.position}`,
+    type: 'expandOccurrence',
+    labelEn: `Substitute the right-hand sides of ${B} here`,
+    labelCz: `Dosadit sem pravé strany ${B}`,
+    descriptionEn: `${rule} is replaced by one rule for each right-hand side of ${B} (number: ${bRules.length}).`,
+    descriptionCz: `Pravidlo ${rule} se nahradí pravidly, po jednom pro každou pravou stranu ${B} (počet: ${bRules.length}); eliminace pravidla.`,
+    details: { occurrence: occ }
+  }];
+  if (occ.position + 1 < prod.rhs.length) list.push(absorbOption(g, occ));
+  const occurrences = g.productions.reduce((n, p) => n + p.rhs.filter(s => s === B).length, 0);
+  if (occurrences > 1) {
+    const copy = copyName(g, B);
+    list.push({
+      id: `splitFollow:${occ.productionId}:${occ.position}`,
+      type: 'splitFollow',
+      labelEn: `Use a copy ${copy} of ${B} here (split FOLLOW)`,
+      labelCz: `Použít zde kopii ${copy} neterminálu ${B} (rozdělit FOLLOW)`,
+      descriptionEn: `A new non-terminal ${copy} with the rules of ${B} replaces this occurrence only; FOLLOW(${copy}) then holds just what follows here.`,
+      descriptionCz: `Nový neterminál ${copy} s pravidly ${B} nahradí jen tento výskyt; FOLLOW(${copy}) pak obsahuje jen to, co následuje zde (redukce množin FOLLOW).`,
+      details: { occurrence: occ }
+    });
+  }
+  return list;
 }
