@@ -551,46 +551,15 @@ export const App: React.FC = () => {
                 <label htmlFor="grammar-editor" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
                   {t.editorTitle}
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {lastCalcDuration > 0 && (
-                    <span style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <Clock size={11} />
-                      {t.calcDuration.replace('{ms}', lastCalcDuration.toString())}
-                    </span>
-                  )}
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    onClick={copyLink}
-                    disabled={grammarText.trim() === ''}
-                    title={t.copyLinkTitle}
-                    aria-live="polite"
-                  >
-                    {linkFeedback ? <Check size={12} /> : <Link2 size={12} />}
-                    <span>{linkFeedback ?? t.copyLink}</span>
-                  </button>
-                  {analyzedGrammar && (
-                    <LatexExportButton
-                      getLatex={() => exportGrammarToLatex(analyzedGrammar)}
-                      filename="grammar.tex"
-                      lang={lang}
-                      title={lang === 'cz' ? 'Zkopírovat gramatiku jako LaTeX' : 'Copy grammar as LaTeX'}
-                    />
-                  )}
-                  <button
-                    className={`btn ${isStale ? 'btn-primary' : 'btn-secondary'}`}
-                    style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    onClick={() => recalculate()}
-                    disabled={isCalculating || !canAnalyse}
-                    title={t.recalculateAnalysis}
-                  >
-                    <RefreshCw size={12} className={isCalculating ? 'spin-icon' : ''} />
-                    <span>{isCalculating ? t.recalculating : t.recalculateAnalysis}</span>
-                  </button>
-                </div>
+                {lastCalcDuration > 0 && (
+                  <span style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <Clock size={11} />
+                    {t.calcDuration.replace('{ms}', lastCalcDuration.toString())}
+                  </span>
+                )}
               </div>
 
-              {/* Text editing or transformations by clicking; undo/redo and whole-grammar transformations */}
+              {/* One line: text/click mode, undo/redo and whole-grammar transformations */}
               <div className="editor-toolbar">
                 <div className="editor-mode" role="group" aria-label={t.editorModeLabel}>
                   <button
@@ -612,6 +581,7 @@ export const App: React.FC = () => {
                     <span>{t.editorModeClick}</span>
                   </button>
                 </div>
+                <span className="editor-toolbar-sep" aria-hidden="true" />
                 <div className="editor-toolbar-right">
                   <button type="button" className="btn btn-secondary" onClick={undo} disabled={!canUndo} title={t.undoTitle} aria-label={t.undo}>
                     <Undo2 size={13} />
@@ -635,6 +605,7 @@ export const App: React.FC = () => {
                 </div>
               </div>
 
+              <div className="editor-area">
               {editorMode === 'text' ? (
                 <>
                   <textarea
@@ -648,6 +619,32 @@ export const App: React.FC = () => {
                     placeholder={t.editorPlaceholder}
                     spellCheck={false}
                   />
+                </>
+              ) : canAnalyse && parseResult.grammar ? (
+                <GrammarClickView
+                  grammar={parseResult.grammar}
+                  analysis={!isStale && analysisData ? analysisData.analysis : undefined}
+                  llConflicts={!isStale && analysisData ? analysisData.llTable.conflicts : undefined}
+                  lang={lang}
+                  onApply={applyTransformation}
+                  onShowInfo={setInfoKey}
+                />
+              ) : (
+                <div className="click-grammar click-grammar-empty">{t.clickModeErrors}</div>
+              )}
+                <button
+                  className={`btn ${isStale ? 'btn-primary' : 'btn-secondary'} recalc-corner`}
+                  onClick={() => recalculate()}
+                  disabled={isCalculating || !canAnalyse}
+                  title={t.recalculateAnalysis}
+                >
+                  <RefreshCw size={12} className={isCalculating ? 'spin-icon' : ''} />
+                  <span>{isCalculating ? t.recalculating : t.recalculateAnalysis}</span>
+                </button>
+              </div>
+
+              {editorMode === 'text' ? (
+                <>
 
                   {/* Symbol palette: arrow, alternative separator, ε, ... without a keyboard */}
                   <div className="symbol-palette" role="toolbar" aria-label={t.symbolPaletteLabel}>
@@ -668,20 +665,30 @@ export const App: React.FC = () => {
                   </div>
                 </>
               ) : canAnalyse && parseResult.grammar ? (
-                <>
-                  <GrammarClickView
-                    grammar={parseResult.grammar}
-                    analysis={!isStale && analysisData ? analysisData.analysis : undefined}
-                    llConflicts={!isStale && analysisData ? analysisData.llTable.conflicts : undefined}
+                <p className="hint-text" style={{ marginTop: '6px' }}>{t.clickModeHint}</p>
+              ) : null}
+
+              {/* Sharing and export of the grammar */}
+              <div className="editor-export">
+                <button
+                  className="btn btn-secondary"
+                  onClick={copyLink}
+                  disabled={grammarText.trim() === ''}
+                  title={t.copyLinkTitle}
+                  aria-live="polite"
+                >
+                  {linkFeedback ? <Check size={12} /> : <Link2 size={12} />}
+                  <span>{linkFeedback ?? t.copyLink}</span>
+                </button>
+                {analyzedGrammar && (
+                  <LatexExportButton
+                    getLatex={() => exportGrammarToLatex(analyzedGrammar)}
+                    filename="grammar.tex"
                     lang={lang}
-                    onApply={applyTransformation}
-                    onShowInfo={setInfoKey}
+                    title={lang === 'cz' ? 'Zkopírovat gramatiku jako LaTeX' : 'Copy grammar as LaTeX'}
                   />
-                  <p className="hint-text" style={{ marginTop: '6px' }}>{t.clickModeHint}</p>
-                </>
-              ) : (
-                <div className="click-grammar click-grammar-empty">{t.clickModeErrors}</div>
-              )}
+                )}
+              </div>
 
               {notice && <div className="notice-inline" role="status">{notice}</div>}
 

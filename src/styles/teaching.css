@@ -635,11 +635,67 @@
 /* Editor toolbar: text / click mode, undo, redo, whole-grammar transformations */
 .editor-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-bottom: 6px;
+  min-width: 0;
+}
+
+.editor-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+}
+
+.editor-toolbar .editor-toolbar-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor-toolbar .whole-grammar-select {
+  flex: 1;
+  min-width: 60px;
+}
+
+.editor-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.editor-area > .grammar-textarea,
+.editor-area > .click-grammar {
+  padding-bottom: 38px;
+}
+
+.recalc-corner {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 9px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.15));
+}
+
+.editor-export {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.editor-export .btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .editor-mode,
