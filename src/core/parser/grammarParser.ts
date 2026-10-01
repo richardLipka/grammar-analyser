@@ -10,10 +10,15 @@
  *    - The left-hand side may stand alone on the line before the operator
  *    - Quoted terminals "..." / '...' (always terminals, never ε or non-terminals)
  *    - Non-terminals: <...> or any symbol that appears on a left-hand side
- *    - Epsilon: ε, ϵ, e, eps, epsilon, λ, lambda, %empty, "", '' and # as a whole alternative
- *    - Compact notation "S → aSb | ab": when every left-hand side is a single
- *      capital letter and some word glues a non-terminal to other symbols,
- *      every character is a separate symbol
+ *    - Epsilon: ε, ϵ, eps, epsilon, λ, lambda, %empty, "", '' and # as a whole
+ *      alternative; a standalone e (KIV/FJP notation) unless options.eIsEpsilon
+ *      is false, and the result reports that e occurred (bareE)
+ *    - Compact notation "S → aSb | ab", "E' → +TE'", "A1 → aA2": when every
+ *      left-hand side is a capital letter with optional digits and primes and
+ *      some word glues a non-terminal to other symbols, words are split into
+ *      the defined non-terminals (longest match) and single characters
+ *    - Rule numbers are labels, not symbols: "S --> aAS (1)", "(1) S -> a",
+ *      "1. S -> a"; a ; followed by a new rule separates rules on one line
  *    - Comments: // and # to the end of the line, /* ... *\/ blocks
  *
  * 2. Yacc / Bison (.y): declarations with %token, %left, %right, %nonassoc,
@@ -44,6 +49,13 @@ export interface ParseResult {
   /** Neutral notes about how the input was read (format, EBNF expansion, ...). */
   info: ParseError[];
   dialect: GrammarDialect;
+  /** A standalone `e` occurs; it was read as ε or as a terminal according to `ParseOptions.eIsEpsilon`. */
+  bareE: boolean;
+}
+
+export interface ParseOptions {
+  /** Read a standalone `e` as the empty word (KIV/FJP notation, default) or as the terminal e. */
+  eIsEpsilon?: boolean;
 }
 
 type TokenKind = 'bare' | 'quoted' | 'angle' | 'eps';
@@ -56,7 +68,13 @@ interface RhsToken {
 interface RawRule {
   lineNum: number;
   lhs: string;
-  alts: { tokens: RhsToken[]; lineNum: number }[];
+  /** label: the rule number written in the input, e.g. 3 for "A --> a (3)" */
+  alts: { tokens: RhsToken[]; lineNum: number; label?: number }[];
+}
+
+interface PlainContext {
+  eIsEpsilon: boolean;
+  bareE: boolean;
 }
 
 interface FrontEndResult {
@@ -71,8 +89,12 @@ interface FrontEndResult {
 }
 
 const PLAIN_EPSILON_TOKENS = new Set([
-  'epsilon', 'eps', 'EPS', 'EPSILON', 'Epsilon', 'ε', 'ϵ', 'λ', 'lambda', 'e', '#'
+  'epsilon', 'eps', 'EPS', 'EPSILON', 'Epsilon', 'ε', 'ϵ', 'λ', 'lambda', '#'
 ]);
+
+// Rule numbers: "(3)" or "[3]" after a right-hand side, "(3)", "[3]", "3." or "3)" before a rule
+const TRAILING_LABEL_RE = /^(.*\S)\s+[([](\d+)[)\]]$/s;
+const LEADING_LABEL_RE = /^(?:\(\d+\)|\[\d+\]|\d+[.)])\s+/;
 
 // Longer operators first so that '::=' wins over ':' and '-->' over '->'.
 const RULE_OPERATORS = ['::=', ':==', ':=', '-->', '->', '=>', '→', '⟶', ':', '='];
@@ -94,28 +116,30 @@ export function detectDialect(text: string): GrammarDialect {
   return 'plain';
 }
 
-export function parseGrammar(text: string): ParseResult {
+export function parseGrammar(text: string, options: ParseOptions = {}): ParseResult {
   const errors: ParseError[] = [];
   const warnings: ParseError[] = [];
   const info: ParseError[] = [];
   const dialect = detectDialect(text);
+  const ctx: PlainContext = { eIsEpsilon: options.eIsEpsilon ?? true, bareE: false };
 
   const front = dialect === 'plain'
-    ? parsePlain(text, errors, warnings, info)
+    ? parsePlain(text, errors, warnings, info, ctx)
     : parseTerminated(text, dialect, errors, warnings, info);
+  const bareE = ctx.bareE;
 
   if (!front) {
-    return { errors, warnings, info, dialect };
+    return { errors, warnings, info, dialect, bareE };
   }
   if (front.rules.length === 0) {
     if (errors.length === 0) {
       errors.push(msg(1, 'No valid grammar rules found.', 'Nebylo nalezeno žádné platné pravidlo.'));
     }
-    return { errors, warnings, info, dialect };
+    return { errors, warnings, info, dialect, bareE };
   }
 
   const grammar = assemble(front, dialect, errors, warnings);
-  return { grammar, errors, warnings, info, dialect };
+  return { grammar, errors, warnings, info, dialect, bareE };
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +170,8 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
   const seenProductions = new Set<string>();
   const warnedUndefined = new Set<string>();
   const reportedSymbols = new Set<string>();
+  // production id -> the rule number written in the input and its line
+  const labels = new Map<number, { label: number; line: number }>();
   let prodId = 1;
 
   for (const rule of rules) {
@@ -214,6 +240,7 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
         continue;
       }
       seenProductions.add(key);
+      if (alt.label !== undefined) labels.set(prodId, { label: alt.label, line: alt.lineNum });
       productions.push({ id: prodId++, lhs: rule.lhs, rhs });
     }
   }
@@ -233,9 +260,22 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
   const ordered = [
     ...productions.filter(p => p.lhs === startSymbol),
     ...productions.filter(p => p.lhs !== startSymbol)
-  ].map((p, idx) => ({ ...p, id: idx + 1 }));
+  ];
 
-  return { nonTerminals, terminals, startSymbol, productions: ordered };
+  // Tables and parse traces refer to rule numbers, so say when they differ from the written ones
+  const renumbered = ordered.flatMap((p, idx) => {
+    const written = labels.get(p.id);
+    return written && written.label !== idx + 1 ? [{ ...written, id: idx + 1 }] : [];
+  });
+  if (renumbered.length > 0) {
+    const list = renumbered.slice(0, 4);
+    const more = renumbered.length > list.length ? ', …' : '';
+    warnings.push(msg(renumbered[0].line,
+      `The rule numbers in the input differ from the numbering used here (rules of the start symbol first, then in the written order): ${list.map(r => `(${r.label}) is rule ${r.id}`).join(', ')}${more}.`,
+      `Čísla pravidel ve vstupu se liší od číslování použitého zde (nejprve pravidla počátečního symbolu, pak v pořadí zápisu): ${list.map(r => `(${r.label}) je pravidlo ${r.id}`).join(', ')}${more}.`));
+  }
+
+  return { nonTerminals, terminals, startSymbol, productions: ordered.map((p, idx) => ({ ...p, id: idx + 1 })) };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,17 +289,32 @@ function normalizeTypography(text: string): string {
     .replace(/⟶/g, '→');
 }
 
-function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], info: ParseError[]): FrontEndResult | null {
+function parsePlain(
+  text: string,
+  errors: ParseError[],
+  warnings: ParseError[],
+  info: ParseError[],
+  ctx: PlainContext
+): FrontEndResult | null {
   // 1. Strip block comments while preserving line breaks for accurate error reporting
   const cleaned = normalizeTypography(text)
     .replace(/\/\*[\s\S]*?\*\//g, match => '\n'.repeat((match.match(/\n/g) || []).length));
 
   const rawLines = cleaned.split(/\r?\n/);
   let lines: { lineNum: number; content: string }[] = [];
+  let labelled = false;
   for (let i = 0; i < rawLines.length; i++) {
-    const line = stripLineComment(rawLines[i]).trim();
-    if (line.length > 0) {
-      lines.push({ lineNum: i + 1, content: line });
+    // "S -> aAS | b; A -> a | bSA": several rules on one line (handy in URLs)
+    for (let segment of splitRulesOnLine(stripLineComment(rawLines[i]).trim())) {
+      // "(1) S -> a", "1. S -> a": the number is a label, not a symbol
+      const unlabelled = segment.replace(LEADING_LABEL_RE, '');
+      if (unlabelled !== segment && findRuleOperator(unlabelled)) {
+        segment = unlabelled;
+        labelled = true;
+      }
+      if (segment.length > 0) {
+        lines.push({ lineNum: i + 1, content: segment });
+      }
     }
   }
 
@@ -267,6 +322,13 @@ function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], 
     errors.push(msg(1, 'Grammar text is empty.', 'Gramatika je prázdná.'));
     return null;
   }
+
+  // "A --> a   (3)": a trailing number labels the alternative
+  const readAlternative = (alt: string, lineNum: number) => {
+    const m = alt.match(TRAILING_LABEL_RE);
+    if (m) labelled = true;
+    return { tokens: tokenizeRhs(m ? m[1] : alt, ctx), lineNum, label: m ? Number(m[2]) : undefined };
+  };
 
   // A left-hand side standing alone on its line, operator on the next one (GNU/Yacc style)
   const merged: typeof lines = [];
@@ -310,7 +372,7 @@ function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], 
       ruleClosed = false;
       if (rhsPart.length > 0) {
         for (const alt of splitAlternatives(rhsPart)) {
-          current.alts.push({ tokens: tokenizeRhs(alt), lineNum: item.lineNum });
+          current.alts.push(readAlternative(alt, item.lineNum));
         }
       } else {
         // "S :" followed by "| x" means S -> ε | x (Yacc); indented alternatives do not
@@ -326,7 +388,7 @@ function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], 
       }
       current.emptyHead = false;
       for (const alt of splitAlternatives(rhsPart)) {
-        current.alts.push({ tokens: tokenizeRhs(alt), lineNum: item.lineNum });
+        current.alts.push(readAlternative(alt, item.lineNum));
       }
     } else {
       errors.push(ruleClosed && current !== null
@@ -341,6 +403,12 @@ function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], 
     if (endsRule) ruleClosed = true;
   }
 
+  if (labelled) {
+    info.push(msg(rawRules[0]?.lineNum ?? 1,
+      'Rule numbers such as (1) or 1. were read as labels, not as symbols.',
+      'Čísla pravidel jako (1) nebo 1. byla brána jako označení pravidel, ne jako symboly.'));
+  }
+
   applyCompactNotation(rawRules, info);
 
   return {
@@ -352,19 +420,31 @@ function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], 
 }
 
 /**
- * Compact textbook notation "S → aSb | ab", "A → bSA": when every left-hand
- * side is a single capital letter (optionally primed) and some unquoted word
- * glues such a non-terminal to further symbols, every character is a symbol.
+ * Compact textbook notation "S → aSb | ab", "E' → +TE'", "A1 → aA2": when every
+ * left-hand side is a capital letter with optional digits and primes and some
+ * unquoted word glues such a non-terminal to further symbols, words are split
+ * into the defined non-terminals (longest match, E' before E, A1 before A) and
+ * single characters; an undefined capital keeps its primes (E'').
  */
 function applyCompactNotation(rules: RawRule[], info: ParseError[]) {
-  if (rules.length === 0 || !rules.every(r => /^\p{Lu}'*$/u.test(r.lhs))) return;
-  const ntLetters = new Set(rules.map(r => r.lhs.replace(/'+$/, '')));
+  if (rules.length === 0 || !rules.every(r => /^\p{Lu}\p{N}*'*$/u.test(r.lhs))) return;
   const lhsSet = new Set(rules.map(r => r.lhs));
-  const splitWord = (w: string) => w.match(/\p{L}'*|\p{N}|_|./gu) || [w];
+  const names = [...lhsSet].sort((a, b) => b.length - a.length);
+  const splitWord = (w: string): string[] => {
+    const out: string[] = [];
+    let i = 0;
+    while (i < w.length) {
+      const nt = names.find(n => w.startsWith(n, i) && w[i + n.length] !== "'");
+      const piece = nt ?? w.slice(i).match(/^(?:\p{L}'*|.)/su)![0];
+      out.push(piece);
+      i += piece.length;
+    }
+    return out;
+  };
 
   const evidence = rules.some(r => r.alts.some(a => a.tokens.some(t =>
     t.kind === 'bare' && !lhsSet.has(t.text) && splitWord(t.text).length > 1 &&
-    splitWord(t.text).some(ch => ntLetters.has(ch.replace(/'+$/, '')))
+    splitWord(t.text).some(piece => lhsSet.has(piece))
   )));
   if (!evidence) return;
 
@@ -377,8 +457,8 @@ function applyCompactNotation(rules: RawRule[], info: ParseError[]) {
     }
   }
   info.push(msg(rules[0].lineNum,
-    'Compact notation: every letter is a separate symbol (e.g. aSb = a S b). Separate symbols by spaces or quote multi-letter terminals ("id") to use whole words.',
-    'Kompaktní zápis: každé písmeno je samostatný symbol (např. aSb = a S b). Pro víceznakové symboly oddělte symboly mezerami nebo terminály uzavřete do uvozovek ("id").'));
+    'Compact notation: words are split into the non-terminals of the left-hand sides (including primes and digits, e.g. E\', A1) and single characters, so aSb = a S b and +TE\' = + T E\'. Separate symbols by spaces or quote multi-letter terminals ("id") to use whole words.',
+    'Kompaktní zápis: slova se dělí na neterminály z levých stran (včetně čárek a číslic, např. E\', A1) a jednotlivé znaky, tedy aSb = a S b a +TE\' = + T E\'. Pro víceznakové symboly oddělte symboly mezerami nebo terminály uzavřete do uvozovek ("id").'));
 }
 
 /**
@@ -465,6 +545,20 @@ function findRuleOperator(line: string): { index: number; op: string } | null {
   return LHS_RE.test(line.slice(0, index).trim()) ? { index, op } : null;
 }
 
+/** Splits "S -> aAS | b; A -> a | bSA" at each ; (kept as the terminator) that is followed by a new rule. */
+function splitRulesOnLine(line: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  scanQuotes(line, (i, inQuote) => {
+    if (!inQuote && line[i] === ';' && findRuleOperator(line.slice(i + 1).trim().replace(LEADING_LABEL_RE, ''))) {
+      parts.push(line.slice(start, i + 1).trim());
+      start = i + 1;
+    }
+  });
+  parts.push(line.slice(start).trim());
+  return parts;
+}
+
 function cleanSymbol(sym: string): string {
   if (sym.startsWith('<') && sym.endsWith('>') && sym.length > 2) {
     return sym.slice(1, -1).trim();
@@ -485,7 +579,7 @@ function splitAlternatives(rhs: string): string[] {
   return alts;
 }
 
-function tokenizeRhs(altStr: string): RhsToken[] {
+function tokenizeRhs(altStr: string, ctx: PlainContext): RhsToken[] {
   const tokens: RhsToken[] = [];
   let i = 0;
 
@@ -535,7 +629,13 @@ function tokenizeRhs(altStr: string): RhsToken[] {
         j++;
       }
       const word = altStr.slice(i, j);
-      tokens.push({ text: word, kind: PLAIN_EPSILON_TOKENS.has(word) ? 'eps' : 'bare' });
+      if (word === 'e') {
+        // KIV/FJP lectures write the empty word as e; the UI asks whether that is meant
+        ctx.bareE = true;
+        tokens.push({ text: word, kind: ctx.eIsEpsilon ? 'eps' : 'bare' });
+      } else {
+        tokens.push({ text: word, kind: PLAIN_EPSILON_TOKENS.has(word) ? 'eps' : 'bare' });
+      }
       i = j;
       continue;
     }

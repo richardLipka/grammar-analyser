@@ -148,12 +148,28 @@ A -> A "c" | S "d" | ε`,
     id: 'strong_ll2',
     nameEn: 'Strong LL(2) Grammar (not LL(1))',
     nameCz: 'Silná LL(2) gramatika (není LL(1))',
-    descriptionEn: 'Example G8 of the KIV/FJP lectures (notation: e = ε). It is not LL(1): FIRST(a b A) and FOLLOW(S) share "a". Two symbols of lookahead decide every expansion: the strong LL(2) parse table M[A, xy] has no conflict.',
-    descriptionCz: 'Příklad G8 z přednášek KIV/FJP (zápis: e = ε). Není LL(1): FIRST(a b A) a FOLLOW(S) obsahují „a“. Dva dopředu prohlížené symboly rozhodnou každou expanzi: rozkladová tabulka silné LL(2) gramatiky M[A, xy] je bez kolizí.',
+    descriptionEn: 'Example G8 of the KIV/FJP lectures (which write e for ε). It is not LL(1): FIRST(a b A) and FOLLOW(S) share "a". Two symbols of lookahead decide every expansion: the strong LL(2) parse table M[A, xy] has no conflict.',
+    descriptionCz: 'Příklad G8 z přednášek KIV/FJP (kde se ε zapisuje jako e). Není LL(1): FIRST(a b A) a FOLLOW(S) obsahují „a“. Dva dopředu prohlížené symboly rozhodnou každou expanzi: rozkladová tabulka silné LL(2) gramatiky M[A, xy] je bez kolizí.',
     category: 'LL',
-    grammarText: `S → a b A | e
+    grammarText: `S → a b A | ε
 A → S a a | b`,
     sampleInput: 'a b a b b a a'
+  },
+  {
+    id: 'format_kiv',
+    nameEn: 'Lecture Notation (numbered rules)',
+    nameCz: 'Zápis z přednášek (číslovaná pravidla)',
+    descriptionEn: 'Rules copied from lecture slides: the arrow -->, compact right-hand sides (aAS = a A S) and rule numbers (1) at the ends of the lines, which are labels, not symbols. Primes (E\'), digits (0A1) and e for ε are read the same way.',
+    descriptionCz: 'Pravidla zkopírovaná z přednášek: šipka -->, kompaktní pravé strany (aAS = a A S) a čísla pravidel (1) na koncích řádků, která jsou označením, ne symboly. Stejně se čtou čárky (E\'), číslice (0A1) i e pro ε.',
+    category: 'Formats',
+    grammarText: `S --> aAS    (1)
+
+S --> b      (2)
+
+A --> a      (3)
+
+A --> bSA    (4)`,
+    sampleInput: 'a b b a b'
   },
   {
     id: 'format_yacc',

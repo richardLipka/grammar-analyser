@@ -318,3 +318,101 @@ F → ( E ) | a`).grammar!;
     expect(rules(parseOk('S ->\n   a S\n   b').grammar!)).toEqual(['S -> a S', 'S -> b']);
   });
 });
+
+describe('Rules copied from lecture slides', () => {
+  it('reads -->, blank lines, compact right-hand sides and rule numbers (1)', () => {
+    const res = parseOk(`S --> aAS    (1)
+
+S --> b      (2)
+
+A --> a      (3)
+
+A --> bSA    (4)`);
+    expect(rules(res.grammar!)).toEqual(['S -> a A S', 'S -> b', 'A -> a', 'A -> b S A']);
+    expect([...res.grammar!.terminals].sort()).toEqual(['a', 'b']);
+    expect(res.warnings).toEqual([]);
+    expect(res.bareE).toBe(false);
+  });
+
+  it("reads primes on both sides: E' --> +TE', F --> (E), e = ε", () => {
+    const res = parseOk(`E  --> TE'     (1)
+
+E' --> +TE'    (2)
+
+E' --> e       (3)
+
+T  --> FT'     (4)
+
+T' --> *FT'    (5)
+
+T' --> e       (6)
+
+F  --> (E)     (7)
+
+F  --> a       (8)`);
+    expect(rules(res.grammar!)).toEqual([
+      "E -> T E'", "E' -> + T E'", "E' ->", "T -> F T'", "T' -> * F T'", "T' ->", 'F -> ( E )', 'F -> a'
+    ]);
+    expect([...res.grammar!.nonTerminals]).toEqual(['E', "E'", 'T', "T'", 'F']);
+    expect(res.warnings).toEqual([]);
+    expect(res.bareE).toBe(true);
+    expect(buildLLTable(res.grammar!, analyzeGrammar(res.grammar!)).isLL1).toBe(true);
+  });
+
+  const zeroOne = `S --> AB     (1)
+
+A --> 0A1    (2)
+
+A --> e      (3)
+
+B --> 1B     (4)
+
+B --> 1      (5)`;
+
+  it('reads digits as terminals: A --> 0A1 (2), B --> 1 (5)', () => {
+    const res = parseOk(zeroOne);
+    expect(rules(res.grammar!)).toEqual(['S -> A B', 'A -> 0 A 1', 'A ->', 'B -> 1 B', 'B -> 1']);
+    expect([...res.grammar!.terminals].sort()).toEqual(['0', '1']);
+  });
+
+  it('reads e as a terminal when the user says so', () => {
+    const res = parseGrammar(zeroOne, { eIsEpsilon: false });
+    expect(res.errors).toEqual([]);
+    expect(res.bareE).toBe(true);
+    expect(rules(res.grammar!)).toContain('A -> e');
+    expect(res.grammar!.terminals.has('e')).toBe(true);
+    // a quoted "e" is always a terminal and raises no question
+    expect(parseOk('S -> "e" S | a').bareE).toBe(false);
+  });
+
+  it('accepts numbers before the rule: (1) S -> …, 1. S -> …, 1) S -> …', () => {
+    const res = parseOk('(1) S -> aAS\n[2] S -> b\n3. A -> a\n4) A -> bSA');
+    expect(rules(res.grammar!)).toEqual(['S -> a A S', 'S -> b', 'A -> a', 'A -> b S A']);
+  });
+
+  it('accepts a number after each alternative and keeps (E) and a lone (1) as symbols', () => {
+    expect(rules(parseOk('S -> aAS (1) | b (2)\nA -> a (3) | bSA (4)').grammar!))
+      .toEqual(['S -> a A S', 'S -> b', 'A -> a', 'A -> b S A']);
+    expect(rules(parseOk('S -> (1)').grammar!)).toEqual(['S -> ( 1 )']);
+  });
+
+  it('warns when the written numbers differ from the numbering used by the analyser', () => {
+    const res = parseOk('S -> a A (1)\nA -> b (3)\nA -> c (2)');
+    expect(res.warnings.length).toBe(1);
+    expect(res.warnings[0].message).toContain('(3) is rule 2');
+  });
+
+  it('separates rules on one line by ; (useful in links)', () => {
+    expect(rules(parseOk('S -> aAS | b; A -> a | bSA').grammar!))
+      .toEqual(['S -> a A S', 'S -> b', 'A -> a', 'A -> b S A']);
+    // a ; inside a right-hand side that is not followed by a rule stays a symbol
+    expect(rules(parseOk('S -> a ; b').grammar!)).toEqual(['S -> a ; b']);
+  });
+
+  it('splits compact words into numbered and primed non-terminals by longest match', () => {
+    const g = parseOk('A1 -> A2A3 | a\nA2 -> A3A1 | b\nA3 -> A1A2 | c').grammar!;
+    expect(rules(g)).toEqual(['A1 -> A2 A3', 'A1 -> a', 'A2 -> A3 A1', 'A2 -> b', 'A3 -> A1 A2', 'A3 -> c']);
+    const h = parseOk("S -> AS'A | a\nS' -> b").grammar!;
+    expect(rules(h)).toEqual(["S -> A S' A", 'S -> a', "S' -> b"]);
+  });
+});

@@ -24,14 +24,16 @@ import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { exportGrammarToLatex } from './core/export/latexExport';
+import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 
 // Icons
 import {
-  BookOpen, Eye, GitCommit, Layers, Cpu, Network,
+  BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle,
   Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info
 } from 'lucide-react';
 
-type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
+type TabId = UrlTab;
+type EChoice = 'epsilon' | 'terminal';
 type Theme = 'dark' | 'light' | 'projector';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
@@ -122,14 +124,39 @@ const EDITOR_SYMBOLS: { insert: string; close?: string; label: string; titleEn: 
   { insert: '\n', label: '↵', titleEn: 'New line (new rule)', titleCz: 'Nový řádek (nové pravidlo)' }
 ];
 
+/** The first screen: a grammar from the link (?g=… or ?preset=…), otherwise the first example. */
+function initialSetup() {
+  let url: UrlState = {};
+  try {
+    url = readUrlState(window.location.search, window.location.hash);
+  } catch {
+    /* no usable location */
+  }
+  const linkedPreset = PRESET_GRAMMARS.find(p => p.id === url.preset);
+  const grammarText = url.grammar ?? (linkedPreset ?? PRESET_GRAMMARS[0]).grammarText;
+  const preset = PRESET_GRAMMARS.find(p => p.grammarText === grammarText);
+  return {
+    url,
+    grammarText,
+    presetId: preset?.id ?? CUSTOM_PRESET_ID,
+    sampleInput: url.word ?? preset?.sampleInput ?? ''
+  };
+}
+
 export const App: React.FC = () => {
-  const [grammarText, setGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
-  const [selectedPresetId, setSelectedPresetId] = useState(PRESET_GRAMMARS[0].id);
-  const [sampleInput, setSampleInput] = useState(PRESET_GRAMMARS[0].sampleInput);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [setup] = useState(initialSetup);
+  const [grammarText, setGrammarText] = useState(setup.grammarText);
+  const [selectedPresetId, setSelectedPresetId] = useState(setup.presetId);
+  const [sampleInput, setSampleInput] = useState(setup.sampleInput);
+  const [activeTab, setActiveTab] = useState<TabId>(setup.url.tab ?? 'overview');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
-  const [theme, setThemeState] = useState<Theme>(() => readStored(THEME_KEY, ['dark', 'light', 'projector'] as const, 'light'));
-  const [lang, setLangState] = useState<Language>(() => readStored(LANG_KEY, ['en', 'cz'] as const, 'cz'));
+  // A theme or language given in the link applies to this visit only
+  const [theme, setThemeState] = useState<Theme>(() => setup.url.theme ?? readStored(THEME_KEY, ['dark', 'light', 'projector'] as const, 'light'));
+  const [lang, setLangState] = useState<Language>(() => setup.url.lang ?? readStored(LANG_KEY, ['en', 'cz'] as const, 'cz'));
+  // How a standalone e is read; null = not decided yet (read as ε and ask)
+  const [eChoice, setEChoice] = useState<EChoice | null>(setup.url.e ?? null);
+  const eIsEpsilon = eChoice !== 'terminal';
+  const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const t = TRANSLATIONS[lang];
@@ -156,23 +183,24 @@ export const App: React.FC = () => {
     document.querySelector('.tab-button.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   }, [activeTab]);
 
-  // Recalculation & Stale state management
-  const [analyzedGrammarText, setAnalyzedGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
-  const initialParse = useMemo(() => parseGrammar(PRESET_GRAMMARS[0].grammarText), []);
-  const [analyzedGrammar, setAnalyzedGrammar] = useState<Grammar | null>(initialParse.grammar || null);
-  const [analysisData, setAnalysisData] = useState<AnalysisDataResult | null>(() => computeAnalysis(initialParse.grammar || null));
+  // Recalculation & Stale state management. The initial grammar (also one from a link) is analysed right away.
+  const [analyzedGrammarText, setAnalyzedGrammarText] = useState(setup.grammarText);
+  const initialParse = useMemo(() => parseGrammar(setup.grammarText, { eIsEpsilon }), []);
+  const initialGrammar = initialParse.errors.length === 0 ? initialParse.grammar ?? null : null;
+  const [analyzedGrammar, setAnalyzedGrammar] = useState<Grammar | null>(initialGrammar);
+  const [analysisData, setAnalysisData] = useState<AnalysisDataResult | null>(() => computeAnalysis(initialGrammar));
   const [isCalculating, setIsCalculating] = useState(false);
   const [lastCalcDuration, setLastCalcDuration] = useState<number>(0);
   const [isHeavyGrammar, setIsHeavyGrammar] = useState(false);
 
   // Parse currently edited text for syntax error validation
-  const parseResult = useMemo(() => parseGrammar(grammarText), [grammarText]);
+  const parseResult = useMemo(() => parseGrammar(grammarText, { eIsEpsilon }), [grammarText, eIsEpsilon]);
   const canAnalyse = !!parseResult.grammar && parseResult.errors.length === 0;
   const isStale = grammarText.trim() !== analyzedGrammarText.trim();
 
-  const recalculate = (overrideText?: string) => {
+  const recalculate = (overrideText?: string, epsilonE = eIsEpsilon) => {
     const textToRun = overrideText !== undefined ? overrideText : grammarText;
-    const parsed = parseGrammar(textToRun);
+    const parsed = parseGrammar(textToRun, { eIsEpsilon: epsilonE });
     if (!parsed.grammar || parsed.errors.length > 0) {
       return;
     }
@@ -253,6 +281,36 @@ export const App: React.FC = () => {
     setGrammarText(newText);
     setSelectedPresetId(CUSTOM_PRESET_ID);
     recalculate(newText);
+  };
+
+  /** The user's answer to "does e mean ε?"; the analysis is redone at once. */
+  const chooseE = (choice: EChoice) => {
+    setEChoice(choice);
+    recalculate(grammarText, choice === 'epsilon');
+  };
+
+  /** Copies a link that reopens this grammar; it is also put in the address bar in case copying is refused. */
+  const copyLink = async () => {
+    const url = buildShareUrl(`${window.location.origin}${window.location.pathname}`, {
+      grammar: grammarText,
+      word: sampleInput,
+      e: parseResult.bareE && eChoice !== null ? eChoice : undefined,
+      tab: activeTab
+    });
+    try {
+      window.history.replaceState(null, '', url);
+    } catch {
+      /* ignore */
+    }
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(url);
+      copied = true;
+    } catch {
+      /* clipboard unavailable or denied */
+    }
+    setLinkFeedback(copied ? t.linkCopied : t.linkInAddressBar);
+    setTimeout(() => setLinkFeedback(null), 2500);
   };
 
   const selectedPreset = PRESET_GRAMMARS.find(p => p.id === selectedPresetId);
@@ -368,6 +426,17 @@ export const App: React.FC = () => {
                       {t.calcDuration.replace('{ms}', lastCalcDuration.toString())}
                     </span>
                   )}
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={copyLink}
+                    disabled={grammarText.trim() === ''}
+                    title={t.copyLinkTitle}
+                    aria-live="polite"
+                  >
+                    {linkFeedback ? <Check size={12} /> : <Link2 size={12} />}
+                    <span>{linkFeedback ?? t.copyLink}</span>
+                  </button>
                   {analyzedGrammar && (
                     <LatexExportButton
                       getLatex={() => exportGrammarToLatex(analyzedGrammar)}
@@ -418,6 +487,28 @@ export const App: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* A standalone e: the empty word (KIV/FJP) or a terminal? */}
+            {parseResult.bareE && (eChoice === null ? (
+              <div className="notice-box question" role="group" aria-labelledby="e-question-title">
+                <div className="notice-title">
+                  <HelpCircle size={15} />
+                  <span id="e-question-title">{t.eQuestionTitle}</span>
+                </div>
+                <p>{t.eQuestionText}</p>
+                <div className="notice-actions">
+                  <button className="btn btn-primary" onClick={() => chooseE('epsilon')}>{t.eAsEpsilon}</button>
+                  <button className="btn btn-secondary" onClick={() => chooseE('terminal')}>{t.eAsTerminal}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="e-choice-line">
+                <span>{eChoice === 'epsilon' ? t.eReadAsEpsilon : t.eReadAsTerminal}</span>
+                <button className="link-button" onClick={() => chooseE(eChoice === 'epsilon' ? 'terminal' : 'epsilon')}>
+                  {t.eChange}
+                </button>
+              </div>
+            ))}
 
             {/* Detected input format and notes on how it was read */}
             {parseResult.info.length > 0 && (
@@ -477,7 +568,9 @@ export const App: React.FC = () => {
               <div>{t.syntaxAlts}</div>
               <div>{t.syntaxComments}</div>
               <div>{t.syntaxCompact}</div>
+              <div>{t.syntaxNumbers}</div>
               <div>{t.syntaxFormats}</div>
+              <div>{t.syntaxLink}</div>
             </div>
           </div>
         </aside>

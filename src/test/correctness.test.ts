@@ -205,6 +205,7 @@ describe('Preset classification matches the descriptions', () => {
     ll1_not_slr1: { LL1: true, SLR: false, LALR: true },
     ll2_not_strong: { LL1: false, LL2: true },
     strong_ll2: { LL1: false, LL2: true },
+    format_kiv: { LL1: true, SLR: true },
     format_yacc: { LL1: false, SLR: true, LALR: true },
     format_antlr: { LL1: false, LL2: true, LALR: true }
   };

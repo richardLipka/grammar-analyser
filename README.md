@@ -20,8 +20,11 @@
   - Alternatives: Pipe `|` or clean indentation/newline alternatives
   - Non-terminals: every symbol defined on a left-hand side, and every `<name>`
   - Terminals: all other symbols; a quoted `"…"` or `'…'` symbol is always a terminal (never ε, never a non-terminal)
-  - Epsilon representations: `ε`, `ϵ`, `e` (KIV/FJP notation), `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
-  - Compact textbook notation `S → aSb | ab`, `A → bSA`: when every left-hand side is one capital letter, every letter is a symbol
+  - Epsilon representations: `ε`, `ϵ`, `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
+  - A standalone `e` (KIV/FJP notation for ε): the editor asks whether it means ε or the terminal e; until answered it is read as ε
+  - Compact textbook notation `S → aSb | ab`, `E' → +TE'`, `A → 0A1`, `A1 → A2A3`: when every left-hand side is a capital letter with optional digits and primes, words are split into the defined non-terminals (longest match) and single characters
+  - Rule numbers copied from slides are labels, not symbols: `S --> aAS    (1)`, `(1) S -> …`, `1. S -> …`; a warning appears when they differ from the analyser's numbering
+  - Several rules on one line separated by `;` (`S -> aAS | b; A -> a | bSA`)
   - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
   - Comments: `// ...`, `# ...`, `/* ... */`
   - Unicode identifiers (`Výraz`, `Člen`)
@@ -68,9 +71,29 @@
 - **University Teaching & Classroom Features**:
   - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
+  - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button above the editor copies such a link
   - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
   - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
+
+### Grammar links
+
+A link can carry a grammar, so a course page or an e-mail can open it ready for analysis:
+
+```
+https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%20b%20a%20b&tab=ll
+```
+
+| Parameter | Meaning |
+|---|---|
+| `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A` or rules separated by `;`. A `+` stays a plus sign. |
+| `w` (or `word`) | The input word for the LL and LR simulators, symbols separated by spaces |
+| `tab` | `overview`, `first-follow`, `transformations`, `ll`, `lr`, `graph`, `words`, `latex` |
+| `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
+| `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
+| `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector` for this visit only (not remembered) |
+
+The same parameters also work after `#` (`…/#g=…`).
 
 ---
 

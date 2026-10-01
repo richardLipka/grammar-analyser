@@ -74,7 +74,7 @@ Done:
 
 Suggested:
 - an *ambiguity witness*: a bounded search for a word with two leftmost derivations, shown as two trees (e.g. dangling else);
-- grammar save/load and sharing through the URL hash.
+- grammar save/load (sharing through a link is done, see section 5).
 
 **FIRST & FOLLOW.**
 Done:
@@ -180,3 +180,12 @@ Suggested:
   - *nenormované* and *nedosažitelné* (useless) symbols;
   - *ε-pravidla*, *jednoduchá pravidla*, *vlastní (upravená) gramatika*.
 - **Defaults.** The app starts in Czech with the light theme. An explicit choice of language or theme is remembered.
+
+## 5. Follow-up: rules copied from slides, the e question, grammar links
+
+- **Rules as written on the KIV/FJP slides** are read without editing, for example `S --> aAS    (1)` or `E' --> +TE'    (2)`, with blank lines between the rules:
+  - Rule numbers `(1)` or `[1]` after a right-hand side, and `(1)`, `1.` or `1)` before a rule, are labels. Before this change, `(1)` became three terminals. A warning appears when the written numbers differ from the numbering used in the tables (the start symbol's rules come first).
+  - Compact right-hand sides are split by the longest match against the defined non-terminals, so primes and digits stay part of a non-terminal (`E'`, `A1`, `A2A3`) while `0A1` is `0 A 1` when `A1` is not defined.
+  - `;` followed by a new rule separates rules on one line (`S -> aAS | b; A -> a | bSA`), which helps in links.
+- **The e question.** A standalone `e` is ambiguous: it is ε in the KIV/FJP lectures but an ordinary terminal elsewhere. The editor now asks *Znamená e prázdné slovo?* The grammar is read as ε until the user answers, the answer re-runs the analysis at once, and it can be changed later. A quoted `"e"` is always a terminal and never triggers the question. The built-in examples use `ε`, so they never ask.
+- **Grammar links.** `?g=<grammar>&w=<word>&tab=ll&e=eps` opens and analyses a grammar immediately; `preset`, `lang` and `theme` are also accepted, both in the query and after `#`. The *Odkaz* (Link) button copies the link for the current grammar, input word and tab. If copying is not allowed, it puts the link in the address bar. Tests: `src/test/urlState.test.ts`, and the slide notation in `src/test/formats.test.ts`.
