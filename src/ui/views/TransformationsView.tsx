@@ -14,6 +14,8 @@ import { LatexExportButton } from '../components/LatexExportButton';
 import { exportGrammarToLatex } from '../../core/export/latexExport';
 import { HistoryEntry } from '../useGrammarHistory';
 import { WHOLE_GRAMMAR_TRANSFORMATIONS } from '../wholeGrammarTransformations';
+import { InfoKey, WHOLE_GRAMMAR_INFO } from '../../core/processor/transformationInfo';
+import { InfoButton } from '../components/TransformationInfo';
 
 interface TransformationsViewProps {
   /** The analysed grammar (the editor's current grammar once it has been analysed) */
@@ -24,6 +26,7 @@ interface TransformationsViewProps {
   onApplyWhole: (id: string) => void;
   onGoTo: (index: number) => void;
   onOpenClickMode: () => void;
+  onShowInfo: (key: InfoKey | 'all') => void;
   lang: Language;
 }
 
@@ -91,6 +94,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
   onApplyWhole,
   onGoTo,
   onOpenClickMode,
+  onShowInfo,
   lang
 }) => {
   const t = TRANSLATIONS[lang];
@@ -120,6 +124,19 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
 
   return (
     <div>
+      {/* Automatic attempt to reach LL(1) (Cockett's order, the lectures' methods) */}
+      <div className="card" style={{ border: '2px solid var(--color-primary)' }}>
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
+          <span>{t.ll1CardTitle}</span>
+          <InfoButton lang={lang} onClick={() => onShowInfo('ll1')} />
+        </div>
+        <p className="hint-text" style={{ marginBottom: '10px' }}>{t.ll1CardText}</p>
+        <button type="button" className="btn btn-accent" onClick={() => onApplyWhole('ll1')} title={t.hintLL1}>
+          <Sparkles size={15} />
+          <span>{t.ll1AttemptButton}</span>
+        </button>
+      </div>
+
       {/* Single symbols are transformed on the grammar on the left */}
       <div className="card">
         <div className="card-title">
@@ -135,22 +152,27 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
 
       {/* Transformations of the whole grammar */}
       <div className="card">
-        <div className="card-title">
+        <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <span>{t.automaticConstructionsTitle}</span>
-          <Sparkles size={18} color="var(--color-primary)" />
+          <button type="button" className="btn btn-secondary" style={{ padding: '3px 10px', fontSize: '12px' }} onClick={() => onShowInfo('all')}>
+            <BookOpen size={13} />
+            <span>{t.literatureButton}</span>
+          </button>
         </div>
         <div className="automatic-actions-grid">
-          {[...WHOLE_GRAMMAR_TRANSFORMATIONS].reverse().map(a => (
-            <button
-              key={a.id}
-              className={`btn ${a.accent ? 'btn-accent' : 'btn-secondary'}`}
-              onClick={() => onApplyWhole(a.id)}
-              style={{ padding: '9px 14px' }}
-              title={a.hint(t)}
-            >
-              {a.accent && <Sparkles size={16} />}
-              <span>{a.label(t)}</span>
-            </button>
+          {WHOLE_GRAMMAR_TRANSFORMATIONS.filter(a => a.id !== 'll1').map(a => (
+            <div key={a.id} className="btn-with-info">
+              <button
+                className={`btn ${a.accent ? 'btn-accent' : 'btn-secondary'}`}
+                onClick={() => onApplyWhole(a.id)}
+                style={{ padding: '9px 14px', flex: 1 }}
+                title={a.hint(t)}
+              >
+                {a.accent && <Sparkles size={16} />}
+                <span>{a.label(t)}</span>
+              </button>
+              <InfoButton lang={lang} onClick={() => onShowInfo(WHOLE_GRAMMAR_INFO[a.id])} />
+            </div>
           ))}
         </div>
       </div>

@@ -48,6 +48,8 @@
     - occurrence on a right-hand side: substitution of its right-hand sides, **absorption of the following symbol** `A → α B a β` ⇒ `A → α [Ba] β`, `[Ba] → αᵢ a` (turns a FIRST-FOLLOW conflict into a FIRST-FIRST one for left factoring), and a copy `B₂` for this occurrence (reduction of FOLLOW sets)
     - LL(1) conflicts are marked (FF / FFL) and the actions that address them are tagged
   - Immediate and indirect left-recursion elimination (Paull's algorithm, with logged preprocessing of ε-rules and cycles)
+  - **Automatic attempt to transform to LL(1)** (button on the LL(1) and Transformations tabs, and in the whole-grammar menu): the order of R. Cockett's CPSC 411 notes (left recursion, exposing FIRST clashes, left factoring, FIRST/FOLLOW clashes, repeat) with the methods of the KIV/FJP lectures; every operation is listed with its reason; on failure it keeps the best state and names the remaining conflicts
+  - **ⓘ references**: every transformation has a description (scheme, why it keeps the language, when to use it) and the publications that describe it, with links
   - Left-corner transformation (Rosenkrantz & Lewis) as an alternative way of removing all left recursion: only the left-recursive non-terminals are rewritten (`A → X [A-X]`, `[A-X] → β [A-B]` for `B → X β`, `[A-A] → ε`), no order of the non-terminals is needed, and helpers with a single unit rule are merged afterwards
   - Left factorization, and right factoring of common suffixes (`A → α₁ β | α₂ β` ⇒ `A → A' β`, `A' → α₁ | α₂`)
   - Non-terminal substitution (inlining/expansion)
@@ -55,7 +57,7 @@
   - Greibach Normal Form (GNF): CNF, ordering $A_1 \dots A_n$, substitution, ε-free elimination of left recursion and back-substitution
   - Step-by-step explanations for all transformations, with the added/removed rules and the grammar after each step
   - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
-  - Every transformation is tested for language equivalence (Earley recognizer over all short words)
+  - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
 - **Word Generator**:
   - BFS enumeration of shortest words in $L(G)$
   - Random derivation with guaranteed termination (minimal derivation heights)

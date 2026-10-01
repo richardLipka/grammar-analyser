@@ -10,6 +10,8 @@ import {
   getAvailableTransformationsForOccurrence
 } from '../../core/processor/grammarProcessor';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
+import { InfoKey, infoKeyForType } from '../../core/processor/transformationInfo';
+import { InfoButton } from './TransformationInfo';
 
 interface GrammarClickViewProps {
   grammar: Grammar;
@@ -18,6 +20,8 @@ interface GrammarClickViewProps {
   llConflicts?: LLConflict[];
   lang: Language;
   onApply: (result: TransformationResult, title: { en: string; cz: string }) => void;
+  /** Opens the description and literature of a transformation */
+  onShowInfo: (key: InfoKey) => void;
 }
 
 type Target =
@@ -32,7 +36,7 @@ const POPOVER_WIDTH = 360;
  * side opens the transformations of that occurrence. A chosen transformation
  * is applied at once (and can be undone by the caller's history).
  */
-export const GrammarClickView: React.FC<GrammarClickViewProps> = ({ grammar, analysis, llConflicts, lang, onApply }) => {
+export const GrammarClickView: React.FC<GrammarClickViewProps> = ({ grammar, analysis, llConflicts, lang, onApply, onShowInfo }) => {
   const t = TRANSLATIONS[lang];
   const [target, setTarget] = useState<Target | null>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
@@ -105,13 +109,22 @@ export const GrammarClickView: React.FC<GrammarClickViewProps> = ({ grammar, ana
     list.map(tr => {
       const recommended = helps(tr, nt);
       return (
-        <button key={tr.id} type="button" className={`cg-action ${recommended ? 'recommended' : ''}`} onClick={() => apply(nt, tr)}>
-          <span className="cg-action-label">
-            {lang === 'cz' ? tr.labelCz : tr.labelEn}
-            {recommended && <span className="cg-tag">{t.cgHelpsWithConflict}</span>}
-          </span>
-          <span className="cg-action-desc">{lang === 'cz' ? tr.descriptionCz : tr.descriptionEn}</span>
-        </button>
+        <div key={tr.id} className="cg-action-row">
+          <button type="button" className={`cg-action ${recommended ? 'recommended' : ''}`} onClick={() => apply(nt, tr)}>
+            <span className="cg-action-label">
+              {lang === 'cz' ? tr.labelCz : tr.labelEn}
+              {recommended && <span className="cg-tag">{t.cgHelpsWithConflict}</span>}
+            </span>
+            <span className="cg-action-desc">{lang === 'cz' ? tr.descriptionCz : tr.descriptionEn}</span>
+          </button>
+          <InfoButton
+            lang={lang}
+            onClick={() => {
+              setTarget(null);
+              onShowInfo(infoKeyForType(tr.type));
+            }}
+          />
+        </div>
       );
     });
 

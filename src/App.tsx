@@ -29,6 +29,8 @@ import { TransformationResult } from './core/processor/grammarProcessor';
 import { WHOLE_GRAMMAR_TRANSFORMATIONS } from './ui/wholeGrammarTransformations';
 import { GrammarClickView } from './ui/components/GrammarClickView';
 import { useGrammarHistory } from './ui/useGrammarHistory';
+import { TransformationInfoDialog, InfoButton } from './ui/components/TransformationInfo';
+import { InfoKey } from './core/processor/transformationInfo';
 import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 
 // Icons
@@ -171,6 +173,8 @@ export const App: React.FC = () => {
   // Text editing, or transformations by clicking symbols of the grammar
   const [editorMode, setEditorMode] = useState<'text' | 'click'>('text');
   const [notice, setNotice] = useState<string | null>(null);
+  // Description and literature of a transformation ('all' = overview of all of them)
+  const [infoKey, setInfoKey] = useState<InfoKey | 'all' | null>(null);
   // Undo/redo of the grammar text: typing is committed after a pause, transformations at once
   const history = useGrammarHistory(setup.grammarText);
   const grammarTextRef = useRef(setup.grammarText);
@@ -426,6 +430,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-shell">
+      <TransformationInfoDialog infoKey={infoKey} onClose={() => setInfoKey(null)} onShowAll={() => setInfoKey('all')} lang={lang} />
       {/* Top Application Header */}
       <header className="app-header">
         <div className="brand-section">
@@ -626,6 +631,7 @@ export const App: React.FC = () => {
                       <option key={tr.id} value={tr.id} title={tr.hint(t)}>{tr.label(t)}</option>
                     ))}
                   </select>
+                  <InfoButton lang={lang} onClick={() => setInfoKey('all')} />
                 </div>
               </div>
 
@@ -669,6 +675,7 @@ export const App: React.FC = () => {
                     llConflicts={!isStale && analysisData ? analysisData.llTable.conflicts : undefined}
                     lang={lang}
                     onApply={applyTransformation}
+                    onShowInfo={setInfoKey}
                   />
                   <p className="hint-text" style={{ marginTop: '6px' }}>{t.clickModeHint}</p>
                 </>
@@ -866,6 +873,7 @@ export const App: React.FC = () => {
                     onApplyWhole={applyWholeGrammar}
                     onGoTo={goToHistory}
                     onOpenClickMode={() => setEditorMode('click')}
+                    onShowInfo={setInfoKey}
                     lang={lang}
                   />
                 )}
@@ -877,6 +885,8 @@ export const App: React.FC = () => {
                     analysis={analysisData.analysis}
                     defaultInput={sampleInput}
                     lang={lang}
+                    onAttemptLL1={() => applyWholeGrammar('ll1')}
+                    onShowInfo={setInfoKey}
                   />
                 )}
 

@@ -5,7 +5,9 @@ import { LLTable } from '../../core/ll/llTable';
 import { simulateLLParse, LLParseStep, LLSimulationResult, LLParseMode } from '../../core/ll/llParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Layers, XCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Layers, XCircle, Sparkles } from 'lucide-react';
+import { InfoButton } from '../components/TransformationInfo';
+import { InfoKey } from '../../core/processor/transformationInfo';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText, formatLookaheadSet } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
@@ -17,6 +19,9 @@ interface LLViewProps {
   analysis: GrammarAnalysis;
   defaultInput?: string;
   lang: Language;
+  /** Automatic attempt to transform the grammar to LL(1) (applied to the editor, undoable) */
+  onAttemptLL1?: () => void;
+  onShowInfo?: (key: InfoKey) => void;
 }
 
 const fmtLa = (la: string) => (la === '' ? EPSILON : la);
@@ -27,7 +32,9 @@ export const LLView: React.FC<LLViewProps> = ({
   llTable,
   analysis: _analysis,
   defaultInput = 'id + id * id',
-  lang
+  lang,
+  onAttemptLL1,
+  onShowInfo
 }) => {
   const t = TRANSLATIONS[lang];
   const [inputText, setInputText] = useState(defaultInput);
@@ -108,6 +115,15 @@ export const LLView: React.FC<LLViewProps> = ({
               </span>
               <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 400 }}>{t.conflictCellsHighlighted}</span>
             </div>
+            {onAttemptLL1 && (
+              <div className="ll1-attempt-row">
+                <button type="button" className="btn btn-accent" onClick={onAttemptLL1} title={t.hintLL1}>
+                  <Sparkles size={14} />
+                  <span>{t.ll1AttemptButton}</span>
+                </button>
+                {onShowInfo && <InfoButton lang={lang} onClick={() => onShowInfo('ll1')} />}
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
               {llTable.conflicts.map((c, idx) => (

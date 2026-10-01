@@ -279,3 +279,59 @@ The result is LL(1). Unlike Paull's algorithm, no order of the non-terminals is 
 - agreement with Paull's algorithm on the language;
 - the LL(1) result for the expression grammar;
 - an editor round trip with `>` and `#` as left corners.
+
+## 9. Check of all grammar-changing methods, references, automatic LL(1)
+
+**Check.** `src/test/fuzzTransformations.test.ts` generates seeded random grammars (2–4 non-terminals, 2–3 terminals, ε-rules included). To every grammar it applies:
+- every whole-grammar construction;
+- every transformation offered for a non-terminal;
+- every transformation offered for an occurrence.
+
+Each result must generate the same words (Earley recognizer, all words up to length 4). It must also have its promised form:
+- no useless symbols;
+- no ε-rules;
+- no unit rules;
+- no left recursion (Paull, left corner);
+- no common first or last symbols (left and right factoring);
+- CNF or GNF.
+
+The test suite runs 100 grammars. In addition, two one-off sweeps ran: 3,000 grammars, and 600 larger grammars (up to 5 non-terminals, right-hand sides up to 4 symbols, words up to length 5). No transformation failed.
+
+**References.** Every transformation has an ⓘ button: in the click menu, next to the whole-grammar buttons, next to the whole-grammar menu (overview of all), and in the LL(1) card. It opens the scheme, what the transformation does, why it keeps the language, when to use it, and the publications with the section where it is described. The texts are in `src/core/processor/transformationInfo.ts`. Only sources that were checked are cited:
+- the KIV/FJP lectures *8 BKG* and *9 a 10 LLk*;
+- the SLU slides;
+- R. Cockett's CPSC 411 notes;
+- the Dragon Book; Hopcroft, Motwani, Ullman; Aho & Ullman (1972);
+- Chomsky (1959); Greibach (1965);
+- Rosenkrantz & Lewis (1970); Moore (2000); Johnson & Roark (2000);
+- Foster (1968); Rosenkrantz & Stearns (1970).
+
+No publication dedicated to right factoring was found; the reference text says so.
+
+**Automatic transformation to LL(1)** (`src/core/processor/ll1Transformer.ts`). The order of steps follows R. Cockett's notes *Transformations to LL(1)*: remove left recursion, expose FIRST clashes by substituting leading non-terminals, left factor, attempt to remove FIRST/FOLLOW clashes, and repeat from step 2. The notes also warn that the process need not terminate. The methods are those of the KIV/FJP lecture *9 a 10*. Foster's SID (1968) was an early program of this kind that also reported why it failed.
+
+The procedure:
+1. Remove useless symbols and cycles.
+2. Remove left recursion: rule by rule when it is only immediate, otherwise with Paull's algorithm.
+3. Repeatedly take a conflict, FIRST-FIRST before FIRST-FOLLOW:
+   - **FIRST-FIRST:** left factoring of the longest common prefix, otherwise substitution of the leading non-terminal;
+   - **FIRST-FOLLOW:** absorption of the symbol that follows, otherwise removal of the ε-rule;
+   - on the way, non-terminals with the same rules are merged.
+4. After success, non-terminals used only in one unit rule are substituted, if the grammar stays LL(1).
+
+**Stopping.** The attempt stops after 10 rounds without improvement, where a FIRST-FIRST conflict counts twice and a FIRST-FOLLOW conflict once. It also stops when a grammar repeats or the grammar exceeds 400 rules. On failure it returns the best state and lists the discarded operations and the remaining conflicts.
+
+**Logging.** Every operation is listed with its reason (the conflict and the cited step) and the grammar after it. The whole attempt is one undoable step in the editor.
+
+**Results.**
+- **Succeeds:**
+  - the expression grammars; for KIV p. 22 the result is the lecture's own;
+  - the lecture's G13 and G14 and the KIV FIRST-FIRST example;
+  - the LALR examples, the strong LL(2) example and indirect left recursion;
+  - the Yacc and ANTLR examples.
+- **Fails, as it must:**
+  - the ambiguous dangling else, which ends in the textbook form `S → if c then S S'`, `S' → else S | ε` with the conflict on `else`;
+  - palindromes, whose language is not LL(k).
+- **Also fails:** the lecture's absorption example.
+
+`src/test/ll1Transformer.test.ts` checks that the result is always equivalent and that success always means an LL(1) grammar, on the presets and on random grammars.
