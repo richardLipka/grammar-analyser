@@ -20,9 +20,14 @@
   - Alternatives: Pipe `|` or clean indentation/newline alternatives
   - Non-terminals: every symbol defined on a left-hand side, and every `<name>`
   - Terminals: all other symbols; a quoted `"…"` or `'…'` symbol is always a terminal (never ε, never a non-terminal)
-  - Epsilon representations: `ε`, `eps`, `epsilon`, `λ`, `lambda`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
+  - Epsilon representations: `ε`, `ϵ`, `e` (KIV/FJP notation), `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
+  - Compact textbook notation `S → aSb | ab`, `A → bSA`: when every left-hand side is one capital letter, every letter is a symbol
+  - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
   - Comments: `// ...`, `# ...`, `/* ... */`
   - Unicode identifiers (`Výraz`, `Člen`)
+  - **Yacc / Bison files**: `%token`/`%left`/`%start` declarations, `%{ %}`, the `%%` sections, `{ actions }`, `%prec`, `%empty`, string aliases (`%token NUM "number"`), rules with or without `;` and with the left-hand side on its own line
+  - **ANTLR 4 grammars**: `grammar X;` header, `options`/`tokens`/`@header` blocks, labels (`x=`, `x+=`, `# Alt`), lexer rules taken as tokens (single-literal rules unified with the literal), `EOF`, EBNF `( )`, `*`, `+`, `?` expanded into auxiliary non-terminals
+  - A symbol palette under the editor inserts `→`, `|`, `ε`, primes, quotes and `<…>` without a keyboard
   - Errors (`$` used as a terminal, a symbol used both quoted and as a non-terminal, an unparsable line) stop the analysis; warnings (a capitalised symbol without rules, duplicate rules, `<X>` without rules) do not
 - **Grammar Analyser**:
   - Nullable symbols ($N_\varepsilon$)
@@ -51,6 +56,8 @@
 - **LL(k) Analyser & Parser**:
   - $\text{LL}(1)$ parse table construction $M[A, a]$ with First/First and First/Follow conflicts explained per rule
   - Exact $\text{LL}(2)$ test (Aho–Ullman local follow sets) next to the strong $\text{LL}(2)$ test
+  - Strong $\text{LL}(2)$ parse table $M[A, xy]$ and, for grammars that are LL(2) but not strong LL(2), the Aho–Ullman tables $T(A, L)$
+  - LL(1) and LL(2) simulation (expansion / comparison / acceptance) with the left parse; the LR simulation shows the right parse
   - Interactive top-down stack simulator with a clickable trace table, auto-play, keyboard stepping and live parse tree
 - **LR(k) Analyser & Parser**:
   - $\text{LR}(0)$, $\text{SLR}(1)$, $\text{LALR}(1)$, and $\text{LR}(1)$ canonical collections
@@ -61,8 +68,8 @@
 - **University Teaching & Classroom Features**:
   - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
-  - **Bilingual Interface**: Instant toggle between English and Czech academic terminology
-  - **Light, Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
+  - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
+  - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
 
 ---

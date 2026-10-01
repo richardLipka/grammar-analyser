@@ -255,7 +255,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
             const tags = [
               node.id === 0 ? (isCz ? 'počáteční' : 'initial') : '',
               isAccepting ? (isCz ? 'přijímající' : 'accept') : '',
-              hasConflict ? (isCz ? '⚠ kolize' : '⚠ conflict') : ''
+              hasConflict ? (isCz ? '⚠ konflikt' : '⚠ conflict') : ''
             ].filter(Boolean);
 
             return (

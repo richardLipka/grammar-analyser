@@ -1,16 +1,29 @@
 /**
  * Multi-syntax Formal Grammar Parser
- * Supports:
- * - Arrows: ->, -->, =>, →
- * - BNF/EBNF: ::=, :==, :=
- * - Yacc/Bison/ANTLR: :
- * - Equality: =
- * - Alternatives: | or newline indentation
- * - Terminators: a trailing ; or . (or a line holding only ; or .) ends a rule
- * - Quoted terminals: "..." or '...' (always terminals, never ε or non-terminals)
- * - Non-terminals: <...> or any symbol that appears on a left-hand side
- * - Epsilon: ε, eps, epsilon, EPS, λ, lambda, #, "", ''
- * - Comments: // and # to the end of the line, /* ... *\/ blocks
+ *
+ * Three input formats are recognised automatically:
+ *
+ * 1. Textbook / BNF notation (line oriented)
+ *    - Arrows: ->, -->, =>, →, ⟶; BNF/EBNF: ::=, :==, :=; also : and =
+ *    - Alternatives: | or one alternative per (indented) line
+ *    - A trailing ; or . (or a line holding only ; or .) ends a rule
+ *    - The left-hand side may stand alone on the line before the operator
+ *    - Quoted terminals "..." / '...' (always terminals, never ε or non-terminals)
+ *    - Non-terminals: <...> or any symbol that appears on a left-hand side
+ *    - Epsilon: ε, ϵ, e, eps, epsilon, λ, lambda, %empty, "", '' and # as a whole alternative
+ *    - Compact notation "S → aSb | ab": when every left-hand side is a single
+ *      capital letter and some word glues a non-terminal to other symbols,
+ *      every character is a separate symbol
+ *    - Comments: // and # to the end of the line, /* ... *\/ blocks
+ *
+ * 2. Yacc / Bison (.y): declarations with %token, %left, %right, %nonassoc,
+ *    %start, %union, %{ %}, the %% sections, { actions }, %prec, %empty, rules
+ *    with or without ; and with the left-hand side on its own line.
+ *
+ * 3. ANTLR 4 (.g4): "grammar X;" header, options/tokens/@actions blocks,
+ *    parser rules with EBNF (...), *, +, ? (expanded into auxiliary
+ *    non-terminals), labels x= / x+= / # Alt, lexer rules (taken as tokens;
+ *    a lexer rule that is one literal is unified with that literal), EOF.
  */
 
 import { Grammar, Production, END_MARKER } from '../ast/grammar';
@@ -21,11 +34,16 @@ export interface ParseError {
   messageCz?: string;
 }
 
+export type GrammarDialect = 'plain' | 'yacc' | 'antlr';
+
 export interface ParseResult {
   grammar?: Grammar;
   errors: ParseError[];
   /** Non-fatal remarks (undefined symbols, duplicate rules, ...). */
   warnings: ParseError[];
+  /** Neutral notes about how the input was read (format, EBNF expansion, ...). */
+  info: ParseError[];
+  dialect: GrammarDialect;
 }
 
 type TokenKind = 'bare' | 'quoted' | 'angle' | 'eps';
@@ -35,27 +53,209 @@ interface RhsToken {
   kind: TokenKind;
 }
 
-const EPSILON_TOKENS = new Set([
-  'epsilon', 'eps', 'EPS', 'EPSILON', 'Epsilon', 'ε', 'λ', 'lambda', '#'
+interface RawRule {
+  lineNum: number;
+  lhs: string;
+  alts: { tokens: RhsToken[]; lineNum: number }[];
+}
+
+interface FrontEndResult {
+  rules: RawRule[];
+  startSymbol?: string;
+  /** Tokens declared as terminals (%token, lexer rules, tokens { }). */
+  declaredTerminals: Set<string>;
+  /** Renaming of right-hand side symbols, keyed "kind:text" (ANTLR literal tokens, Bison aliases). */
+  aliases: Map<string, string>;
+  /** Extra non-terminals created by EBNF expansion (no "undefined symbol" warning). */
+  auxiliary: Set<string>;
+}
+
+const PLAIN_EPSILON_TOKENS = new Set([
+  'epsilon', 'eps', 'EPS', 'EPSILON', 'Epsilon', 'ε', 'ϵ', 'λ', 'lambda', 'e', '#'
 ]);
 
 // Longer operators first so that '::=' wins over ':' and '-->' over '->'.
-const RULE_OPERATORS = ['::=', ':==', ':=', '-->', '->', '=>', '→', ':', '='];
+const RULE_OPERATORS = ['::=', ':==', ':=', '-->', '->', '=>', '→', '⟶', ':', '='];
 
 const LHS_RE = /^(<[^<>]+>|[\p{L}_][\p{L}\p{N}_]*'*)$/u;
 const IDENT_START = /[\p{L}\p{N}_]/u;
 const IDENT_PART = /[\p{L}\p{N}_']/u;
 const IDENT_CHAR_BEFORE_PRIME = /[\p{L}\p{N}_']/u;
 
+const msg = (line: number, message: string, messageCz: string): ParseError => ({ line, message, messageCz });
+
+/** Recognises the input format from its characteristic declarations. */
+export function detectDialect(text: string): GrammarDialect {
+  const noComments = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
+  if (/^\s*(?:(?:lexer|parser)\s+)?grammar\s+[\p{L}_][\p{L}\p{N}_]*\s*;/mu.test(noComments)) return 'antlr';
+  if (/^\s*%(?:%|\{|token\b|left\b|right\b|nonassoc\b|precedence\b|start\b|type\b|union\b|define\b|expect\b|nterm\b|code\b)/m.test(noComments)) {
+    return 'yacc';
+  }
+  return 'plain';
+}
+
 export function parseGrammar(text: string): ParseResult {
   const errors: ParseError[] = [];
   const warnings: ParseError[] = [];
+  const info: ParseError[] = [];
+  const dialect = detectDialect(text);
 
+  const front = dialect === 'plain'
+    ? parsePlain(text, errors, warnings, info)
+    : parseTerminated(text, dialect, errors, warnings, info);
+
+  if (!front) {
+    return { errors, warnings, info, dialect };
+  }
+  if (front.rules.length === 0) {
+    if (errors.length === 0) {
+      errors.push(msg(1, 'No valid grammar rules found.', 'Nebylo nalezeno žádné platné pravidlo.'));
+    }
+    return { errors, warnings, info, dialect };
+  }
+
+  const grammar = assemble(front, dialect, errors, warnings);
+  return { grammar, errors, warnings, info, dialect };
+}
+
+// ---------------------------------------------------------------------------
+// Common back end: symbol classification and productions
+// ---------------------------------------------------------------------------
+
+function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseError[], warnings: ParseError[]): Grammar {
+  const { rules, declaredTerminals, aliases, auxiliary } = front;
+
+  // Non-terminals: every left-hand side plus every <bracketed> symbol
+  const nonTerminals = new Set<string>();
+  for (const rule of rules) nonTerminals.add(rule.lhs);
+  for (const rule of rules) {
+    for (const alt of rule.alts) {
+      for (const tok of alt.tokens) {
+        if (tok.kind === 'angle' && !nonTerminals.has(tok.text)) {
+          nonTerminals.add(tok.text);
+          warnings.push(msg(alt.lineNum,
+            `Non-terminal <${tok.text}> has no rules, so it cannot generate any word.`,
+            `Neterminál <${tok.text}> nemá žádná pravidla, nemůže tedy generovat žádné slovo.`));
+        }
+      }
+    }
+  }
+
+  const terminals = new Set<string>();
+  const productions: Production[] = [];
+  const seenProductions = new Set<string>();
+  const warnedUndefined = new Set<string>();
+  const reportedSymbols = new Set<string>();
+  let prodId = 1;
+
+  for (const rule of rules) {
+    const alts = rule.alts.length === 0 ? [{ tokens: [] as RhsToken[], lineNum: rule.lineNum }] : rule.alts;
+    for (const alt of alts) {
+      const rhs: string[] = [];
+      for (const tok0 of alt.tokens) {
+        if (tok0.kind === 'eps') continue; // ε inside a sequence is the neutral element
+        // ANTLR: token reference PLUS -> literal '+'; Bison: string alias "number" -> token NUM
+        const alias = aliases.get(`${tok0.kind}:${tok0.text}`);
+        const tok: RhsToken = alias === undefined ? tok0 : { text: alias, kind: dialect === 'antlr' ? 'quoted' : 'bare' };
+        const sym = tok.text;
+
+        if (tok.kind === 'quoted') {
+          if (nonTerminals.has(sym) && !reportedSymbols.has(sym)) {
+            reportedSymbols.add(sym);
+            errors.push(msg(alt.lineNum,
+              `Symbol '${sym}' is used both as a quoted terminal and as a non-terminal.`,
+              `Symbol '${sym}' je použit jako terminál v uvozovkách i jako neterminál.`));
+          }
+          if (/\s/.test(sym) && !reportedSymbols.has(sym)) {
+            reportedSymbols.add(sym);
+            errors.push(msg(alt.lineNum,
+              `Terminal "${sym}" contains whitespace; terminal names must be single tokens.`,
+              `Terminál "${sym}" obsahuje mezeru; názvy terminálů musí být jednotlivé tokeny.`));
+          }
+        } else if (tok.kind === 'bare' && !nonTerminals.has(sym) && !declaredTerminals.has(sym) && !auxiliary.has(sym) && !warnedUndefined.has(sym)) {
+          if (dialect === 'plain' && /^\p{Lu}/u.test(sym)) {
+            warnedUndefined.add(sym);
+            warnings.push(msg(alt.lineNum,
+              `'${sym}' looks like a non-terminal but has no rules; it is treated as a terminal. Add rules for it, or quote it ("${sym}") if it is a token.`,
+              `'${sym}' vypadá jako neterminál, ale nemá žádná pravidla; je považován za terminál. Doplňte jeho pravidla, nebo jej uzavřete do uvozovek ("${sym}"), jde-li o token.`));
+          } else if (dialect === 'yacc' && sym !== 'error') {
+            warnedUndefined.add(sym);
+            warnings.push(msg(alt.lineNum,
+              `'${sym}' is neither declared by %token nor defined by a rule; it is treated as a token.`,
+              `'${sym}' není deklarován direktivou %token ani definován pravidlem; je považován za token.`));
+          } else if (dialect === 'antlr') {
+            warnedUndefined.add(sym);
+            warnings.push(msg(alt.lineNum,
+              /^\p{Lu}/u.test(sym)
+                ? `Token '${sym}' has no lexer rule (implicit token definition).`
+                : `Rule '${sym}' is not defined; it is treated as a token.`,
+              /^\p{Lu}/u.test(sym)
+                ? `Token '${sym}' nemá lexikální pravidlo (implicitní definice tokenu).`
+                : `Pravidlo '${sym}' není definováno; je považováno za token.`));
+          }
+        }
+
+        if (sym === END_MARKER && !nonTerminals.has(sym) && !reportedSymbols.has(sym)) {
+          reportedSymbols.add(sym);
+          errors.push(msg(alt.lineNum,
+            `'$' is reserved for the end-of-input marker and cannot be used as a terminal.`,
+            `Symbol '$' je vyhrazen pro konec vstupu a nelze jej použít jako terminál.`));
+        }
+
+        rhs.push(sym);
+        if (!nonTerminals.has(sym)) terminals.add(sym);
+      }
+
+      const key = `${rule.lhs}\u0000${rhs.join('\u0000')}`;
+      if (seenProductions.has(key)) {
+        warnings.push(msg(alt.lineNum,
+          `Duplicate rule ${rule.lhs} -> ${rhs.join(' ') || 'ε'} was ignored.`,
+          `Duplicitní pravidlo ${rule.lhs} -> ${rhs.join(' ') || 'ε'} bylo vynecháno.`));
+        continue;
+      }
+      seenProductions.add(key);
+      productions.push({ id: prodId++, lhs: rule.lhs, rhs });
+    }
+  }
+
+  let startSymbol = rules[0].lhs;
+  if (front.startSymbol) {
+    if (nonTerminals.has(front.startSymbol)) {
+      startSymbol = front.startSymbol;
+    } else {
+      errors.push(msg(1,
+        `The start symbol '${front.startSymbol}' has no rules.`,
+        `Počáteční symbol '${front.startSymbol}' nemá žádná pravidla.`));
+    }
+  }
+
+  // Keep the start symbol's rules first so that rule (1) belongs to S
+  const ordered = [
+    ...productions.filter(p => p.lhs === startSymbol),
+    ...productions.filter(p => p.lhs !== startSymbol)
+  ].map((p, idx) => ({ ...p, id: idx + 1 }));
+
+  return { nonTerminals, terminals, startSymbol, productions: ordered };
+}
+
+// ---------------------------------------------------------------------------
+// Front end 1: textbook / BNF notation (line oriented)
+// ---------------------------------------------------------------------------
+
+function normalizeTypography(text: string): string {
+  return text
+    .replace(/(?<=[\p{L}\p{N}_'])[’′]/gu, "'") // typographic primes: E’ -> E'
+    .replace(/[“”„]/g, '"')
+    .replace(/⟶/g, '→');
+}
+
+function parsePlain(text: string, errors: ParseError[], warnings: ParseError[], info: ParseError[]): FrontEndResult | null {
   // 1. Strip block comments while preserving line breaks for accurate error reporting
-  const cleaned = text.replace(/\/\*[\s\S]*?\*\//g, match => '\n'.repeat((match.match(/\n/g) || []).length));
+  const cleaned = normalizeTypography(text)
+    .replace(/\/\*[\s\S]*?\*\//g, match => '\n'.repeat((match.match(/\n/g) || []).length));
 
   const rawLines = cleaned.split(/\r?\n/);
-  const lines: { lineNum: number; content: string }[] = [];
+  let lines: { lineNum: number; content: string }[] = [];
   for (let i = 0; i < rawLines.length; i++) {
     const line = stripLineComment(rawLines[i]).trim();
     if (line.length > 0) {
@@ -64,13 +264,24 @@ export function parseGrammar(text: string): ParseResult {
   }
 
   if (lines.length === 0) {
-    return {
-      errors: [{ line: 1, message: 'Grammar text is empty.', messageCz: 'Gramatika je prázdná.' }],
-      warnings
-    };
+    errors.push(msg(1, 'Grammar text is empty.', 'Gramatika je prázdná.'));
+    return null;
   }
 
-  const rawRules: { lineNum: number; lhs: string; alts: { tokens: RhsToken[]; lineNum: number }[] }[] = [];
+  // A left-hand side standing alone on its line, operator on the next one (GNU/Yacc style)
+  const merged: typeof lines = [];
+  for (let i = 0; i < lines.length; i++) {
+    const next = lines[i + 1];
+    if (next && LHS_RE.test(lines[i].content) && RULE_OPERATORS.some(op => next.content.startsWith(op))) {
+      merged.push({ lineNum: lines[i].lineNum, content: `${lines[i].content} ${next.content}` });
+      i++;
+    } else {
+      merged.push(lines[i]);
+    }
+  }
+  lines = merged;
+
+  const rawRules: (RawRule & { emptyHead?: boolean })[] = [];
   let current: (typeof rawRules)[number] | null = null;
   let ruleClosed = false;
 
@@ -85,11 +296,9 @@ export function parseGrammar(text: string): ParseResult {
 
     // Optional trailing terminator: ends the rule after this line.
     let endsRule = false;
-    if (line.endsWith(';') || line.endsWith('.')) {
-      if (!endsInsideQuotes(line)) {
-        line = line.slice(0, -1).trim();
-        endsRule = true;
-      }
+    if ((line.endsWith(';') || line.endsWith('.')) && !endsInsideQuotes(line)) {
+      line = line.slice(0, -1).trim();
+      endsRule = true;
     }
 
     const op = line.startsWith('|') ? null : findRuleOperator(line);
@@ -103,136 +312,73 @@ export function parseGrammar(text: string): ParseResult {
         for (const alt of splitAlternatives(rhsPart)) {
           current.alts.push({ tokens: tokenizeRhs(alt), lineNum: item.lineNum });
         }
+      } else {
+        // "S :" followed by "| x" means S -> ε | x (Yacc); indented alternatives do not
+        current.emptyHead = true;
       }
     } else if (current !== null && !ruleClosed) {
-      // Continuation line: alternatives introduced by '|' or by indentation/newline
       let rhsPart = line;
       if (rhsPart.startsWith('|')) {
+        if (current.emptyHead && current.alts.length === 0) {
+          current.alts.push({ tokens: [], lineNum: current.lineNum });
+        }
         rhsPart = rhsPart.slice(1).trim();
       }
+      current.emptyHead = false;
       for (const alt of splitAlternatives(rhsPart)) {
         current.alts.push({ tokens: tokenizeRhs(alt), lineNum: item.lineNum });
       }
     } else {
-      errors.push({
-        line: item.lineNum,
-        message: ruleClosed && current !== null
-          ? `Alternative after the rule for '${current.lhs}' was already terminated by ';' or '.': '${item.content}'`
-          : `Expected production rule (e.g. 'S -> a S b | ε'), found: '${item.content}'`,
-        messageCz: ruleClosed && current !== null
-          ? `Alternativa za pravidlem pro '${current.lhs}', které již bylo ukončeno znakem ';' nebo '.': '${item.content}'`
-          : `Očekáváno přepisovací pravidlo (např. 'S -> a S b | ε'), nalezeno: '${item.content}'`
-      });
+      errors.push(ruleClosed && current !== null
+        ? msg(item.lineNum,
+          `Alternative after the rule for '${current.lhs}' was already terminated by ';' or '.': '${item.content}'`,
+          `Alternativa za pravidlem pro '${current.lhs}', které již bylo ukončeno znakem ';' nebo '.': '${item.content}'`)
+        : msg(item.lineNum,
+          `Expected production rule (e.g. 'S -> a S b | ε'), found: '${item.content}'`,
+          `Očekáváno přepisovací pravidlo (např. 'S -> a S b | ε'), nalezeno: '${item.content}'`));
     }
 
     if (endsRule) ruleClosed = true;
   }
 
-  if (rawRules.length === 0) {
-    if (errors.length === 0) {
-      errors.push({ line: 1, message: 'No valid grammar rules found.', messageCz: 'Nebylo nalezeno žádné platné pravidlo.' });
-    }
-    return { errors, warnings };
-  }
-
-  // Non-terminals: every left-hand side plus every <bracketed> symbol
-  const nonTerminals = new Set<string>();
-  for (const rule of rawRules) nonTerminals.add(rule.lhs);
-  for (const rule of rawRules) {
-    for (const alt of rule.alts) {
-      for (const tok of alt.tokens) {
-        if (tok.kind === 'angle' && !nonTerminals.has(tok.text)) {
-          nonTerminals.add(tok.text);
-          warnings.push({
-            line: alt.lineNum,
-            message: `Non-terminal <${tok.text}> has no rules, so it cannot generate any word.`,
-            messageCz: `Neterminál <${tok.text}> nemá žádná pravidla, nemůže tedy generovat žádné slovo.`
-          });
-        }
-      }
-    }
-  }
-
-  const terminals = new Set<string>();
-  const productions: Production[] = [];
-  const seenProductions = new Set<string>();
-  const warnedUndefined = new Set<string>();
-  const reportedSymbols = new Set<string>();
-  let prodId = 1;
-
-  for (const rule of rawRules) {
-    const alts = rule.alts.length === 0 ? [{ tokens: [] as RhsToken[], lineNum: rule.lineNum }] : rule.alts;
-    for (const alt of alts) {
-      const rhs: string[] = [];
-      for (const tok of alt.tokens) {
-        if (tok.kind === 'eps') continue; // ε inside a sequence is the neutral element
-
-        const sym = tok.text;
-        if (tok.kind === 'quoted') {
-          if (nonTerminals.has(sym) && !reportedSymbols.has(sym)) {
-            reportedSymbols.add(sym);
-            errors.push({
-              line: alt.lineNum,
-              message: `Symbol '${sym}' is used both as a quoted terminal and as a non-terminal.`,
-              messageCz: `Symbol '${sym}' je použit jako terminál v uvozovkách i jako neterminál.`
-            });
-          }
-          if (/\s/.test(sym) && !reportedSymbols.has(sym)) {
-            reportedSymbols.add(sym);
-            errors.push({
-              line: alt.lineNum,
-              message: `Terminal "${sym}" contains whitespace; terminal names must be single tokens.`,
-              messageCz: `Terminál "${sym}" obsahuje mezeru; názvy terminálů musí být jednotlivé tokeny.`
-            });
-          }
-        } else if (tok.kind === 'bare' && !nonTerminals.has(sym) && /^\p{Lu}/u.test(sym) && !warnedUndefined.has(sym)) {
-          warnedUndefined.add(sym);
-          warnings.push({
-            line: alt.lineNum,
-            message: `'${sym}' looks like a non-terminal but has no rules; it is treated as a terminal. Add rules for it, or quote it ("${sym}") if it is a token.`,
-            messageCz: `'${sym}' vypadá jako neterminál, ale nemá žádná pravidla; je považován za terminál. Doplňte jeho pravidla, nebo jej uzavřete do uvozovek ("${sym}"), jde-li o token.`
-          });
-        }
-
-        if (sym === END_MARKER && !nonTerminals.has(sym) && !reportedSymbols.has(sym)) {
-          reportedSymbols.add(sym);
-          errors.push({
-            line: alt.lineNum,
-            message: `'$' is reserved for the end-of-input marker and cannot be used as a terminal.`,
-            messageCz: `Symbol '$' je vyhrazen pro konec vstupu a nelze jej použít jako terminál.`
-          });
-        }
-
-        rhs.push(sym);
-        if (!nonTerminals.has(sym)) {
-          terminals.add(sym);
-        }
-      }
-
-      const key = `${rule.lhs}\u0000${rhs.join('\u0000')}`;
-      if (seenProductions.has(key)) {
-        warnings.push({
-          line: alt.lineNum,
-          message: `Duplicate rule ${rule.lhs} -> ${rhs.join(' ') || 'ε'} was ignored.`,
-          messageCz: `Duplicitní pravidlo ${rule.lhs} -> ${rhs.join(' ') || 'ε'} bylo vynecháno.`
-        });
-        continue;
-      }
-      seenProductions.add(key);
-      productions.push({ id: prodId++, lhs: rule.lhs, rhs });
-    }
-  }
+  applyCompactNotation(rawRules, info);
 
   return {
-    grammar: {
-      nonTerminals,
-      terminals,
-      startSymbol: rawRules[0].lhs,
-      productions
-    },
-    errors,
-    warnings
+    rules: rawRules,
+    declaredTerminals: new Set(),
+    aliases: new Map(),
+    auxiliary: new Set()
   };
+}
+
+/**
+ * Compact textbook notation "S → aSb | ab", "A → bSA": when every left-hand
+ * side is a single capital letter (optionally primed) and some unquoted word
+ * glues such a non-terminal to further symbols, every character is a symbol.
+ */
+function applyCompactNotation(rules: RawRule[], info: ParseError[]) {
+  if (rules.length === 0 || !rules.every(r => /^\p{Lu}'*$/u.test(r.lhs))) return;
+  const ntLetters = new Set(rules.map(r => r.lhs.replace(/'+$/, '')));
+  const lhsSet = new Set(rules.map(r => r.lhs));
+  const splitWord = (w: string) => w.match(/\p{L}'*|\p{N}|_|./gu) || [w];
+
+  const evidence = rules.some(r => r.alts.some(a => a.tokens.some(t =>
+    t.kind === 'bare' && !lhsSet.has(t.text) && splitWord(t.text).length > 1 &&
+    splitWord(t.text).some(ch => ntLetters.has(ch.replace(/'+$/, '')))
+  )));
+  if (!evidence) return;
+
+  for (const r of rules) {
+    for (const a of r.alts) {
+      a.tokens = a.tokens.flatMap(t =>
+        t.kind === 'bare' && splitWord(t.text).length > 1 && !lhsSet.has(t.text)
+          ? splitWord(t.text).map(ch => ({ text: ch, kind: 'bare' as TokenKind }))
+          : [t]);
+    }
+  }
+  info.push(msg(rules[0].lineNum,
+    'Compact notation: every letter is a separate symbol (e.g. aSb = a S b). Separate symbols by spaces or quote multi-letter terminals ("id") to use whole words.',
+    'Kompaktní zápis: každé písmeno je samostatný symbol (např. aSb = a S b). Pro víceznakové symboly oddělte symboly mezerami nebo terminály uzavřete do uvozovek ("id").'));
 }
 
 /**
@@ -364,6 +510,13 @@ function tokenizeRhs(altStr: string): RhsToken[] {
       continue;
     }
 
+    // Bison's explicit empty alternative
+    if (altStr.startsWith('%empty', i)) {
+      tokens.push({ text: '', kind: 'eps' });
+      i += '%empty'.length;
+      continue;
+    }
+
     // Angle-bracketed non-terminal <...>; a lone '<' is an ordinary terminal
     if (ch === '<') {
       const close = altStr.indexOf('>', i + 1);
@@ -376,21 +529,559 @@ function tokenizeRhs(altStr: string): RhsToken[] {
     }
 
     // Unquoted identifier (with primes, e.g. E', T'', expr_list, Výraz)
-    if (IDENT_START.test(ch) && ch !== 'ε' && ch !== 'λ') {
+    if (IDENT_START.test(ch) && !'εϵλ'.includes(ch)) {
       let j = i;
-      while (j < altStr.length && IDENT_PART.test(altStr[j]) && altStr[j] !== 'ε' && altStr[j] !== 'λ') {
+      while (j < altStr.length && IDENT_PART.test(altStr[j]) && !'εϵλ'.includes(altStr[j])) {
         j++;
       }
       const word = altStr.slice(i, j);
-      tokens.push({ text: word, kind: EPSILON_TOKENS.has(word) ? 'eps' : 'bare' });
+      tokens.push({ text: word, kind: PLAIN_EPSILON_TOKENS.has(word) ? 'eps' : 'bare' });
       i = j;
       continue;
     }
 
     // Standalone punctuation/operator symbol (e.g. +, *, -, (, ), ε, #)
-    tokens.push({ text: ch, kind: EPSILON_TOKENS.has(ch) ? 'eps' : 'bare' });
+    tokens.push({ text: ch, kind: PLAIN_EPSILON_TOKENS.has(ch) ? 'eps' : 'bare' });
     i++;
   }
 
   return tokens;
+}
+
+// ---------------------------------------------------------------------------
+// Front end 2: Yacc / Bison and ANTLR (rules terminated by ';')
+// ---------------------------------------------------------------------------
+
+type STokKind = 'ident' | 'quoted' | 'punct' | 'directive' | 'number';
+
+interface STok {
+  kind: STokKind;
+  text: string;
+  line: number;
+}
+
+/** Tokenizer shared by the Yacc and ANTLR front ends (comments, literals, directives). */
+function scanTerminated(text: string, dialect: 'yacc' | 'antlr'): STok[] {
+  const toks: STok[] = [];
+  let line = 1;
+  let i = 0;
+  const identRe = dialect === 'yacc' ? /[\p{L}\p{N}_.]/u : /[\p{L}\p{N}_]/u;
+
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\n') {
+      line++;
+      i++;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      for (let k = i; k < stop; k++) if (text[k] === '\n') line++;
+      i = stop;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      let raw = '';
+      while (j < text.length && text[j] !== ch && text[j] !== '\n') {
+        if (text[j] === '\\' && j + 1 < text.length) {
+          // Control characters keep their escape as the visible terminal name ('\n' -> \n)
+          const esc = text[j + 1];
+          raw += 'ntrfbv0'.includes(esc) ? `\\${esc}` : esc;
+          j += 2;
+          continue;
+        }
+        raw += text[j];
+        j++;
+      }
+      if (text[j] === ch) {
+        toks.push({ kind: 'quoted', text: raw === ' ' ? '␣' : raw, line });
+        i = j + 1;
+      } else {
+        toks.push({ kind: 'punct', text: ch, line }); // stray apostrophe (e.g. in C code)
+        i++;
+      }
+      continue;
+    }
+    if (dialect === 'yacc' && ch === '%') {
+      if (text[i + 1] === '{') {
+        const end = text.indexOf('%}', i + 2);
+        const stop = end === -1 ? text.length : end + 2;
+        for (let k = i; k < stop; k++) if (text[k] === '\n') line++;
+        i = stop;
+        continue;
+      }
+      if (text[i + 1] === '%') {
+        toks.push({ kind: 'directive', text: '%%', line });
+        i += 2;
+        continue;
+      }
+      let j = i + 1;
+      while (j < text.length && /[\p{L}\p{N}_-]/u.test(text[j])) j++;
+      toks.push({ kind: 'directive', text: text.slice(i, j), line });
+      i = j;
+      continue;
+    }
+    if (ch === '<') {
+      // <type> tags (Yacc) and <assoc=right> element options (ANTLR) are irrelevant here
+      const close = text.indexOf('>', i + 1);
+      if (close !== -1 && !text.slice(i + 1, close).includes('\n') && /^[\w\s=:.,*&]*$/.test(text.slice(i + 1, close))) {
+        i = close + 1;
+        continue;
+      }
+    }
+    if (/\p{N}/u.test(ch)) {
+      let j = i;
+      while (j < text.length && /\p{N}/u.test(text[j])) j++;
+      toks.push({ kind: 'number', text: text.slice(i, j), line });
+      i = j;
+      continue;
+    }
+    if (/[\p{L}_]/u.test(ch)) {
+      let j = i;
+      while (j < text.length && identRe.test(text[j])) j++;
+      toks.push({ kind: 'ident', text: text.slice(i, j), line });
+      i = j;
+      continue;
+    }
+    if (ch === '+' && text[i + 1] === '=') {
+      toks.push({ kind: 'punct', text: '+=', line });
+      i += 2;
+      continue;
+    }
+    if (ch === '-' && text[i + 1] === '>') {
+      toks.push({ kind: 'punct', text: '->', line });
+      i += 2;
+      continue;
+    }
+    if (ch === ':' && text[i + 1] === ':') {
+      toks.push({ kind: 'punct', text: '::', line });
+      i += 2;
+      continue;
+    }
+    toks.push({ kind: 'punct', text: ch, line });
+    i++;
+  }
+  return toks;
+}
+
+/** Index just after the balanced group that opens at `i` ('{' … '}' or '[' … ']'). */
+function skipGroup(toks: STok[], i: number): number {
+  const open = toks[i].text;
+  const close = open === '{' ? '}' : open === '[' ? ']' : ')';
+  let depth = 0;
+  for (let j = i; j < toks.length; j++) {
+    if (toks[j].kind !== 'punct') continue;
+    if (toks[j].text === open) depth++;
+    else if (toks[j].text === close && --depth === 0) return j + 1;
+  }
+  return toks.length;
+}
+
+/** Removes { actions } and {predicates}? from a token list. */
+function removeActions(toks: STok[]): STok[] {
+  const out: STok[] = [];
+  for (let i = 0; i < toks.length; ) {
+    if (toks[i].kind === 'punct' && toks[i].text === '{') {
+      i = skipGroup(toks, i);
+      if (toks[i]?.kind === 'punct' && toks[i].text === '?') i++;
+      continue;
+    }
+    out.push(toks[i]);
+    i++;
+  }
+  return out;
+}
+
+function parseTerminated(
+  text: string,
+  dialect: 'yacc' | 'antlr',
+  errors: ParseError[],
+  warnings: ParseError[],
+  info: ParseError[]
+): FrontEndResult | null {
+  const all = scanTerminated(text, dialect);
+  const declaredTerminals = new Set<string>();
+  const aliases = new Map<string, string>();
+  let startSymbol: string | undefined;
+
+  interface RuleSlice { lhs: string; line: number; body: STok[]; lexer: boolean; fragment: boolean }
+  const slices: RuleSlice[] = [];
+
+  if (dialect === 'yacc') {
+    const firstSep = all.findIndex(t => t.kind === 'directive' && t.text === '%%');
+    const secondSep = firstSep === -1 ? -1 : all.findIndex((t, k) => k > firstSep && t.kind === 'directive' && t.text === '%%');
+    const decl = firstSep === -1 ? [] : all.slice(0, firstSep);
+    const body = removeActions(firstSep === -1 ? all : all.slice(firstSep + 1, secondSep === -1 ? all.length : secondSep));
+
+    // Declarations section
+    for (let i = 0; i < decl.length; ) {
+      const t = decl[i];
+      if (t.kind === 'punct' && t.text === '{') {
+        i = skipGroup(decl, i);
+        continue;
+      }
+      if (t.kind !== 'directive') {
+        i++;
+        continue;
+      }
+      let j = i + 1;
+      const args: STok[] = [];
+      while (j < decl.length && decl[j].kind !== 'directive') {
+        if (decl[j].kind === 'punct' && decl[j].text === '{') {
+          j = skipGroup(decl, j);
+          continue;
+        }
+        args.push(decl[j]);
+        j++;
+      }
+      if (['%token', '%left', '%right', '%nonassoc', '%precedence'].includes(t.text)) {
+        let lastName: string | undefined;
+        for (const a of args) {
+          if (a.kind === 'ident') {
+            declaredTerminals.add(a.text);
+            lastName = a.text;
+          } else if (a.kind === 'quoted') {
+            if (t.text === '%token' && lastName && a.text.length > 1) aliases.set(`quoted:${a.text}`, lastName); // %token NUM "number"
+            else declaredTerminals.add(a.text);
+          }
+        }
+      } else if (t.text === '%start') {
+        startSymbol = args.find(a => a.kind === 'ident')?.text;
+      }
+      i = j;
+    }
+
+    // Rules section: "lhs : body [;]", a new rule starts with "ident :"
+    let i = 0;
+    while (i < body.length) {
+      const t = body[i];
+      if (t.kind === 'directive' && t.text !== '%empty' && t.text !== '%prec') {
+        // directives between rules (no %% given): treat like declarations
+        let j = i + 1;
+        const args: STok[] = [];
+        while (j < body.length && !(body[j].kind === 'ident' && body[j + 1]?.text === ':') && body[j].kind !== 'directive') {
+          args.push(body[j]);
+          j++;
+        }
+        if (['%token', '%left', '%right', '%nonassoc', '%precedence'].includes(t.text)) {
+          args.filter(a => a.kind === 'ident' || a.kind === 'quoted').forEach(a => declaredTerminals.add(a.text));
+        } else if (t.text === '%start') {
+          startSymbol = args.find(a => a.kind === 'ident')?.text;
+        }
+        i = j;
+        continue;
+      }
+      if (t.kind === 'ident' && body[i + 1]?.kind === 'punct' && body[i + 1].text === ':') {
+        let j = i + 2;
+        const ruleBody: STok[] = [];
+        while (j < body.length) {
+          const u = body[j];
+          if (u.kind === 'punct' && u.text === ';') {
+            j++;
+            break;
+          }
+          if (u.kind === 'ident' && body[j + 1]?.kind === 'punct' && body[j + 1].text === ':') break;
+          if (u.kind === 'directive' && !['%empty', '%prec', '%dprec', '%merge', '%expect', '%expect-rr'].includes(u.text)) break;
+          ruleBody.push(u);
+          j++;
+        }
+        slices.push({ lhs: t.text, line: t.line, body: ruleBody, lexer: false, fragment: false });
+        i = j;
+        continue;
+      }
+      if (!(t.kind === 'punct' && t.text === ';')) {
+        errors.push(msg(t.line, `Unexpected '${t.text}' outside of a rule.`, `Neočekávaný symbol '${t.text}' mimo pravidlo.`));
+      }
+      i++;
+    }
+    info.push(msg(1,
+      'Yacc/Bison grammar: declarations, %% sections, { actions } and %prec were read; character literals are terminals.',
+      'Gramatika ve formátu Yacc/Bison: zpracovány deklarace, sekce %%, { akce } a %prec; znakové literály jsou terminály.'));
+  } else {
+    // ANTLR 4
+    let toks = all;
+    const header = toks.findIndex(t => t.kind === 'ident' && t.text === 'grammar');
+    let grammarKind = 'combined';
+    if (header !== -1 && toks[header + 2]?.text === ';') {
+      if (header > 0 && toks[header - 1].kind === 'ident' && (toks[header - 1].text === 'lexer' || toks[header - 1].text === 'parser')) {
+        grammarKind = toks[header - 1].text;
+      }
+      toks = toks.slice(header + 3);
+    }
+    if (grammarKind === 'lexer') {
+      errors.push(msg(1, 'This is an ANTLR lexer grammar; it has no parser rules to analyse.', 'Toto je lexikální gramatika ANTLR; neobsahuje žádná syntaktická pravidla k analýze.'));
+      return null;
+    }
+
+    let i = 0;
+    while (i < toks.length) {
+      const t = toks[i];
+      if (t.kind === 'ident' && ['options', 'tokens', 'channels'].includes(t.text) && toks[i + 1]?.text === '{') {
+        const end = skipGroup(toks, i + 1);
+        if (t.text === 'tokens') {
+          toks.slice(i + 2, end - 1).filter(x => x.kind === 'ident').forEach(x => declaredTerminals.add(x.text));
+        }
+        i = end;
+        continue;
+      }
+      if (t.kind === 'punct' && t.text === '@') {
+        // @header { … }, @parser::members { … }
+        let j = i + 1;
+        while (j < toks.length && !(toks[j].kind === 'punct' && toks[j].text === '{')) j++;
+        i = j < toks.length ? skipGroup(toks, j) : j;
+        continue;
+      }
+      if (t.kind === 'ident' && (t.text === 'import' || t.text === 'mode')) {
+        while (i < toks.length && toks[i].text !== ';') i++;
+        i++;
+        continue;
+      }
+      if (t.kind === 'ident' && (t.text === 'catch' || t.text === 'finally')) {
+        i++;
+        while (i < toks.length && toks[i].kind === 'punct' && (toks[i].text === '[' || toks[i].text === '{')) i = skipGroup(toks, i);
+        continue;
+      }
+      if (t.kind === 'ident') {
+        let fragment = false;
+        let j = i;
+        if (t.text === 'fragment') {
+          fragment = true;
+          j++;
+        }
+        const name = toks[j];
+        if (!name || name.kind !== 'ident') {
+          i = j + 1;
+          continue;
+        }
+        // Rule header: [args] returns [..] locals [..] throws X options {..} @init {..}
+        j++;
+        while (j < toks.length && !(toks[j].kind === 'punct' && toks[j].text === ':')) {
+          if (toks[j].kind === 'punct' && (toks[j].text === '[' || toks[j].text === '{')) j = skipGroup(toks, j);
+          else if (toks[j].kind === 'punct' && toks[j].text === ';') break;
+          else j++;
+        }
+        if (toks[j]?.text !== ':') {
+          errors.push(msg(name.line, `Rule '${name.text}' has no ':'.`, `Pravidlo '${name.text}' nemá ':'.`));
+          i = j + 1;
+          continue;
+        }
+        j++;
+        const ruleBody: STok[] = [];
+        let depth = 0;
+        while (j < toks.length) {
+          const u = toks[j];
+          if (u.kind === 'punct' && (u.text === '{' || u.text === '[')) {
+            const end = skipGroup(toks, j);
+            j = end;
+            if (toks[j]?.kind === 'punct' && toks[j].text === '?') j++;
+            continue;
+          }
+          if (u.kind === 'punct' && u.text === '(') depth++;
+          if (u.kind === 'punct' && u.text === ')') depth--;
+          if (u.kind === 'punct' && u.text === ';' && depth <= 0) {
+            j++;
+            break;
+          }
+          ruleBody.push(u);
+          j++;
+        }
+        const lexer = /^\p{Lu}/u.test(name.text);
+        slices.push({ lhs: name.text, line: name.line, body: ruleBody, lexer, fragment });
+        i = j;
+        continue;
+      }
+      i++;
+    }
+
+    // Lexer rules define tokens; a rule that is a single literal is unified with it
+    for (const s of slices.filter(x => x.lexer && !x.fragment)) {
+      declaredTerminals.add(s.lhs);
+      const arrow = s.body.findIndex(x => x.kind === 'punct' && x.text === '->');
+      const core = arrow === -1 ? s.body : s.body.slice(0, arrow);
+      if (core.length === 1 && core[0].kind === 'quoted' && core[0].text.length > 0) {
+        aliases.set(`bare:${s.lhs}`, core[0].text);
+      }
+    }
+    const lexerCount = slices.filter(x => x.lexer).length;
+    info.push(msg(1,
+      `ANTLR grammar: ${lexerCount} lexer rule(s) were taken as tokens (a rule that is one literal, e.g. PLUS : '+', is replaced by the literal); EBNF operators ( ) * + ? were expanded into auxiliary non-terminals; EOF stands for the end marker $.`,
+      `Gramatika ANTLR: lexikální pravidla (počet: ${lexerCount}) byla převzata jako tokeny (pravidlo tvořené jedním literálem, např. PLUS : '+', je nahrazeno literálem); operátory EBNF ( ) * + ? byly rozepsány pomocnými neterminály; EOF označuje konec vstupu $.`));
+  }
+
+  // Bodies of parser rules: EBNF → BNF
+  const parserSlices = slices.filter(s => !s.lexer && !s.fragment);
+  const taken = new Set<string>([...slices.map(s => s.lhs), ...declaredTerminals]);
+  const auxiliary = new Set<string>();
+  const rules: RawRule[] = [];
+
+  for (const s of parserSlices) {
+    const ctx: EbnfContext = {
+      lhs: s.lhs,
+      line: s.line,
+      dialect,
+      errors,
+      aux: [],
+      newName: (kind: string) => {
+        let name = `${s.lhs}_${kind}`;
+        for (let n = 2; taken.has(name); n++) name = `${s.lhs}_${kind}${n}`;
+        taken.add(name);
+        auxiliary.add(name);
+        return name;
+      },
+      onEof: () => undefined
+    };
+    const [items] = parseEbnfAlternatives(s.body, 0, ctx);
+    const alts = items.map(seq => ({ tokens: seq.flatMap(item => expandEbnfItem(item, ctx)), lineNum: s.line }));
+    rules.push({ lhs: s.lhs, lineNum: s.line, alts });
+    rules.push(...ctx.aux);
+  }
+
+  if (dialect === 'antlr' && startSymbol === undefined && parserSlices.length > 0) startSymbol = parserSlices[0].lhs;
+  if (parserSlices.length === 0 && errors.length === 0) {
+    errors.push(msg(1, 'No parser rules found.', 'Nebyla nalezena žádná syntaktická pravidla.'));
+    return null;
+  }
+
+  return { rules, startSymbol, declaredTerminals, aliases, auxiliary };
+}
+
+// ---------------------------------------------------------------------------
+// EBNF bodies (ANTLR; Yacc bodies are the plain sequence subset)
+// ---------------------------------------------------------------------------
+
+type EbnfElem = { kind: 'sym'; tok: RhsToken } | { kind: 'group'; alts: EbnfItem[][] };
+
+interface EbnfItem {
+  elem: EbnfElem;
+  suffix: '' | '*' | '+' | '?';
+}
+
+interface EbnfContext {
+  lhs: string;
+  line: number;
+  dialect: 'yacc' | 'antlr';
+  errors: ParseError[];
+  aux: RawRule[];
+  newName: (kind: string) => string;
+  onEof: () => void;
+}
+
+function parseEbnfAlternatives(toks: STok[], start: number, ctx: EbnfContext): [EbnfItem[][], number] {
+  const alts: EbnfItem[][] = [[]];
+  let i = start;
+  while (i < toks.length) {
+    const t = toks[i];
+    if (t.kind === 'punct' && t.text === ')') break;
+    if (t.kind === 'punct' && t.text === '|') {
+      alts.push([]);
+      i++;
+      continue;
+    }
+    if (t.kind === 'punct' && t.text === '#') {
+      i += toks[i + 1]?.kind === 'ident' ? 2 : 1; // ANTLR alternative label
+      continue;
+    }
+    if (t.kind === 'directive') {
+      if (t.text === '%prec' || t.text === '%dprec' || t.text === '%merge') {
+        i += 2;
+      } else {
+        i++; // %empty and anything else
+      }
+      continue;
+    }
+    if (t.kind === 'ident' && toks[i + 1]?.kind === 'punct' && (toks[i + 1].text === '=' || toks[i + 1].text === '+=')) {
+      i += 2; // element label x=expr, xs+=ID
+      continue;
+    }
+
+    let elem: EbnfElem | null = null;
+    if (t.kind === 'punct' && t.text === '(') {
+      const [inner, j] = parseEbnfAlternatives(toks, i + 1, ctx);
+      i = toks[j]?.text === ')' ? j + 1 : j;
+      elem = { kind: 'group', alts: inner };
+    } else if (t.kind === 'ident') {
+      i++;
+      if (t.text === 'EOF' && ctx.dialect === 'antlr') {
+        ctx.onEof();
+        continue;
+      }
+      elem = { kind: 'sym', tok: { text: t.text, kind: 'bare' } };
+    } else if (t.kind === 'quoted') {
+      i++;
+      elem = { kind: 'sym', tok: t.text === '' ? { text: '', kind: 'eps' } : { text: t.text, kind: 'quoted' } };
+    } else {
+      ctx.errors.push(msg(t.line,
+        t.text === '.' || t.text === '~'
+          ? `The ANTLR operator '${t.text}' (wildcard / negation) cannot be converted to a context-free rule.`
+          : `Unexpected '${t.text}' in the rule for '${ctx.lhs}'.`,
+        t.text === '.' || t.text === '~'
+          ? `Operátor ANTLR '${t.text}' (libovolný symbol / negace) nelze převést na bezkontextové pravidlo.`
+          : `Neočekávaný symbol '${t.text}' v pravidle pro '${ctx.lhs}'.`));
+      i++;
+      continue;
+    }
+
+    let suffix: EbnfItem['suffix'] = '';
+    const s = toks[i];
+    if (s?.kind === 'punct' && (s.text === '*' || s.text === '+' || s.text === '?')) {
+      suffix = s.text;
+      i++;
+      if (toks[i]?.kind === 'punct' && toks[i].text === '?') i++; // non-greedy *? +? ??
+    }
+    alts[alts.length - 1].push({ elem, suffix });
+  }
+  return [alts, i];
+}
+
+function expandEbnfItem(item: EbnfItem, ctx: EbnfContext): RhsToken[] {
+  const flattenAlts = (alts: EbnfItem[][]) => alts.map(seq => seq.flatMap(x => expandEbnfItem(x, ctx)));
+  const addRule = (name: string, alts: RhsToken[][]) => {
+    ctx.aux.push({ lhs: name, lineNum: ctx.line, alts: alts.map(tokens => ({ tokens, lineNum: ctx.line })) });
+  };
+
+  let base: RhsToken[];
+  if (item.elem.kind === 'sym') {
+    base = [item.elem.tok];
+  } else if (item.elem.alts.length === 1 && item.suffix === '') {
+    return flattenAlts(item.elem.alts)[0];
+  } else if (item.elem.alts.length === 1) {
+    base = flattenAlts(item.elem.alts)[0];
+  } else {
+    const g = ctx.newName('grp');
+    // Register the rule before expanding the alternatives so that nested groups follow it
+    const rule: RawRule = { lhs: g, lineNum: ctx.line, alts: [] };
+    ctx.aux.push(rule);
+    rule.alts = flattenAlts(item.elem.alts).map(tokens => ({ tokens, lineNum: ctx.line }));
+    base = [{ text: g, kind: 'bare' }];
+  }
+
+  switch (item.suffix) {
+    case '':
+      return base;
+    case '?': {
+      const n = ctx.newName('opt');
+      addRule(n, [base, []]);
+      return [{ text: n, kind: 'bare' }];
+    }
+    case '*': {
+      const n = ctx.newName('list');
+      addRule(n, [[...base, { text: n, kind: 'bare' }], []]);
+      return [{ text: n, kind: 'bare' }];
+    }
+    case '+': {
+      const n = ctx.newName('list');
+      addRule(n, [[...base, { text: n, kind: 'bare' }], []]);
+      return [...base, { text: n, kind: 'bare' }];
+    }
+  }
 }

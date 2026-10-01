@@ -80,7 +80,7 @@ export const LRView: React.FC<LRViewProps> = ({
       <div className="card">
         <div className="card-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>{selectedVariant} {t.lrTableTitle}</span>
+            <span>{t.lrTableTitle.replace('{variant}', selectedVariant)}</span>
             <Cpu size={18} color="var(--color-primary)" />
           </div>
 
@@ -117,7 +117,7 @@ export const LRView: React.FC<LRViewProps> = ({
               <div className="notice-title" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <AlertTriangle size={15} />
-                  {activeTable.conflicts.length} {t.conflictsInVariant.replace('{variant}', selectedVariant)}
+                  {t.conflictsInVariant.replace('{variant}', selectedVariant).replace('{count}', activeTable.conflicts.length.toString())}
                 </span>
                 <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontWeight: 400 }}>
                   {t.statesCount} <strong>{activeTable.states.length}</strong> • {t.conflictCellsHighlighted}
@@ -405,6 +405,11 @@ export const LRView: React.FC<LRViewProps> = ({
                 </tbody>
               </table>
             </div>
+            {currentStep && (
+              <div className="hint-text" style={{ marginTop: '8px', fontFamily: 'var(--font-mono)' }}>
+                <strong>{t.rightParse}:</strong> {currentStep.rightParse.length > 0 ? currentStep.rightParse.join(' ') : 'ε'}
+              </div>
+            )}
           </div>
 
           <div>

@@ -17,7 +17,8 @@ import {
   computeEndable,
   computeReachable,
   computeNullable,
-  computeLeftRecursion
+  computeLeftRecursion,
+  computeCyclic
 } from '../../core/analyser/grammarAnalyser';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Sparkles, Check, BookOpen, RotateCcw, SkipBack, Layers, HelpCircle, CheckCircle2, Circle } from 'lucide-react';
@@ -43,6 +44,10 @@ function grammarForms(g: Grammar) {
     epsFree: g.productions.every(p => allowedEps(p.lhs, p.rhs.length)),
     noUnit: g.productions.every(p => !(p.rhs.length === 1 && g.nonTerminals.has(p.rhs[0]))),
     noLeftRec: lr.immediate.size === 0 && lr.indirect.size === 0,
+    // proper (vlastní / upravená): no cycles, no ε-rules (except S -> ε) and no useless symbols
+    proper: [...g.nonTerminals].every(nt => endable.has(nt) && reachable.has(nt)) &&
+      g.productions.every(p => allowedEps(p.lhs, p.rhs.length)) &&
+      computeCyclic(g, computeNullable(g)).size === 0,
     cnf: g.productions.every(p =>
       (p.rhs.length === 2 && p.rhs.every(s => g.nonTerminals.has(s))) ||
       (p.rhs.length === 1 && g.terminals.has(p.rhs[0])) ||
@@ -103,6 +108,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({ gramma
     { ok: forms.reduced, label: t.formReduced },
     { ok: forms.epsFree, label: t.formEpsFree },
     { ok: forms.noUnit, label: t.formNoUnit },
+    { ok: forms.proper, label: t.formProper },
     { ok: forms.noLeftRec, label: t.formNoLeftRec },
     { ok: forms.cnf, label: t.formCNF },
     { ok: forms.gnf, label: t.formGNF }
@@ -159,7 +165,7 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({ gramma
                     <span className="badge badge-nt">{nt}</span>
                     {isStart && <span className="badge badge-start">{t.startSymbolBadge}</span>}
                     <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                      {ntProds.length} {t.rulesCountSuffix}
+                      {t.rulesCount.replace('{count}', ntProds.length.toString())}
                     </span>
                   </div>
 

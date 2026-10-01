@@ -203,7 +203,10 @@ describe('Preset classification matches the descriptions', () => {
     lalr1_vs_lr1: { LALR: false, LR1: true },
     palindromes: { LL1: false, LR1: false },
     ll1_not_slr1: { LL1: true, SLR: false, LALR: true },
-    ll2_not_strong: { LL1: false, LL2: true }
+    ll2_not_strong: { LL1: false, LL2: true },
+    strong_ll2: { LL1: false, LL2: true },
+    format_yacc: { LL1: false, SLR: true, LALR: true },
+    format_antlr: { LL1: false, LL2: true, LALR: true }
   };
 
   for (const preset of PRESET_GRAMMARS) {
@@ -379,5 +382,40 @@ describe('LaTeX export', () => {
     });
     expect(tree).toContain('[{$\\mathtt{,}$}]');
     expect(tree).toContain('[{$\\varepsilon$}]');
+  });
+});
+
+describe('LL(2) parsing', () => {
+  it('parses the strong LL(2) grammar G8 (KIV/FJP) with the table M[A, xy]', () => {
+    const preset = PRESET_GRAMMARS.find(p => p.id === 'strong_ll2')!;
+    const g = parse(preset.grammarText);
+    const t = buildLLTable(g, analyzeGrammar(g));
+    expect(t.isStrongLL2).toBe(true);
+    expect(t.ll2Table!.get('S')!.get('a b')!.map(p => p.rhs.join(' '))).toEqual(['a b A']);
+    expect(t.ll2Table!.get('S')!.get('a a')!.map(p => p.rhs.length)).toEqual([0]);
+    const sim = simulateLLParse(['a', 'b', 'a', 'b', 'b', 'a', 'a'], g, t, undefined, { k: 2, tables: 'strong' });
+    expect(sim.accepted).toBe(true);
+    // left parse as in the lecture: (ababbaa, S#) |- (ababbaa, abA#, 2) ...
+    expect(sim.steps[sim.steps.length - 1].leftParse[0]).toBe(g.productions.find(p => p.rhs.join(' ') === 'a b A')!.id);
+    expect(simulateLLParse(['a', 'b', 'a'], g, t, undefined, { k: 2, tables: 'strong' }).accepted).toBe(false);
+  });
+
+  it('parses a non-strong LL(2) grammar with the tables T(A, L)', () => {
+    const g = parse('S -> "a" A "a" "a" | "b" A "b" "a"\nA -> "b" | ε');
+    const t = buildLLTable(g, analyzeGrammar(g));
+    expect(t.isStrongLL2).toBe(false);
+    expect(t.ll2Tables.length).toBe(3);
+    for (const [w, ok] of [['a b a a', true], ['a a a', true], ['b b b a', true], ['b b a', true], ['b a a', false]] as const) {
+      const sim = simulateLLParse(w.split(' '), g, t, undefined, { k: 2, tables: 'contexts' });
+      expect(sim.accepted, w).toBe(ok);
+      expect(sim.steps.some(s => s.conflictCount)).toBe(false);
+    }
+  });
+
+  it('records the right parse of the LR simulation', () => {
+    const g = parse('E -> E "+" "id" | "id"');
+    const a = analyzeGrammar(g);
+    const sim = simulateLRParse(['id', '+', 'id'], g, buildLRTable(buildLR0Automaton(g, 'SLR(1)'), g, a));
+    expect(sim.steps[sim.steps.length - 1].rightParse).toEqual([2, 1]);
   });
 });

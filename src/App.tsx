@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Grammar } from './core/ast/grammar';
 import { parseGrammar, ParseError } from './core/parser/grammarParser';
 import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
@@ -101,10 +101,26 @@ const PRESET_CATEGORY_LABELS: Record<PresetGrammar['category'], { en: string; cz
   LL: { en: 'LL parsing', cz: 'Analýza LL' },
   LR: { en: 'LR parsing', cz: 'Analýza LR' },
   Ambiguity: { en: 'Ambiguity', cz: 'Nejednoznačnost' },
-  Transformations: { en: 'Transformations', cz: 'Transformace' }
+  Transformations: { en: 'Transformations', cz: 'Úpravy gramatiky' },
+  Formats: { en: 'Input formats', cz: 'Formáty zápisu' }
 };
 
 const CUSTOM_PRESET_ID = '__custom__';
+
+// Only an explicit choice is remembered, so the defaults (Czech, light theme) apply until the user changes them.
+const THEME_KEY = 'grammar-analyser.theme';
+const LANG_KEY = 'grammar-analyser.lang';
+
+/** Symbols that are awkward to type (touch screens, keyboards without these characters). */
+const EDITOR_SYMBOLS: { insert: string; close?: string; label: string; titleEn: string; titleCz: string; spaced?: boolean }[] = [
+  { insert: '→', label: '→', titleEn: 'Rule arrow', titleCz: 'Šipka pravidla', spaced: true },
+  { insert: '|', label: '|', titleEn: 'Next alternative (right-hand side separator)', titleCz: 'Další alternativa (oddělovač pravých stran)', spaced: true },
+  { insert: 'ε', label: 'ε', titleEn: 'Empty word', titleCz: 'Prázdné slovo' },
+  { insert: "'", label: "A'", titleEn: 'Prime (new non-terminal A\')', titleCz: "Čárka (nový neterminál A')" },
+  { insert: '"', close: '"', label: '"…"', titleEn: 'Quoted terminal', titleCz: 'Terminál v uvozovkách' },
+  { insert: '<', close: '>', label: '<…>', titleEn: 'Named non-terminal', titleCz: 'Pojmenovaný neterminál' },
+  { insert: '\n', label: '↵', titleEn: 'New line (new rule)', titleCz: 'Nový řádek (nové pravidlo)' }
+];
 
 export const App: React.FC = () => {
   const [grammarText, setGrammarText] = useState(PRESET_GRAMMARS[0].grammarText);
@@ -112,19 +128,27 @@ export const App: React.FC = () => {
   const [sampleInput, setSampleInput] = useState(PRESET_GRAMMARS[0].sampleInput);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
-  const [theme, setTheme] = useState<Theme>(() => readStored('ga-theme', ['dark', 'light', 'projector'] as const, 'dark'));
-  const [lang, setLang] = useState<Language>(() => readStored('ga-lang', ['en', 'cz'] as const, 'en'));
+  const [theme, setThemeState] = useState<Theme>(() => readStored(THEME_KEY, ['dark', 'light', 'projector'] as const, 'light'));
+  const [lang, setLangState] = useState<Language>(() => readStored(LANG_KEY, ['en', 'cz'] as const, 'cz'));
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const t = TRANSLATIONS[lang];
 
+  const setTheme = (value: Theme) => {
+    setThemeState(value);
+    writeStored(THEME_KEY, value);
+  };
+  const setLang = (value: Language) => {
+    setLangState(value);
+    writeStored(LANG_KEY, value);
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    writeStored('ga-theme', theme);
   }, [theme]);
 
   useEffect(() => {
     document.documentElement.setAttribute('lang', lang === 'cz' ? 'cs' : 'en');
-    writeStored('ga-lang', lang);
   }, [lang]);
 
   // On phones the tab bar is a single scrollable row: keep the active tab visible
@@ -201,6 +225,27 @@ export const App: React.FC = () => {
     if (preset && preset.grammarText !== text) {
       setSelectedPresetId(CUSTOM_PRESET_ID);
     }
+  };
+
+  /** Inserts a palette symbol at the caret (or wraps the selection for paired symbols). */
+  const insertSymbol = (sym: (typeof EDITOR_SYMBOLS)[number]) => {
+    const ta = editorRef.current;
+    const start = ta ? ta.selectionStart : grammarText.length;
+    const end = ta ? ta.selectionEnd : grammarText.length;
+    const before = grammarText.slice(0, start);
+    const selected = grammarText.slice(start, end);
+    const after = grammarText.slice(end);
+    let piece = sym.close !== undefined ? `${sym.insert}${selected}${sym.close}` : sym.insert;
+    if (sym.spaced) {
+      piece = `${before.length > 0 && !/\s$/.test(before) ? ' ' : ''}${piece}${/^\s/.test(after) ? '' : ' '}`;
+    }
+    handleEditGrammar(before + piece + after);
+    // Caret: between an empty pair, otherwise after the inserted text
+    const caret = sym.close !== undefined && selected.length === 0 ? start + sym.insert.length : start + piece.length;
+    requestAnimationFrame(() => {
+      ta?.focus();
+      ta?.setSelectionRange(caret, caret);
+    });
   };
 
   // Apply transformed grammar handler
@@ -346,6 +391,7 @@ export const App: React.FC = () => {
 
               <textarea
                 id="grammar-editor"
+                ref={editorRef}
                 className="grammar-textarea"
                 style={{ flex: 1, minHeight: '220px' }}
                 value={grammarText}
@@ -353,7 +399,40 @@ export const App: React.FC = () => {
                 placeholder={t.editorPlaceholder}
                 spellCheck={false}
               />
+
+              {/* Symbol palette: arrow, alternative separator, ε, ... without a keyboard */}
+              <div className="symbol-palette" role="toolbar" aria-label={t.symbolPaletteLabel}>
+                {EDITOR_SYMBOLS.map(sym => (
+                  <button
+                    key={sym.label}
+                    type="button"
+                    className="symbol-key"
+                    title={lang === 'cz' ? sym.titleCz : sym.titleEn}
+                    aria-label={lang === 'cz' ? sym.titleCz : sym.titleEn}
+                    // keep the caret in the editor (mouse and touch)
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => insertSymbol(sym)}
+                  >
+                    {sym.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Detected input format and notes on how it was read */}
+            {parseResult.info.length > 0 && (
+              <div className="notice-box info">
+                <div className="notice-title">
+                  <Info size={15} />
+                  <span>{t.formatTitle}: {t.formatNames[parseResult.dialect]}</span>
+                </div>
+                <ul>
+                  {parseResult.info.map((n, idx) => (
+                    <li key={idx}>{msg(n)}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Parse Errors (block the analysis) */}
             {parseResult.errors.length > 0 && (
@@ -397,6 +476,8 @@ export const App: React.FC = () => {
               <div>{t.syntaxEps}</div>
               <div>{t.syntaxAlts}</div>
               <div>{t.syntaxComments}</div>
+              <div>{t.syntaxCompact}</div>
+              <div>{t.syntaxFormats}</div>
             </div>
           </div>
         </aside>

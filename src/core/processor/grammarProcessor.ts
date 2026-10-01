@@ -263,13 +263,13 @@ export function reduceGrammar(g: Grammar): TransformationResult {
 
   steps.push({
     title: 'Phase 1: Remove Non-Generating (Unproductive) Symbols',
-    titleCz: 'Fáze 1: Odstranění negenerujících (neukončitelných) symbolů',
+    titleCz: 'Fáze 1: Odstranění nenormovaných (negenerujících) neterminálů',
     description: `Generating non-terminals N_gen = ${fmtSet(genNts, '∅')}. Non-generating: ${fmtSet(nonGenerating, 'none')}.` +
       (emptyLanguage ? ` The start symbol '${g.startSymbol}' is not generating, hence L(G) = ∅.` : ''),
-    descriptionCz: `Generující neterminály N_gen = ${fmtSet(genNts, '∅')}. Negenerující: ${fmtSet(nonGenerating, 'žádné')}.` +
-      (emptyLanguage ? ` Počáteční symbol '${g.startSymbol}' není generující, proto L(G) = ∅.` : ''),
+    descriptionCz: `Normované neterminály N_gen = ${fmtSet(genNts, '∅')}. Nenormované: ${fmtSet(nonGenerating, 'žádné')}.` +
+      (emptyLanguage ? ` Počáteční symbol '${g.startSymbol}' je nenormovaný, proto L(G) = ∅.` : ''),
     mathExplanation: 'N_gen is the least fixed point of N_gen = { A | A -> α ∈ P, α ∈ (N_gen ∪ T)* }. Every rule that contains a non-generating symbol is useless.',
-    mathExplanationCz: 'N_gen je nejmenší pevný bod N_gen = { A | A -> α ∈ P, α ∈ (N_gen ∪ T)* }. Každé pravidlo obsahující negenerující symbol je zbytečné.',
+    mathExplanationCz: 'N_gen je nejmenší pevný bod N_gen = { A | A -> α ∈ P, α ∈ (N_gen ∪ T)* }. Každé pravidlo obsahující nenormovaný neterminál je zbytečné.',
     removedRules: removed1.map(formatProduction)
   });
 
@@ -323,7 +323,7 @@ export function removeEpsilonRules(g: Grammar): TransformationResult {
   const nullable = computeNullable(g);
   steps.push({
     title: 'Identify Nullable Non-Terminals',
-    titleCz: 'Nalezení nulovatelných neterminálů',
+    titleCz: 'Výpočet množiny N_ε (neterminály generující ε)',
     description: `N_ε = ${fmtSet(nullable, '∅')}.`,
     descriptionCz: `N_ε = ${fmtSet(nullable, '∅')}.`,
     mathExplanation: 'N_ε is the least fixed point of N_ε = { A | A -> α ∈ P, α ∈ N_ε* }, i.e. the non-terminals with A ⇒* ε.',
@@ -354,9 +354,9 @@ export function removeEpsilonRules(g: Grammar): TransformationResult {
 
   steps.push({
     title: 'Replace Rules by Their Nullable Variants',
-    titleCz: 'Náhrada pravidel variantami bez nulovatelných symbolů',
+    titleCz: 'Náhrada pravidel variantami s vypuštěnými symboly z N_ε',
     description: 'Every rule A -> X1 … Xn is replaced by all variants obtained by omitting any subset of nullable occurrences Xi ∈ N_ε; empty variants and the ε-rules are dropped.',
-    descriptionCz: 'Každé pravidlo A -> X1 … Xn je nahrazeno všemi variantami vzniklými vynecháním libovolné podmnožiny nulovatelných výskytů Xi ∈ N_ε; prázdné varianty a ε-pravidla se vypustí.',
+    descriptionCz: 'Každé pravidlo A -> X1 … Xn je nahrazeno pravidly vzniklými všemi možnými způsoby vypuštění symbolů z N_ε na jeho pravé straně; vznikající pravidla tvaru A -> ε a původní ε-pravidla se do gramatiky nezařadí.',
     removedRules: epsRules.map(formatProduction),
     addedRules: rules.filter(r => !originalKeys.has(`${r.lhs}\u0001${altKey(r.rhs)}`)).map(r => fmtRule(r.lhs, r.rhs))
   });
@@ -462,7 +462,7 @@ export function removeUnitRules(g: Grammar): TransformationResult {
     title: 'Replace Unit Chains by Non-Unit Rules',
     titleCz: 'Náhrada řetězců jednoduchých pravidel nejednoduchými pravidly',
     description: `Removed all ${unitRules.length} rule(s) of the form A -> B.`,
-    descriptionCz: `Odstraněno všech ${unitRules.length} pravidel tvaru A -> B.`,
+    descriptionCz: `Odstraněna jednoduchá pravidla tvaru A -> B (počet: ${unitRules.length}).`,
     removedRules: unitRules.map(formatProduction),
     addedRules: rules.filter(r => !originalKeys.has(`${r.lhs}\u0001${altKey(r.rhs)}`)).map(r => fmtRule(r.lhs, r.rhs))
   });
@@ -517,9 +517,9 @@ export function removeLeftRecursion(g: Grammar): TransformationResult {
     current = ng.grammar;
     steps.push({
       title: 'Preprocessing: Remove Non-Generating Symbols',
-      titleCz: 'Příprava: odstranění negenerujících symbolů',
+      titleCz: 'Příprava: odstranění nenormovaných neterminálů',
       description: `${fmtSet(ng.removed, '')} derive no terminal word; their rules are useless and are removed first.`,
-      descriptionCz: `${fmtSet(ng.removed, '')} negenerují žádné terminální slovo; jejich pravidla jsou zbytečná a odstraní se nejprve.`,
+      descriptionCz: `${fmtSet(ng.removed, '')} jsou nenormované (negenerují žádné terminální slovo); jejich pravidla jsou zbytečná a odstraní se nejprve.`,
       removedRules: ng.removedRules.map(formatProduction),
       intermediateGrammar: cloneGrammar(current)
     });
@@ -533,7 +533,7 @@ export function removeLeftRecursion(g: Grammar): TransformationResult {
       title: 'Preprocessing: Eliminate ε-Rules',
       titleCz: 'Příprava: odstranění ε-pravidel',
       description: 'Paull\'s algorithm requires an ε-free grammar, otherwise left recursion can hide behind a nullable prefix (A -> B A α with B ⇒* ε).',
-      descriptionCz: 'Paullův algoritmus vyžaduje gramatiku bez ε-pravidel, jinak se levá rekurze může skrývat za nulovatelným prefixem (A -> B A α, kde B ⇒* ε).',
+      descriptionCz: 'Paullův algoritmus vyžaduje gramatiku bez ε-pravidel, jinak se levá rekurze může skrývat za prefixem, z něhož lze odvodit ε (A -> B A α, kde B ⇒* ε).',
       removedRules: eps.steps.flatMap(s => s.removedRules || []),
       addedRules: eps.steps.flatMap(s => s.addedRules || []),
       intermediateGrammar: cloneGrammar(current)
@@ -629,7 +629,7 @@ export function removeLeftRecursion(g: Grammar): TransformationResult {
         title: `${Ai} Generates No Word`,
         titleCz: `${Ai} negeneruje žádné slovo`,
         description: `All rules of ${Ai} begin with ${Ai}, so ${Ai} is not generating and its rules are removed.`,
-        descriptionCz: `Všechna pravidla ${Ai} začínají ${Ai}, ${Ai} tedy není generující a jeho pravidla se odstraní.`,
+        descriptionCz: `Všechna pravidla ${Ai} začínají ${Ai}, ${Ai} je tedy nenormovaný a jeho pravidla se odstraní.`,
         removedRules: aiRules.map(r => fmtRule(Ai, r))
       });
       continue;
@@ -873,7 +873,7 @@ export function convertToChomsky(g: Grammar): TransformationResult {
   current = table.toGrammar(current.startSymbol);
   steps.push({
     title: 'CNF 6/6: Binarize Rules of Length ≥ 3',
-    titleCz: 'CNF 6/6: Binarizace pravidel délky ≥ 3',
+    titleCz: 'CNF 6/6: Rozklad pravidel délky ≥ 3 na dvojice',
     description: binRemoved.length > 0
       ? 'A -> X1 X2 … Xn (n ≥ 3) becomes A -> X1 C_1, C_1 -> X2 C_2, …, C_(n-2) -> X(n-1) Xn; rules with the same suffix share the chain.'
       : 'All rules already have length ≤ 2.',
@@ -1062,8 +1062,8 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
       type: 'eliminateImmediateLeftRecursion',
       labelEn: `Eliminate Immediate Left Recursion (${nt} -> ${nt} α | β)`,
       labelCz: `Odstranit přímou levou rekurzi (${nt} -> ${nt} α | β)`,
-      descriptionEn: `Replaces the left-recursive rules of '${nt}' by right-recursive rules of a fresh symbol '${nt}''.`,
-      descriptionCz: `Nahradí levorekurzivní pravidla '${nt}' pravorekurzivními pravidly nového symbolu '${nt}''.`
+      descriptionEn: `Replaces the left-recursive rules of '${nt}' by right-recursive rules of a new non-terminal '${nt}''.`,
+      descriptionCz: `Nahradí levorekurzivní pravidla '${nt}' pravorekurzivními pravidly nového neterminálu '${nt}''.`
     });
   }
 
@@ -1085,9 +1085,9 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
         id: `leftFactor:${prefixKey}`,
         type: 'leftFactor',
         labelEn: `Left Factorize prefix '${prefixKey}' (${matchCount} rules)`,
-        labelCz: `Levá faktorizace předpony '${prefixKey}' (${matchCount} pravidla)`,
+        labelCz: `Levá faktorizace prefixu '${prefixKey}' (počet pravidel: ${matchCount})`,
         descriptionEn: `Extracts common prefix '${prefixKey}' from ${matchCount} alternatives of '${nt}' into new non-terminal.`,
-        descriptionCz: `Vytkne společnou předponu '${prefixKey}' z ${matchCount} alternativ symbolu '${nt}' do nového neterminálu.`,
+        descriptionCz: `Vytkne společný prefix '${prefixKey}' alternativ neterminálu '${nt}' (počet: ${matchCount}) a zavede nový neterminál.`,
         details: { prefix: cp }
       });
     }
@@ -1100,7 +1100,7 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
       id: 'eliminateEpsilon',
       type: 'eliminateEpsilon',
       labelEn: `Eliminate Epsilon Rule (${nt} -> ε)`,
-      labelCz: `Odstranit pravidlo pro prázdné slovo (${nt} -> ε)`,
+      labelCz: `Odstranit ε-pravidlo (${nt} -> ε)`,
       descriptionEn: `Removes '${nt} -> ε' and adds variants omitting '${nt}' to the rules that reference it.`,
       descriptionCz: `Odstraní '${nt} -> ε' a k pravidlům, která na '${nt}' odkazují, přidá varianty bez '${nt}'.`
     });
@@ -1130,10 +1130,10 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
     available.push({
       id: `expandLeadingNT:${leadingNt}`,
       type: 'expandLeadingNT',
-      labelEn: `Expand Leading Non-Terminal '${leadingNt}' in ${nt} -> ${leadingNt} ...`,
-      labelCz: `Rozvinout úvodní neterminál '${leadingNt}' v ${nt} -> ${leadingNt} ...`,
+      labelEn: `Eliminate the rules ${nt} -> ${leadingNt} … (substitute ${leadingNt} at the start)`,
+      labelCz: `Eliminovat pravidla ${nt} -> ${leadingNt} … (dosadit za úvodní ${leadingNt})`,
       descriptionEn: `Substitutes the rules of '${leadingNt}' into the leading position of '${nt}' rules.`,
-      descriptionCz: `Dosadí pravidla neterminálu '${leadingNt}' na první pozici v pravidlech symbolu '${nt}'.`,
+      descriptionCz: `Pravidla ${nt} -> ${leadingNt} β nahradí pravidly ${nt} -> γ β pro všechny pravé strany γ pravidel neterminálu '${leadingNt}'.`,
       details: { leadingNt }
     });
   }
@@ -1145,9 +1145,9 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
       id: 'substitute',
       type: 'substitute',
       labelEn: `Substitute / Inline '${nt}' into Referencing Rules`,
-      labelCz: `Substituovat / dosadit '${nt}' do odkazujících pravidel`,
+      labelCz: `Dosadit '${nt}' do pravidel, ve kterých se vyskytuje`,
       descriptionEn: `Replaces all occurrences of '${nt}' in other rules with its ${ntProds.length} alternatives.`,
-      descriptionCz: `Nahradí všechny výskyty '${nt}' v ostatních pravidlech jeho ${ntProds.length} alternativami.`
+      descriptionCz: `Nahradí každý výskyt '${nt}' v pravidlech ostatních neterminálů každou z jeho pravých stran (počet: ${ntProds.length}).`
     });
   }
 
@@ -1156,10 +1156,10 @@ export function getAvailableTransformationsForSymbol(g: Grammar, nt: string): Av
     available.push({
       id: 'removeUnproductive',
       type: 'removeUnproductive',
-      labelEn: `Remove Unproductive (Non-Generating) Symbol '${nt}'`,
-      labelCz: `Odstranit neukončitelný (negenerující) symbol '${nt}'`,
+      labelEn: `Remove the non-generating non-terminal '${nt}'`,
+      labelCz: `Odstranit nenormovaný neterminál '${nt}'`,
       descriptionEn: `Symbol '${nt}' cannot derive any terminal word. Removes '${nt}' and all rules containing it.`,
-      descriptionCz: `Symbol '${nt}' nemůže odvodit žádné terminální slovo. Odstraní '${nt}' a všechna pravidla, která jej obsahují.`
+      descriptionCz: `Z neterminálu '${nt}' nelze odvodit žádný terminální řetězec. Odstraní '${nt}' a všechna pravidla, která jej obsahují.`
     });
   }
 
@@ -1335,7 +1335,7 @@ export function eliminateEpsilonForSymbol(g: Grammar, nt: string): Transformatio
     transformedGrammar: result,
     steps: [{
       title: `Eliminate Epsilon Rule ${nt} -> ε`,
-      titleCz: `Odstranění pravidla pro prázdné slovo ${nt} -> ε`,
+      titleCz: `Odstranění ε-pravidla ${nt} -> ε`,
       description: `Removed '${nt} -> ε' and added, for every rule containing '${nt}', the variants that omit some of its occurrences.${epsNote}${startNote}`,
       descriptionCz: `Odstraněno '${nt} -> ε' a ke každému pravidlu obsahujícímu '${nt}' přidány varianty, které některé jeho výskyty vynechávají.${epsNoteCz}${startNoteCz}`,
       mathExplanation: `For every rule B -> α ${nt} β add B -> α β (for all combinations of occurrences).`,
@@ -1430,9 +1430,9 @@ export function substituteSymbol(g: Grammar, nt: string): TransformationResult {
     transformedGrammar: result,
     steps: [{
       title: `Substitute / Inline ${nt} into referencing rules`,
-      titleCz: `Substituce / dosazení ${nt} do odkazujících pravidel`,
+      titleCz: `Dosazení ${nt} do pravidel, ve kterých se vyskytuje`,
       description: `Every occurrence of '${nt}' in the rules of other non-terminals was replaced by each of its ${ntRules.length} alternative(s).`,
-      descriptionCz: `Každý výskyt '${nt}' v pravidlech ostatních neterminálů byl nahrazen každou z jeho ${ntRules.length} alternativ.`,
+      descriptionCz: `Každý výskyt '${nt}' v pravidlech ostatních neterminálů byl nahrazen každou z jeho pravých stran (počet: ${ntRules.length}).`,
       mathExplanation: `For any rule B -> α ${nt} β, substitute ${nt} with each right-hand side of ${nt}.`,
       mathExplanationCz: `Pro každé pravidlo B -> α ${nt} β dosadíme za ${nt} každou pravou stranu ${nt}.`,
       removedRules: removed,
@@ -1473,10 +1473,10 @@ export function expandLeadingNonTerminalInSymbol(g: Grammar, nt: string, targetL
   return {
     transformedGrammar: result,
     steps: [{
-      title: `Expand leading non-terminal '${targetNtStr}' in ${nt}`,
-      titleCz: `Rozvinutí úvodního neterminálu '${targetNtStr}' v ${nt}`,
+      title: `Eliminate the rules ${nt} -> ${targetNtStr} …`,
+      titleCz: `Eliminace pravidel ${nt} -> ${targetNtStr} …`,
       description: `Expanded the leading occurrence of '${targetNtStr}' in the rules of '${nt}'.`,
-      descriptionCz: `Rozvinut úvodní výskyt '${targetNtStr}' v pravidlech neterminálu '${nt}'.`,
+      descriptionCz: `Za úvodní '${targetNtStr}' v pravidlech neterminálu '${nt}' byly dosazeny všechny pravé strany pravidel '${targetNtStr}'.`,
       mathExplanation: `${nt} -> ${targetNtStr} α, where ${targetNtStr} -> β₁ | β₂  ⟹  ${nt} -> β₁ α | β₂ α`,
       mathExplanationCz: `${nt} -> ${targetNtStr} α, kde ${targetNtStr} -> β₁ | β₂  ⟹  ${nt} -> β₁ α | β₂ α`,
       addedRules: added,
@@ -1497,12 +1497,12 @@ export function removeUnproductiveSymbol(g: Grammar, nt: string): Transformation
   return {
     transformedGrammar: result,
     steps: [{
-      title: `Remove Unproductive Symbol '${nt}'`,
-      titleCz: `Odstranění neukončitelného symbolu '${nt}'`,
+      title: `Remove the non-generating non-terminal '${nt}'`,
+      titleCz: `Odstranění nenormovaného neterminálu '${nt}'`,
       description: `Removed non-generating symbol '${nt}' and ${removedRules.length} rule(s) containing it.`,
-      descriptionCz: `Odstraněn negenerující symbol '${nt}' a ${removedRules.length} pravidel, která jej obsahovala.`,
+      descriptionCz: `Odstraněn nenormovaný neterminál '${nt}' a pravidla, která jej obsahovala (počet: ${removedRules.length}).`,
       mathExplanation: `A non-terminal is unproductive if it cannot derive any string of terminals: A ∉ N_gen.`,
-      mathExplanationCz: `Neterminál je neukončitelný, pokud z něj nelze odvodit žádný řetězec terminálů: A ∉ N_gen.`,
+      mathExplanationCz: `Neterminál A je nenormovaný, pokud z něj nelze odvodit žádný terminální řetězec: A ∉ N_gen.`,
       removedRules: removedRules.map(formatProduction),
       intermediateGrammar: cloneGrammar(result)
     }]
@@ -1523,7 +1523,7 @@ export function removeUnreachableSymbol(g: Grammar, nt: string): TransformationR
       title: `Remove Unreachable Symbol '${nt}'`,
       titleCz: `Odstranění nedosažitelného symbolu '${nt}'`,
       description: `Removed unreachable symbol '${nt}' and ${removedRules.length} rule(s) containing it.`,
-      descriptionCz: `Odstraněn nedosažitelný symbol '${nt}' a ${removedRules.length} pravidel, která jej obsahovala.`,
+      descriptionCz: `Odstraněn nedosažitelný symbol '${nt}' a pravidla, která jej obsahovala (počet: ${removedRules.length}).`,
       mathExplanation: `A symbol is unreachable if it cannot appear in any sentential form derived from S: A ∉ V_reach.`,
       mathExplanationCz: `Symbol je nedosažitelný, pokud se nemůže vyskytnout v žádné větné formě odvozené z S: A ∉ V_reach.`,
       removedRules: removedRules.map(formatProduction),

@@ -47,6 +47,10 @@ export interface LLTable {
   table1: Map<string, Map<string, Production[]>>; // nt -> terminal -> list of prods
   conflicts: LLConflict[];
   ll2Table?: Map<string, Map<string, Production[]>>; // nt -> 2-token string -> list of prods (strong LL(2))
+  /** Column order of the strong LL(2) table. */
+  ll2Columns: string[];
+  /** Aho–Ullman tables T(A, L) for k = 2 (T0 belongs to the start symbol). */
+  ll2Tables: LLkContextTable[];
   strongLL2Conflicts: LL2Conflict[];
   ll2Conflicts: LL2Conflict[];
 }
@@ -138,7 +142,7 @@ export function buildLLTable(g: Grammar, analysis: GrammarAnalysis): LLTable {
     }
   }
 
-  const exact = checkLLk(g, analysis.first2, 2);
+  const exact = buildLLkTables(g, analysis.first2, 2);
 
   return {
     isLL1,
@@ -150,6 +154,8 @@ export function buildLLTable(g: Grammar, analysis: GrammarAnalysis): LLTable {
     table1,
     conflicts,
     ll2Table,
+    ll2Columns: strongTableColumns(ll2Table),
+    ll2Tables: exact.tables,
     strongLL2Conflicts,
     ll2Conflicts: exact.conflicts
   };
@@ -171,62 +177,109 @@ export function concatK(left: Set<string>, right: Set<string>, k: number): Set<s
   return result;
 }
 
+/** One row of an LL(k) table T(A, L): lookahead u, the rule to expand and the tables of its non-terminals. */
+export interface LLkTableRow {
+  lookahead: string;
+  production: Production;
+  /** For every RHS symbol: id of the table T(B, L') of a non-terminal B, null for terminals. */
+  rhsTables: (number | null)[];
+}
+
+/** LL(k) table T(A, L) of Aho & Ullman: non-terminal A in the right context L. */
+export interface LLkContextTable {
+  id: number;
+  nonTerminal: string;
+  follow: string[];
+  rows: LLkTableRow[];
+}
+
 /**
- * Aho–Ullman LL(k) test. For every reachable pair (A, L), where L is a local
- * follow set FIRST_k(α) of a left-sentential form w A α, the sets
- * FIRST_k(β) ⊕_k L of the alternatives A → β must be pairwise disjoint.
+ * Aho–Ullman LL(k) tables. For every reachable pair (A, L), where L is a
+ * local follow set FIRST_k(α) of a left-sentential form w A α, the table
+ * T(A, L) maps u ∈ FIRST_k(β) ⊕_k L to the alternative A → β. The grammar is
+ * LL(k) iff no table maps one u to two alternatives.
  */
+export function buildLLkTables(
+  g: Grammar,
+  firstK: Map<string, Set<string>>,
+  k: number
+): { tables: LLkContextTable[]; conflicts: LL2Conflict[]; complete: boolean } {
+  const tables: LLkContextTable[] = [];
+  const conflicts: LL2Conflict[] = [];
+  const ids = new Map<string, number>();
+
+  const tableFor = (nt: string, follow: Set<string>): number | null => {
+    const sorted = [...follow].sort();
+    const key = `${nt}|${sorted.join(',')}`;
+    const known = ids.get(key);
+    if (known !== undefined) return known;
+    if (tables.length >= MAX_LL2_CONTEXTS) return null;
+    const id = tables.length;
+    ids.set(key, id);
+    tables.push({ id, nonTerminal: nt, follow: sorted, rows: [] });
+    return id;
+  };
+
+  tableFor(g.startSymbol, new Set([END_MARKER]));
+  let complete = true;
+
+  for (let head = 0; head < tables.length; head++) {
+    const table = tables[head];
+    const follow = new Set(table.follow);
+    const owner = new Map<string, Production[]>();
+
+    for (const p of g.productions.filter(q => q.lhs === table.nonTerminal)) {
+      const rhsTables = p.rhs.map((sym, i) => {
+        if (!g.nonTerminals.has(sym)) return null;
+        const id = tableFor(sym, concatK(firstKOfString(p.rhs.slice(i + 1), firstK, k), follow, k));
+        if (id === null) complete = false;
+        return id;
+      });
+      for (const la of [...concatK(firstKOfString(p.rhs, firstK, k), follow, k)].sort()) {
+        table.rows.push({ lookahead: la, production: p, rhsTables });
+        if (!owner.has(la)) owner.set(la, []);
+        owner.get(la)!.push(p);
+      }
+    }
+
+    for (const [la, ps] of owner.entries()) {
+      if (ps.length > 1) {
+        conflicts.push({ nonTerminal: table.nonTerminal, lookahead: la, productions: ps, context: table.follow });
+      }
+    }
+  }
+
+  return { tables, conflicts, complete };
+}
+
+/** The exact LL(k) test (see buildLLkTables). */
 export function checkLLk(
   g: Grammar,
   firstK: Map<string, Set<string>>,
   k: number
 ): { conflicts: LL2Conflict[]; complete: boolean } {
-  const conflicts: LL2Conflict[] = [];
-  const reported = new Set<string>();
-  const visited = new Set<string>();
-  const queue: { nt: string; follow: Set<string> }[] = [{ nt: g.startSymbol, follow: new Set([END_MARKER]) }];
-  visited.add(`${g.startSymbol}|${END_MARKER}`);
-  let head = 0;
+  const { conflicts, complete } = buildLLkTables(g, firstK, k);
+  return { conflicts, complete };
+}
 
-  while (head < queue.length) {
-    if (head >= MAX_LL2_CONTEXTS) {
-      return { conflicts, complete: false };
-    }
-    const { nt, follow } = queue[head++];
-    const prods = g.productions.filter(p => p.lhs === nt);
-
-    // Disjointness of the lookahead sets of the alternatives in this context
-    const owner = new Map<string, Production[]>();
-    for (const p of prods) {
-      for (const la of concatK(firstKOfString(p.rhs, firstK, k), follow, k)) {
-        if (!owner.has(la)) owner.set(la, []);
-        owner.get(la)!.push(p);
-      }
-    }
-    for (const [la, ps] of owner.entries()) {
-      if (ps.length > 1) {
-        const key = `${nt}|${la}|${ps.map(p => p.id).join(',')}`;
-        if (!reported.has(key)) {
-          reported.add(key);
-          conflicts.push({ nonTerminal: nt, lookahead: la, productions: ps, context: [...follow].sort() });
-        }
-      }
-    }
-
-    // Local follow sets of the non-terminals on the right-hand sides
-    for (const p of prods) {
-      for (let i = 0; i < p.rhs.length; i++) {
-        const B = p.rhs[i];
-        if (!g.nonTerminals.has(B)) continue;
-        const localFollow = concatK(firstKOfString(p.rhs.slice(i + 1), firstK, k), follow, k);
-        const key = `${B}|${[...localFollow].sort().join(',')}`;
-        if (!visited.has(key)) {
-          visited.add(key);
-          queue.push({ nt: B, follow: localFollow });
-        }
-      }
-    }
+/** Lookahead of length ≤ k taken from the remaining input (ends at the marker $). */
+export function lookaheadK(remaining: string[], k: number): string {
+  const out: string[] = [];
+  for (const t of remaining) {
+    out.push(t);
+    if (t === END_MARKER || out.length >= k) break;
   }
+  return out.join(' ');
+}
 
-  return { conflicts, complete: true };
+/** Columns of the strong LL(2) table: every lookahead that occurs, in a stable order. */
+export function strongTableColumns(table: Map<string, Map<string, Production[]>>): string[] {
+  const cols = new Set<string>();
+  for (const row of table.values()) for (const la of row.keys()) cols.add(la);
+  return [...cols].sort((a, b) => {
+    const ea = a.split(' ').includes(END_MARKER);
+    const eb = b.split(' ').includes(END_MARKER);
+    if (ea !== eb) return ea ? 1 : -1;
+    return a.localeCompare(b);
+  });
 }

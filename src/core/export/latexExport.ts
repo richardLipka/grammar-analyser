@@ -99,7 +99,7 @@ export function exportSetsToLatex(g: Grammar, analysis: GrammarAnalysis, lang: '
     '\\centering',
     '\\begin{tabular}{|c|c|l|l|}',
     '\\hline',
-    `\\textbf{${isCz ? 'Symbol' : 'Symbol'}} & \\textbf{${isCz ? 'Nulovatelný' : 'Nullable'}} & $\\mathrm{FIRST}_1$ & $\\mathrm{FOLLOW}_1$ \\\\ \\hline`
+    `\\textbf{${isCz ? 'Symbol' : 'Symbol'}} & \\textbf{${isCz ? 'Generuje $\\varepsilon$' : 'Nullable'}} & $\\mathrm{FIRST}_1$ & $\\mathrm{FOLLOW}_1$ \\\\ \\hline`
   ];
 
   for (const nt of g.nonTerminals) {

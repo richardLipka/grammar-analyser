@@ -235,7 +235,7 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
 
       <div className="graph-caption" title={frontier.join(' ')}>
         {isComplete
-          ? (isCz ? 'Výsledek (listy): ' : 'Yield (leaves): ')
+          ? (isCz ? 'Listy zleva doprava (výsledek): ' : 'Yield (leaves): ')
           : (isCz ? 'Větná forma (listy): ' : 'Sentential form (leaves): ')}
         <strong>{frontier.join(' ') || 'ε'}</strong>
       </div>

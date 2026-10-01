@@ -423,7 +423,7 @@ describe('Bilingual Output Support', () => {
     const lrTable = buildLRTable(lr0Aut, g, analysis);
 
     const latexSets = exportSetsToLatex(g, analysis, 'cz');
-    expect(latexSets).toContain('Nulovatelný');
+    expect(latexSets).toContain('Generuje');
     expect(latexSets).toContain('Ano');
     expect(latexSets).toContain('Množiny FIRST a FOLLOW pro gramatiku');
 

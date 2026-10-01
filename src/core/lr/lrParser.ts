@@ -31,6 +31,8 @@ export interface LRParseStep {
   isAccepted?: boolean;
   /** Number of actions in the ACTION cell when it holds a conflict (the first one is used). */
   conflictCount?: number;
+  /** Rule numbers of the reductions so far, including this step (right parse). */
+  rightParse: number[];
   /** Parse forest after the action (a single tree, or a synthetic root over the stack trees). */
   tree?: DerivationNode;
 }
@@ -59,6 +61,7 @@ export function simulateLRParse(
   let inputPtr = 0;
   let stepIndex = 0;
   let nodeCounter = 1;
+  const rightParse: number[] = [];
 
   const forest = (): DerivationNode | undefined => {
     if (treeStack.length === 0) return undefined;
@@ -80,7 +83,8 @@ export function simulateLRParse(
       symbolStack: [...symbolStack],
       remainingInput: input.slice(inputPtr),
       lookupState: currentState,
-      lookupSymbol: lookahead
+      lookupSymbol: lookahead,
+      rightParse: [...rightParse]
     };
 
     const availableActions = table.actionTable.get(currentState)?.get(lookahead) || [];
@@ -90,7 +94,7 @@ export function simulateLRParse(
         step: stepIndex++,
         ...config,
         action: `Error: ACTION[${currentState}, '${lookahead}'] is empty`,
-        actionCz: `Chyba: ACTION[${currentState}, '${lookahead}'] je prázdná`,
+        actionCz: `Chyba: ACTION[${currentState}, '${lookahead}'] je prázdná položka`,
         isError: true,
         tree: forest()
       });
@@ -118,7 +122,7 @@ export function simulateLRParse(
         step: stepIndex++,
         ...config,
         action: `Shift '${lookahead}', go to state ${targetState}${conflictNote}`,
-        actionCz: `Posun (shift) '${lookahead}', přechod do stavu ${targetState}${conflictNoteCz}`,
+        actionCz: `Přesun '${lookahead}', přechod do stavu ${targetState}${conflictNoteCz}`,
         conflictCount,
         tree: forest()
       });
@@ -162,6 +166,7 @@ export function simulateLRParse(
 
       stateStack.push(gotoState);
       symbolStack.push(prod.lhs);
+      rightParse.push(prod.id);
       treeStack.push({
         id: `lr_node_${nodeCounter++}`,
         symbol: prod.lhs,
@@ -175,12 +180,13 @@ export function simulateLRParse(
         step: stepIndex++,
         ...config,
         action: `Reduce by (${prod.id}) ${formatProduction(prod)}, GOTO[${topState}, ${prod.lhs}] = ${gotoState}${conflictNote}`,
-        actionCz: `Redukce podle (${prod.id}) ${formatProduction(prod)}, GOTO[${topState}, ${prod.lhs}] = ${gotoState}${conflictNoteCz}`,
+        actionCz: `Redukce podle (${prod.id}) ${formatProduction(prod)}, přechod GOTO[${topState}, ${prod.lhs}] = ${gotoState}${conflictNoteCz}`,
         production: prod,
         gotoState,
         gotoNt: prod.lhs,
         gotoFromState: topState,
         conflictCount,
+        rightParse: [...rightParse],
         tree: forest()
       });
       continue;
@@ -192,7 +198,7 @@ export function simulateLRParse(
       step: stepIndex++,
       ...config,
       action: 'Accept: the word belongs to L(G)',
-      actionCz: 'Přijetí (accept): slovo patří do L(G)',
+      actionCz: 'Přijetí: slovo patří do L(G)',
       isAccepted: true,
       conflictCount,
       tree: forest()

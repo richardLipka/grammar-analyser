@@ -70,7 +70,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           <BadgeItem
             label={t.isLL1}
             ok={llTable.isLL1}
-            detail={llTable.isLL1 ? t.passZeroConflicts : `${llTable.conflicts.length} ${t.conflictsCountSuffix}`}
+            detail={llTable.isLL1 ? t.passZeroConflicts : t.conflictsCount.replace('{count}', llTable.conflicts.length.toString())}
             targetHint={!llTable.isLL1 ? t.clickToViewErrors : t.clickToViewAnalyser}
             onClick={() => onNavigateToTab?.('ll')}
           />
@@ -82,7 +82,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 ? t.ll2ImpliedByLL1
                 : llTable.isLL2
                   ? (llTable.isStrongLL2 ? t.ll2StrongToo : t.ll2NotStrong)
-                  : `${llTable.ll2Conflicts.length} ${t.conflictsCountSuffix}`
+                  : t.conflictsCount.replace('{count}', llTable.ll2Conflicts.length.toString())
             }
             targetHint={!llTable.isLL2 ? t.clickToViewErrors : t.clickToViewAnalyser}
             onClick={() => onNavigateToTab?.('ll')}
@@ -93,8 +93,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               label={b.label}
               ok={b.table.isConflictFree}
               detail={b.table.isConflictFree
-                ? `${t.passZeroConflicts} · ${b.table.states.length} ${t.statesShort}`
-                : `${b.table.conflicts.length} ${t.conflictsCountSuffix} · ${b.table.states.length} ${t.statesShort}`}
+                ? `${t.passZeroConflicts} · ${t.statesN.replace('{count}', b.table.states.length.toString())}`
+                : `${t.conflictsCount.replace('{count}', b.table.conflicts.length.toString())} · ${t.statesN.replace('{count}', b.table.states.length.toString())}`}
               targetHint={!b.table.isConflictFree ? t.clickToViewErrors : t.clickToViewAnalyser}
               onClick={() => onNavigateToTab?.('lr', b.variant)}
             />

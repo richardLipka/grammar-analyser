@@ -152,3 +152,31 @@ Done:
 Suggested:
 - export of derivation sequences and LR item sets;
 - code-split the bundle (the build warns about a 535 kB chunk).
+
+## 4. Follow-up: input formats, LL(2) tables, Czech terminology
+
+- **Input formats.** These are tested in `src/test/formats.test.ts` with:
+  - the calculator from the Bison manual;
+  - GNU-style Yacc;
+  - an ANTLR 4 expression grammar in the style of *The Definitive ANTLR 4 Reference*;
+  - the JSON grammar from grammars-v4;
+  - textbook notation.
+- **ANTLR EBNF.** Groups and repetitions become auxiliary non-terminals, for example `prog_list → stat prog_list | ε`.
+- **KIV/FJP conventions.** The KIV/FJP lectures write the empty word as `e` and use compact rules such as `A → bSA`. Both are accepted:
+  - Bare `e` is ε again; quoted `"e"` stays a terminal.
+  - A compact rule is split into symbols when every left-hand side is a single capital letter.
+- **LL(2).**
+  - New preset: the strong LL(2) grammar G8 from the lectures.
+  - When a grammar is not LL(1), the LL(k) tab shows the strong LL(2) parse table M[A, xy]. When the strong table has conflicts, it also shows the Aho–Ullman tables T(A, L).
+  - The simulator switches between LL(1) and LL(2) and shows the left parse; the LR simulator shows the right parse.
+- **Czech terminology** now follows the KIV/FJP lectures and the Czech literature:
+  - *množina řídicích symbolů* (director set);
+  - *rozkladová tabulka*;
+  - *kolize FIRST-FIRST / FIRST-FOLLOW*;
+  - *Expanze / Srovnání / Přijetí*;
+  - *přesun / redukce*;
+  - *levý / pravý rozklad*;
+  - *silná LL(k)*;
+  - *nenormované* and *nedosažitelné* (useless) symbols;
+  - *ε-pravidla*, *jednoduchá pravidla*, *vlastní (upravená) gramatika*.
+- **Defaults.** The app starts in Czech with the light theme. An explicit choice of language or theme is remembered.
