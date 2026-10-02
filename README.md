@@ -61,6 +61,12 @@
   - Step-by-step explanations for all transformations, with the added/removed rules and the grammar after each step
   - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
   - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
+- **Check my transformation** (tab *Kontrola úpravy*, "Is my grammar the same?"):
+  - A student's grammar is compared with the grammar in the editor on all words up to a chosen length, shortest first, so the first difference found is a shortest counterexample, with the information which grammar generates it and its derivation tree
+  - Both grammars run as incremental Earley recognizers over a tree of prefixes; a prefix neither grammar can extend is not extended (25,000 words of the expression grammar up to length 12 in well under a second)
+  - The search runs in slices and asks after every 30 s whether to continue; stopped, it reports the lengths checked completely
+  - Agreement is reported as a hint only (equivalence of context-free grammars is undecidable)
+  - The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the violating rules
 - **Membership & CYK** (tab *Příslušnost slova a CYK*):
   - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
   - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)

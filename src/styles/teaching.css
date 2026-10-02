@@ -1903,3 +1903,90 @@
   margin-top: 10px;
   text-decoration: none;
 }
+
+/* Check my transformation */
+.equiv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.equiv-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.equiv-original {
+  min-height: 160px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  background-color: var(--color-bg-base);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.equiv-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.equiv-property {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 3px 6px;
+  font-size: 12.5px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.equiv-property.ok {
+  color: var(--color-success);
+  background-color: var(--color-success-subtle);
+}
+
+.equiv-property.fail {
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+.equiv-offending {
+  flex-basis: 100%;
+  padding-left: 22px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.equiv-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.equiv-controls input[type='number'] {
+  width: 60px;
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.equiv-controls .btn {
+  padding: 4px 12px;
+  font-size: 12.5px;
+}
+
+.equiv-job .job-status {
+  margin: 8px 0;
+  box-shadow: none;
+}

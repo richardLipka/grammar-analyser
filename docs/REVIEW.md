@@ -551,3 +551,24 @@ The automaton tab has three modes: the finished automaton, the construction step
 - covers the dispatching fallback (A → B C, B → C b | x, C → c).
 
 The P-code of the expression parser and of the fallback was also run by the interpreter's own CLI (`npm run cli`), with the same output, and the link was checked to load the program and the input in the deployed interpreter.
+
+## 16. Check my transformation ("Is my grammar the same?")
+
+`src/core/analyser/equivalence.ts`, `compareLanguagesSteps`, compares two languages length by length. Both grammars are incremental Earley recognizers, using only rules whose symbols all generate a word. A depth-first search over the prefixes extends a prefix only while at least one grammar can still complete it. The first word accepted by exactly one grammar is a shortest counterexample, the lexicographically first of its length.
+
+The search is a job, run like the analysis. After every 30 s it asks whether to continue; stopped, it reports the last length checked completely.
+
+When no difference is found, the tab says that this is only a hint: equivalence of context-free grammars is undecidable.
+
+`checkForm` checks the promised form exactly, with the violating rules:
+- reduced; ε-free (S → ε only when S is on no right-hand side); no unit rules;
+- no left recursion (all its kinds); left-factored; LL(1); CNF; GNF.
+
+The tab shows the original grammar, a field for the student's grammar ("start from the original" copies it), the form checks (updated live), and the comparison. A counterexample comes with its derivation tree in the grammar that generates it. The student's text is kept in App when switching tabs, and a result is marked outdated when either grammar changes.
+
+`src/test/equivalence.test.ts`:
+- a grammar against its left-recursion-free, CNF, GNF and LL(1) versions;
+- shortest counterexamples, including ε and a different alphabet;
+- 120 pairs of random grammars against a brute-force Earley check, and every grammar against its ε-free version;
+- stopping;
+- every property, also on the outputs of the transformations that promise it.

@@ -19,6 +19,7 @@ import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
+import { EquivalenceView } from './ui/views/EquivalenceView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { FavLogo } from './ui/components/FavLogo';
@@ -34,7 +35,7 @@ import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
-  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2, ClipboardCheck
 } from 'lucide-react';
 
 type TabId = UrlTab;
@@ -124,6 +125,8 @@ export const App: React.FC = () => {
   const [eChoice, setEChoice] = useState<EChoice | null>(setup.url.e ?? null);
   const eIsEpsilon = eChoice !== 'terminal';
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
+  // The student's grammar of the tab "Check my transformation" (kept when switching tabs)
+  const [checkText, setCheckText] = useState('');
   const editorRef = useRef<HTMLTextAreaElement>(null);
   // Text editing, or transformations by clicking symbols of the grammar
   const [editorMode, setEditorMode] = useState<'text' | 'click'>('text');
@@ -401,6 +404,7 @@ export const App: React.FC = () => {
     { id: 'overview', icon: <Eye size={15} />, label: t.tabOverview },
     { id: 'firstFollow', icon: <GitCommit size={15} />, label: t.tabFirstFollow },
     { id: 'transformations', icon: <Sparkles size={15} />, label: t.tabTransform },
+    { id: 'check', icon: <ClipboardCheck size={15} />, label: t.tabCheck },
     { id: 'll', icon: <Layers size={15} />, label: t.tabLL },
     { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR },
     { id: 'graph', icon: <Network size={15} />, label: t.tabGraph },
@@ -894,6 +898,10 @@ export const App: React.FC = () => {
                     onShowInfo={setInfoKey}
                     lang={lang}
                   />
+                )}
+
+                {activeTab === 'check' && (
+                  <EquivalenceView grammar={analyzedGrammar} text={checkText} onTextChange={setCheckText} eIsEpsilon={eIsEpsilon} lang={lang} />
                 )}
 
                 {activeTab === 'll' && (
