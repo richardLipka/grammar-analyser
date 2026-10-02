@@ -530,3 +530,24 @@ The automaton tab has three modes: the finished automaton, the construction step
 **Merges (for LALR(1), once LR(1) is known).** `mergeSteps` lists each LALR(1) state that merges several LR(1) states, with every item's lookaheads in each LR(1) state and their union. A conflict counts as created by the merge when none of the merged LR(1) states had a conflict on that symbol. The colliding lookaheads are marked in the union.
 
 `src/test/lrConstruction.test.ts` checks the creation order on 60 random grammars (LR(0) and LR(1)), and the classic grammar S → a A d | b B d | a B f | b A f, where the merge of the two c states creates the reduce/reduce conflicts on d and f.
+
+## 15. Recursive-descent parsers in PL/0 and Oberon
+
+`src/core/codegen/recursiveDescent.ts` generates a parser from an LL(1) grammar.
+
+**Input and output.** Every terminal is one input character: its own when it is a single printable ASCII character, otherwise a substitute letter. The input ends with `$`. Every non-terminal procedure chooses its rule by the director set, prints the rule number, and calls or checks the symbols of the right-hand side. The output is the left parse and `OK`, or `ERR` and the symbol where the error was found.
+
+**PL/0** has no `else`, `or` or parameters. The rule is therefore first chosen into a local variable `rule`, the expected terminal is passed in a global variable, and `? x` / `! v` are the character I/O REA/WRI of the course VM.
+
+**Nesting.** Neither PL/0 nor Oberon-07 has forward declarations. The procedures are nested along a depth-first search of the calls, and every call is checked to be visible: the procedure itself, an enclosing procedure, a local one, or an earlier sibling at some enclosing level. When a call is not visible, PL/0 uses one procedure `parse` with the non-terminal in a variable, and Oberon calls through procedure variables. Helper names (`want`, `num`, `rule`, …) are avoided regardless of case, because some student compilers ignore case.
+
+**P-code.** `src/core/codegen/pl0Compiler.ts` is a PL/0 compiler with Wirth's code generation: `JMP` over the nested procedures, `INT 0, 3 + vars`, and the course mnemonics `JMC`/`RET` and OPR 8–13 for the relations. A bug found by the tests: a nested procedure calling its enclosing procedure (factor → expression) was compiled before that procedure's body had an address. As in Wirth's compiler, a procedure's address is now its initial jump until the body is compiled.
+
+`src/core/codegen/pcodeVm.ts` runs the code in the browser and in the tests. The tab shows the PL/0, Oberon and P-code, the token characters, the output of a run, and a link that opens the P-code with its input in the KIV/FJP PL/0 interpreter. The program goes in the hash, `#code_b64=…&input=…`, so the length of the URL does not matter to the server.
+
+`src/test/recursiveDescent.test.ts`:
+- compiles and runs the parsers of the LL(1) presets and of random LL(1) grammars on every word up to length 4;
+- checks that a parser accepts exactly the words the Earley recognizer accepts, and prints the left parse of the LL(1) simulator;
+- covers the dispatching fallback (A → B C, B → C b | x, C → c).
+
+The P-code of the expression parser and of the fallback was also run by the interpreter's own CLI (`npm run cli`), with the same output, and the link was checked to load the program and the input in the deployed interpreter.

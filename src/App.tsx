@@ -18,6 +18,7 @@ import { LRView } from './ui/views/LRView';
 import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
+import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { FavLogo } from './ui/components/FavLogo';
@@ -33,7 +34,7 @@ import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
-  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2
 } from 'lucide-react';
 
 type TabId = UrlTab;
@@ -404,6 +405,7 @@ export const App: React.FC = () => {
     { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR },
     { id: 'graph', icon: <Network size={15} />, label: t.tabGraph },
     { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership },
+    { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
@@ -949,6 +951,17 @@ export const App: React.FC = () => {
                     defaultInput={sampleInput}
                     lang={lang}
                     onConvertToCNF={!isStale && canAnalyse ? () => applyWholeGrammar('cnf') : undefined}
+                  />
+                )}
+
+                {activeTab === 'rd' && (
+                  <RecursiveDescentView
+                    grammar={analyzedGrammar}
+                    analysis={analysisData.analysis}
+                    llTable={analysisData.llTable}
+                    defaultInput={sampleInput}
+                    lang={lang}
+                    onAttemptLL1={!isStale && canAnalyse ? () => applyWholeGrammar('ll1') : undefined}
                   />
                 )}
 

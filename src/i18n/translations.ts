@@ -142,6 +142,7 @@ export const TRANSLATIONS = {
     tabLR: 'LR(k) parsing',
     tabGraph: 'LR automaton',
     tabMembership: 'Membership & CYK',
+    tabRd: 'Recursive descent',
     tabWords: 'Word generator',
     tabLatex: 'LaTeX & export',
 
@@ -547,6 +548,7 @@ export const TRANSLATIONS = {
     tabLR: 'Analýza LR(k)',
     tabGraph: 'LR automat',
     tabMembership: 'Příslušnost slova a CYK',
+    tabRd: 'Rekurzivní sestup',
     tabWords: 'Generátor slov',
     tabLatex: 'LaTeX a export',
 
