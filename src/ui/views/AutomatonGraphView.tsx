@@ -5,6 +5,9 @@ import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { explainItem, explainLookahead, incomingEdges, itemsMovingOver, stateCreators } from '../../core/lr/lrExplain';
 import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
+import { constructionSteps, constructedSoFar, mergeSteps } from '../../core/lr/lrConstruction';
+import { ConstructionStepText, MergePanel } from '../components/LRConstructionPanel';
+import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { AutomatonGraphVisualizer, DisplayItem, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
 import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReason, formatItem } from '../components/LRExplanation';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
@@ -67,6 +70,35 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const activeTable = lr1Missing ? lalr1Table : { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table! }[selectedVariant];
 
   useEffect(() => setSelectedStateId(0), [activeAutomaton]);
+
+  // The finished automaton, its construction step by step, or the LR(1) → LALR(1) merges
+  const [mode, setMode] = useState<'final' | 'steps' | 'merge'>('final');
+  const steps = useMemo(() => constructionSteps(activeAutomaton), [activeAutomaton]);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(900);
+  useAutoPlay(playing && mode === 'steps', stepIdx, steps.length, speed, setStepIdx, () => setPlaying(false));
+  const merges = useMemo(
+    () => (selectedVariant === 'LALR(1)' && lr1Automaton && lr1Table ? mergeSteps(lalr1Automaton, lr1Automaton, lalr1Table, lr1Table) : []),
+    [selectedVariant, lalr1Automaton, lr1Automaton, lalr1Table, lr1Table]
+  );
+  const [mergeIdx, setMergeIdx] = useState(0);
+  const canMerge = selectedVariant === 'LALR(1)' && !!lr1Automaton && !!lr1Table;
+  useEffect(() => {
+    setStepIdx(0);
+    setMergeIdx(0);
+    setPlaying(false);
+    if (mode === 'merge' && !canMerge) setMode('final');
+  }, [activeAutomaton]);
+  const step = mode === 'steps' ? steps[Math.min(stepIdx, steps.length - 1)] : undefined;
+  const soFar = mode === 'steps' ? constructedSoFar(steps, stepIdx) : undefined;
+  // The state of the current step (or merge) is the one inspected
+  useEffect(() => {
+    if (step) setSelectedStateId(step.kind === 'goto' ? step.to : 0);
+  }, [step]);
+  useEffect(() => {
+    if (mode === 'merge' && merges[mergeIdx]) setSelectedStateId(merges[mergeIdx].lalrState);
+  }, [mode, mergeIdx, merges]);
   // A large automaton is not drawn unless asked for: dagre would block the page for a long time
   const [forceGraph, setForceGraph] = useState(false);
   useEffect(() => setForceGraph(false), [activeAutomaton]);
@@ -194,6 +226,67 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         </p>
       </div>
 
+      <div className="card construction-card">
+        <div className="construction-modes" role="group" aria-label={cz ? 'Zobrazení automatu' : 'View of the automaton'}>
+          <button type="button" className={`btn ${mode === 'final' ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={mode === 'final'} onClick={() => setMode('final')}>
+            {cz ? 'Hotový automat' : 'Finished automaton'}
+          </button>
+          <button type="button" className={`btn ${mode === 'steps' ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={mode === 'steps'} onClick={() => { setMode('steps'); setStepIdx(0); }}>
+            {cz ? 'Konstrukce krok za krokem' : 'Construction step by step'}
+          </button>
+          {selectedVariant === 'LALR(1)' && (
+            <button
+              type="button"
+              className={`btn ${mode === 'merge' ? 'btn-primary' : 'btn-secondary'}`}
+              aria-pressed={mode === 'merge'}
+              disabled={!canMerge}
+              title={canMerge ? undefined : (cz ? 'Automat LR(1) nebyl spočten' : 'The LR(1) automaton was not computed')}
+              onClick={() => { setMode('merge'); setMergeIdx(0); }}
+            >
+              {cz ? 'Sloučení LR(1) → LALR(1)' : 'Merging LR(1) → LALR(1)'}
+            </button>
+          )}
+        </div>
+        {mode === 'steps' && step && (
+          <>
+            {selectedVariant === 'LALR(1)' && (
+              <p className="hint-text" style={{ margin: '6px 0 0' }}>
+                {cz
+                  ? 'LALR(1) má stavy automatu LR(0); konstrukce ukazuje jejich vznik, dopředu prohlížené symboly jsou už výsledné (viz Sloučení LR(1) → LALR(1)).'
+                  : 'LALR(1) has the states of the LR(0) automaton; the construction shows how they arise, the lookaheads are already the final ones (see Merging LR(1) → LALR(1)).'}
+              </p>
+            )}
+            <SimulatorControls
+              stepIdx={stepIdx}
+              total={steps.length}
+              isPlaying={playing}
+              speed={speed}
+              lang={lang}
+              onStep={i => { setPlaying(false); setStepIdx(i); }}
+              onTogglePlay={() => {
+                if (!playing && stepIdx >= steps.length - 1) setStepIdx(0);
+                setPlaying(p => !p);
+              }}
+              onSpeed={setSpeed}
+            />
+            <ConstructionStepText automaton={activeAutomaton} step={step} index={stepIdx} total={steps.length} name={name} lang={lang} />
+          </>
+        )}
+        {mode === 'merge' && lr1Table && (
+          <MergePanel
+            merges={merges}
+            index={Math.min(mergeIdx, Math.max(0, merges.length - 1))}
+            onIndex={setMergeIdx}
+            lalrName={name}
+            lr1Name={id => stateLabel(lr1Table, id, layout)}
+            lr1States={lr1Automaton?.states.length ?? 0}
+            lalrStates={lalr1Automaton.states.length}
+            layout={layout}
+            lang={lang}
+          />
+        )}
+      </div>
+
       {lr1Missing && (
         <div className="notice-box warning" style={{ marginBottom: '12px' }}>
           <div className="notice-title">
@@ -242,6 +335,9 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
           lang={lang}
           itemHint={itemHint}
           lookaheadTip={withLookaheads ? lookaheadTip : undefined}
+          visibleStates={soFar?.states}
+          visibleEdges={soFar?.edges}
+          focusEdge={step?.kind === 'goto' && selectedStateId === step.to ? { from: step.from, symbol: step.symbol } : undefined}
         />
       )}
       {tip && <FloatingTip anchor={tip.anchor}>{tip.content}</FloatingTip>}

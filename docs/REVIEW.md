@@ -513,3 +513,20 @@ The tab shows the membership, the tree count, the trees with a pager, and the CY
 - membership against the Earley recognizer, and the tree count against an independent counter, on 120 random grammars and the presets: every listed tree yields the word, and its left parse replays to the word;
 - HMU Example 7.34 cell by cell;
 - CYK on the CNF of 80 random grammars against Earley.
+
+## 14. LR automaton construction step by step; LR(1) → LALR(1) merges
+
+`src/core/lr/lrConstruction.ts` reads the construction steps off the finished automaton. The builders take the states in order of their numbers and the symbols in a fixed order; a GOTO gives either the next number (a new state) or an existing state.
+
+`constructionSteps` lists the initial step, then every transition marked new or existing. `constructedSoFar` gives the states and transitions that exist after a step.
+
+The automaton tab has three modes: the finished automaton, the construction step by step, and the merges.
+
+**Construction step by step:**
+- player controls;
+- the explanation of the step: the items whose dot moves, the kernel, what CLOSURE adds, new or existing state;
+- the graph keeps the layout of the finished automaton and draws only what exists so far, with the transition of the step highlighted.
+
+**Merges (for LALR(1), once LR(1) is known).** `mergeSteps` lists each LALR(1) state that merges several LR(1) states, with every item's lookaheads in each LR(1) state and their union. A conflict counts as created by the merge when none of the merged LR(1) states had a conflict on that symbol. The colliding lookaheads are marked in the union.
+
+`src/test/lrConstruction.test.ts` checks the creation order on 60 random grammars (LR(0) and LR(1)), and the classic grammar S → a A d | b B d | a B f | b A f, where the merge of the two c states creates the reduce/reduce conflicts on d and f.

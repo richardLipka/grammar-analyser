@@ -85,6 +85,8 @@
   - Shift/Reduce and Reduce/Reduce conflict detection
   - Interactive SVG State Machine Graph (powered by Dagre) with kernel/closure items, conflict states, pan, zoom, and state inspection
   - The graph explains the construction: for the selected state it highlights the transition that created it, the other transitions into it, and in the predecessors the items whose dot moves over the entry symbol (they become its kernel); clicking an item goes to the state its transition leads to
+  - **Construction step by step** (LR(0), SLR(1), LALR(1) states, LR(1)): the initial state as CLOSURE of the initial item, then every GOTO in the order of the construction with the items whose dot moves, the kernel, what CLOSURE adds, and whether the state is new or exists already; the graph keeps its layout and shows the states and transitions created so far
+  - **Merging LR(1) → LALR(1)**: every merge of LR(1) states with the same core, with the lookaheads of each item in each LR(1) state and their union; a merge that creates a conflict none of the merged states had (the grammar is LR(1) but not LALR(1)) is marked with the colliding lookaheads
   - Hovering a lookahead (LR(1), LALR(1)) explains why it is there: carried over by a transition, $a \in \text{FIRST}(\beta)$ in the closure, passed on through a nullable $\beta$, or the end marker of the initial item; for LALR(1) also which merged LR(1) states have it
   - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
 - **University Teaching & Classroom Features**:

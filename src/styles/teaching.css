@@ -1740,3 +1740,89 @@
   margin-top: 6px;
   font-size: 12px;
 }
+
+/* LR construction step by step and LR(1) -> LALR(1) merges */
+.construction-card {
+  margin-bottom: 12px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.construction-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.construction-modes .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.construction-card .simulator-controls {
+  margin-top: 10px;
+}
+
+.construction-step {
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+
+.construction-step p {
+  margin: 4px 0 0;
+}
+
+.construction-step code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.construction-step-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.construction-badge {
+  padding: 1px 8px;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  border-radius: 10px;
+}
+
+.construction-badge.new {
+  color: var(--color-success);
+  background-color: var(--color-success-subtle);
+}
+
+.construction-badge.existing {
+  color: var(--graph-origin);
+  background-color: var(--graph-origin-subtle);
+}
+
+.construction-done {
+  font-weight: 700;
+  color: var(--color-success);
+}
+
+.merge-table td,
+.merge-table th {
+  font-size: 12px;
+}
+
+.merge-item,
+.merge-la {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.merge-conflict {
+  padding: 0 4px;
+  font-weight: 800;
+  color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+  border-radius: 3px;
+}

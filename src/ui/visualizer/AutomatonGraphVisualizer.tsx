@@ -36,6 +36,12 @@ interface AutomatonGraphVisualizerProps {
   itemHint?: (stateId: number, item: DisplayItem) => string;
   /** Tooltip body explaining a lookahead of an item */
   lookaheadTip?: (stateId: number, item: DisplayItem, lookahead: string) => React.ReactNode;
+  /** Step-by-step construction: only the states with a smaller number exist so far */
+  visibleStates?: number;
+  /** Step-by-step construction: the transitions that exist so far ("from|symbol") */
+  visibleEdges?: Set<string>;
+  /** The transition of the current step: highlighted instead of the one that created the selected state */
+  focusEdge?: { from: number; symbol: string };
 }
 
 export interface DisplayItem {
@@ -65,6 +71,7 @@ interface LayoutEdge {
   from: number;
   to: number;
   label: string;
+  symbols: string[];
   points: { x: number; y: number }[];
   labelPos: { x: number; y: number };
 }
@@ -114,7 +121,10 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
   nodeTitles,
   lang = 'en',
   itemHint,
-  lookaheadTip
+  lookaheadTip,
+  visibleStates,
+  visibleEdges,
+  focusEdge
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -166,7 +176,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
       const points = data?.points || [];
       const mid = points[Math.floor(points.length / 2)] || { x: 0, y: 0 };
       const labelPos = data && typeof data.x === 'number' && typeof data.y === 'number' ? { x: data.x, y: data.y } : mid;
-      return { from: e.from, to: e.to, label: e.symbols.join(', '), points, labelPos };
+      return { from: e.from, to: e.to, label: e.symbols.join(', '), symbols: e.symbols, points, labelPos };
     });
     const info = g.graph();
     return { nodes, edges, width: info.width || 800, height: info.height || 600 };
@@ -184,11 +194,16 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
   const origin = useMemo(() => {
     const selected = selectedStateId ?? null;
     const preds = new Map<number, string>();
+    // A construction step highlights its own transition (into a new or an existing state)
+    if (focusEdge) {
+      preds.set(focusEdge.from, focusEdge.symbol);
+      return { selected, creator: focusEdge.from, preds };
+    }
     if (selected !== null && automaton.states[selected]) {
       for (const e of incomingEdges(automaton, selected)) if (e.from !== selected) preds.set(e.from, e.symbol);
     }
     return { selected, creator: selected !== null ? creators[selected]?.from ?? null : null, preds };
-  }, [automaton, creators, selectedStateId]);
+  }, [automaton, creators, selectedStateId, focusEdge]);
 
   // Bring a newly selected state into view (no movement when it is already visible);
   // a new automaton is framed as a whole instead, so its first render reveals nothing
@@ -329,9 +344,14 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
 
         <g data-viewport="" transform={`translate(${view.x}, ${view.y}) scale(${view.k})`}>
           {edges.map(edge => {
-            const kind = edgeKind(edge);
+            const shown = visibleEdges ? edge.symbols.filter(sym => visibleEdges.has(`${edge.from}|${sym}`)) : edge.symbols;
+            if (shown.length === 0) return null;
+            const label = shown.join(', ');
+            const kind = focusEdge
+              ? (edge.from === focusEdge.from && shown.includes(focusEdge.symbol) && edge.to === origin.selected ? 'origin' : '')
+              : edgeKind(edge);
             const mid = edge.labelPos;
-            const labelW = edge.label.length * 7 + 12;
+            const labelW = label.length * 7 + 12;
             return (
               <g key={`edge_${edge.from}_${edge.to}`}>
                 <path
@@ -340,12 +360,12 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                   markerEnd={`url(#${markerId}-arrow${kind ? `-${kind}` : ''})`}
                 />
                 <rect className={`g-label-bg ${kind}`} x={mid.x - labelW / 2} y={mid.y - 9} width={labelW} height={18} rx={4} />
-                <text className={`g-label ${kind}`} x={mid.x} y={mid.y + 4} textAnchor="middle">{edge.label}</text>
+                <text className={`g-label ${kind}`} x={mid.x} y={mid.y + 4} textAnchor="middle">{label}</text>
               </g>
             );
           })}
 
-          {layout.nodes.map(node => {
+          {layout.nodes.filter(node => visibleStates === undefined || node.id < visibleStates).map(node => {
             const isSelected = selectedStateId === node.id;
             const isAccepting = !!node.state.isAccepting;
             const hasConflict = !!conflictStates?.has(node.id);
