@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
+import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
+import { explainItem, explainLookahead, incomingEdges, itemsMovingOver, stateCreators } from '../../core/lr/lrExplain';
 import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
-import { AutomatonGraphVisualizer, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
+import { AutomatonGraphVisualizer, DisplayItem, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
+import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReason, formatItem } from '../components/LRExplanation';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Network, Info, ArrowRight, AlertTriangle } from 'lucide-react';
 
@@ -11,6 +14,7 @@ type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
 interface AutomatonGraphViewProps {
   grammar: Grammar;
+  analysis: GrammarAnalysis;
   lr0Automaton: LRAutomaton;
   slr1Automaton: LRAutomaton;
   lalr1Automaton: LRAutomaton;
@@ -28,6 +32,7 @@ interface AutomatonGraphViewProps {
 
 export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   grammar,
+  analysis,
   lr0Automaton,
   slr1Automaton,
   lalr1Automaton,
@@ -70,12 +75,72 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const actColumns = lecture ? activeTable.fColumns : activeTable.terminals;
   const actTable = lecture ? activeTable.fTable : activeTable.actionTable;
   const nodeTitles = activeAutomaton.states.map(s => (lecture ? name(s.id) : `${t.stateLabel} ${s.id}`));
+  const cz = lang === 'cz';
+
+  // Explanations: where a state comes from, why an item and a lookahead are in it
+  const [tip, setTip] = useState<{ anchor: DOMRect; content: React.ReactNode } | null>(null);
+  useEffect(() => setTip(null), [activeAutomaton, selectedStateId]);
+  const creators = useMemo(() => stateCreators(activeAutomaton), [activeAutomaton]);
+  const ctx: ExplainContext = {
+    lang,
+    name,
+    lr1Name: id => (lecture ? stateLabel(lr1Table, id, layout) : `${id}`)
+  };
+  const gotoText = (from: number, sym: string, to: number) =>
+    lecture ? `g(${name(from)}, ${sym}) = ${name(to)}` : `GOTO(${from}, ${sym}) = ${to}`;
+
+  const itemHint = (stateId: number, it: DisplayItem): string => {
+    const reason = explainItem(activeAutomaton, stateId, it)[0];
+    const why = reason ? describeItemReason(reason, it, ctx) : '';
+    let where: string;
+    if (it.target !== undefined) {
+      where = `${gotoText(stateId, it.after[0], it.target)} — ${cz ? 'kliknutím přejdete do tohoto stavu' : 'click to go to this state'}`;
+    } else if (it.production.id === 0) {
+      where = cz ? 'Úplná položka S\' → S •: přijetí na konci vstupu.' : 'Complete item S\' → S •: accept at the end of the input.';
+    } else if (selectedVariant === 'LR(0)') {
+      where = cz ? 'Úplná položka: LR(0) redukuje bez ohledu na vstup.' : 'Complete item: LR(0) reduces whatever the input is.';
+    } else if (selectedVariant === 'SLR(1)') {
+      const follow = [...(analysis.follow1.get(it.lhs) || [])].join(', ');
+      where = cz ? `Úplná položka: SLR(1) redukuje při FOLLOW(${it.lhs}) = { ${follow} }.` : `Complete item: SLR(1) reduces on FOLLOW(${it.lhs}) = { ${follow} }.`;
+    } else {
+      where = cz ? `Úplná položka: redukce při dopředu prohlížených symbolech ${it.lookaheads?.join(', ')}.` : `Complete item: reduce on the lookaheads ${it.lookaheads?.join(', ')}.`;
+    }
+    return why ? `${why}\n${where}` : where;
+  };
+
+  const lookaheadTip = (stateId: number, it: DisplayItem, la: string) => (
+    <LookaheadExplanationView
+      explanation={explainLookahead(activeAutomaton, analysis, stateId, it.production, it.dotIndex, la, lr1Automaton)}
+      production={it.production}
+      dotIndex={it.dotIndex}
+      lookahead={la}
+      ctx={ctx}
+    />
+  );
+  const showTip = (e: React.SyntheticEvent<HTMLElement>, content: React.ReactNode) =>
+    setTip({ anchor: e.currentTarget.getBoundingClientRect(), content });
+
+  const creator = selectedState ? creators[selectedState.id] : null;
+  const otherIncoming = selectedState
+    ? incomingEdges(activeAutomaton, selectedState.id).filter(e => !creator || e.from !== creator.from)
+    : [];
+  const stateLink = (id: number) => (
+    <button type="button" className="lr-state-link" onClick={() => setSelectedStateId(id)}>
+      {lecture ? name(id) : `${t.stateLabel} ${id}`}
+    </button>
+  );
 
   // LR(0) and SLR(1) share the canonical LR(0) collection; LALR(1) has the same states with lookaheads.
   const sameStatesNote = selectedVariant === 'SLR(1)' || selectedVariant === 'LR(0)'
     ? t.graphSharedLR0
     : selectedVariant === 'LALR(1)'
-      ? t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString())
+      ? t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString()) +
+        // With a non-generating symbol FIRST(β a) can be empty: LR(1) has no item with an empty lookahead set
+        (lalr1Automaton.states.length < lr0Automaton.states.length
+          ? (lang === 'cz'
+            ? ` LR(0) má ${lr0Automaton.states.length} stavů: položky s prázdnou množinou dopředu prohlížených symbolů (kvůli nenormovanému symbolu je FIRST(β a) prázdná) v LR(1) nevznikají.`
+            : ` LR(0) has ${lr0Automaton.states.length} states: items with an empty lookahead set (FIRST(β a) is empty because of a non-generating symbol) do not arise in LR(1).`)
+          : '')
       : '';
 
   return (
@@ -107,6 +172,14 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         <p className="hint-text">{t.graphDesc}</p>
         <p className="hint-text" style={{ marginTop: '4px' }}>{t.graphLegend}</p>
         <p className="hint-text" style={{ marginTop: '4px' }}>
+          {cz
+            ? 'Fialově: přechod, kterým vybraný stav vznikl (plně), další přechody do něj (čárkovaně) a v předchůdcích položky, v nichž se tečka posune přes vstupní symbol stavu – z nich vzniká jeho jádro. Kliknutím na položku přejdete do stavu, kam vede její přechod. '
+            : 'Purple: the transition that created the selected state (solid), other transitions into it (dashed), and in the predecessors the items whose dot moves over the entry symbol – they become its kernel. Click an item to go to the state its transition leads to. '}
+          {withLookaheads && (cz
+            ? 'Najetím myší na dopředu prohlížený symbol zobrazíte, proč do množiny patří.'
+            : 'Hover a lookahead to see why it is in the set.')}
+        </p>
+        <p className="hint-text" style={{ marginTop: '4px' }}>
           <strong>{t.statesCount}</strong> {activeAutomaton.states.length}
           {sameStatesNote && <> · {sameStatesNote}</>}
           {conflictStates.size > 0 && (
@@ -124,7 +197,10 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         conflictStates={conflictStates}
         nodeTitles={nodeTitles}
         lang={lang}
+        itemHint={itemHint}
+        lookaheadTip={withLookaheads ? lookaheadTip : undefined}
       />
+      {tip && <FloatingTip anchor={tip.anchor}>{tip.content}</FloatingTip>}
 
       {selectedState && (
         <div className="card" style={{ marginTop: '16px', border: '2px solid var(--color-primary)' }}>
@@ -134,6 +210,48 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               <span>{t.inspectingState.replace('{id}', name(selectedState.id))} {selectedState.id === 0 ? t.startState : ''}</span>
             </div>
             <span className="badge badge-primary">{selectedVariant}</span>
+          </div>
+
+          {/* How the state arises: GOTO of the creating predecessor, then the closure */}
+          <div className="lr-origin-box">
+            {creator === null ? (
+              <span>
+                {cz
+                  ? `Počáteční stav: uzávěr počáteční položky ${formatItem(activeAutomaton.augmentedProduction, 0)}.`
+                  : `Initial state: the closure of the initial item ${formatItem(activeAutomaton.augmentedProduction, 0)}.`}
+              </span>
+            ) : (
+              <>
+                <span>
+                  {cz ? 'Stav vznikl přechodem ' : 'The state was created by the transition '}
+                  <strong>{gotoText(creator.from, creator.symbol, selectedState.id)}</strong>
+                  {cz ? ' ze stavu ' : ' from state '}
+                  {stateLink(creator.from)}
+                  {cz ? `: v těchto položkách se tečka posune přes ${creator.symbol}` : `: the dot moves over ${creator.symbol} in these items`}
+                  {items.some(i => !i.isKernel)
+                    ? (cz ? ' a uzávěr pak přidá položky pod čarou.' : ', then the closure adds the items below the line.')
+                    : '.'}
+                </span>
+                <ul>
+                  {itemsMovingOver(activeAutomaton.states[creator.from], creator.symbol).map((it, i) => (
+                    <li key={i}>
+                      {formatItem(it.production, it.dotIndex)} ⟶ {formatItem(it.production, it.dotIndex + 1)}
+                    </li>
+                  ))}
+                </ul>
+                {otherIncoming.length > 0 && (
+                  <div style={{ marginTop: '4px' }}>
+                    {cz ? 'Do stavu vedou také: ' : 'Also entered by: '}
+                    {otherIncoming.map((e, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && ', '}
+                        {stateLink(e.from)} <span style={{ fontFamily: 'var(--font-mono)' }}>({gotoText(e.from, e.symbol, selectedState.id)})</span>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
@@ -147,31 +265,56 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                       {kind === 'kernel' ? t.kernelItems : t.closureItems}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {list.map((it, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: '12px',
-                            padding: '5px 10px',
-                            backgroundColor: 'var(--color-bg-base)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '12px',
-                            borderLeft: it.isComplete ? '3px solid var(--color-warning)' : '3px solid transparent'
-                          }}
-                        >
-                          <span>
-                            <span className="sym-nt">{it.lhs}</span>
-                            <span className="sym-arrow">→</span>
-                            {it.before.join(' ')} <strong style={{ color: 'var(--color-danger)' }}>•</strong> {it.after.join(' ')}
-                          </span>
-                          {it.lookaheads && (
-                            <span className="badge badge-primary" style={{ padding: '1px 6px' }}>{it.lookaheads.join(' / ')}</span>
-                          )}
-                        </div>
-                      ))}
+                      {list.map((it, idx) => {
+                        const navigable = it.target !== undefined;
+                        return (
+                          <div
+                            key={idx}
+                            className={`lr-item-row ${navigable ? 'navigable' : ''} ${it.isComplete ? 'complete' : ''}`}
+                            role={navigable ? 'button' : undefined}
+                            tabIndex={navigable ? 0 : undefined}
+                            onClick={navigable ? () => setSelectedStateId(it.target!) : undefined}
+                            onKeyDown={navigable ? (e) => {
+                              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                                e.preventDefault();
+                                setSelectedStateId(it.target!);
+                              }
+                            } : undefined}
+                          >
+                            <span>
+                              <span title={itemHint(selectedState.id, it)}>
+                                <span className="sym-nt">{it.lhs}</span>
+                                <span className="sym-arrow">→</span>
+                                {it.before.join(' ')} <strong style={{ color: 'var(--color-danger)' }}>•</strong> {it.after.join(' ')}
+                              </span>
+                              {it.lookaheads && (
+                                <span className="lr-la-list">
+                                  {it.lookaheads.map(la => (
+                                    <span
+                                      key={la}
+                                      className="lr-la"
+                                      tabIndex={0}
+                                      aria-label={cz ? `Proč ${la}` : `Why ${la}`}
+                                      onClick={e => e.stopPropagation()}
+                                      onMouseEnter={e => showTip(e, lookaheadTip(selectedState.id, it, la))}
+                                      onFocus={e => showTip(e, lookaheadTip(selectedState.id, it, la))}
+                                      onMouseLeave={() => setTip(null)}
+                                      onBlur={() => setTip(null)}
+                                    >
+                                      {la}
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
+                            </span>
+                            {navigable && (
+                              <span className="lr-item-target">
+                                {it.after[0]} <ArrowRight size={11} style={{ verticalAlign: '-1px' }} /> {lecture ? name(it.target!) : `${t.stateLabel} ${it.target}`}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );

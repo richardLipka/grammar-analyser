@@ -96,8 +96,23 @@ export function usePanZoom(
     window.addEventListener('pointerup', onUp);
   };
 
+  /** Pans so that a content rectangle is visible; does nothing when it already is. */
+  const reveal = useCallback((x: number, y: number, width: number, height: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    setView(v => {
+      const left = v.x + x * v.k;
+      const top = v.y + y * v.k;
+      const inside = left >= 0 && top >= 0 && left + width * v.k <= r.width && top + height * v.k <= r.height;
+      if (inside) return v;
+      return { k: v.k, x: r.width / 2 - (x + width / 2) * v.k, y: r.height / 2 - (y + height / 2) * v.k };
+    });
+  }, [containerRef]);
+
   /** True when the last pointer gesture was a drag (used to ignore the click that ends it). */
   const wasDragged = () => lastDragMoved.current;
 
-  return { view, fit, zoomBy, onPointerDown, isDragging, wasDragged };
+  return { view, fit, zoomBy, reveal, onPointerDown, isDragging, wasDragged };
 }

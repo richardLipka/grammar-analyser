@@ -77,6 +77,8 @@
   --graph-t-stroke: #34d399;
   --graph-t-text: #6ee7b7;
   --graph-reduce-text: #fbbf24;
+  --graph-origin: #c084fc;
+  --graph-origin-subtle: rgba(192, 132, 252, 0.22);
 }
 
 /* Light Theme: strong outlines and dark text for readability (also in exported images) */
@@ -128,6 +130,8 @@
   --graph-t-stroke: #166534;
   --graph-t-text: #14532d;
   --graph-reduce-text: #9a3412;
+  --graph-origin: #7e22ce;
+  --graph-origin-subtle: rgba(126, 34, 206, 0.14);
 }
 
 /* Projector / Lecture Mode (High-Contrast) */
@@ -175,6 +179,8 @@
   --graph-t-stroke: #005500;
   --graph-t-text: #004400;
   --graph-reduce-text: #7c2d12;
+  --graph-origin: #6b00b3;
+  --graph-origin-subtle: rgba(107, 0, 179, 0.16);
 
   font-size: 17px;
 }

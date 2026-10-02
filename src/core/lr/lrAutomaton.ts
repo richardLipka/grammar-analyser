@@ -20,6 +20,8 @@ export interface LRState {
   items1?: LR1Item[];
   transitions: Map<string, number>; // symbol -> targetStateId
   isAccepting?: boolean;
+  /** LALR(1): ids of the LR(1) states with the same core that were merged into this state */
+  mergedFrom?: number[];
 }
 
 /**
@@ -449,7 +451,8 @@ export function buildLALR1Automaton(g: Grammar, analysis: GrammarAnalysis): LRAu
       items0: mergedItems0,
       items1: mergedItems1,
       transitions: new Map(),
-      isAccepting: isMergedAccepting
+      isAccepting: isMergedAccepting,
+      mergedFrom: [...group]
     });
 
     newId++;

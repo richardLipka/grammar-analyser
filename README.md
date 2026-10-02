@@ -77,11 +77,13 @@
   - Strict LR(0): $S' \to S\bullet$ is a complete item, so it conflicts with a shift or another reduction in the same state (an LR(0) language is prefix-free)
   - Shift/Reduce and Reduce/Reduce conflict detection
   - Interactive SVG State Machine Graph (powered by Dagre) with kernel/closure items, conflict states, pan, zoom, and state inspection
+  - The graph explains the construction: for the selected state it highlights the transition that created it, the other transitions into it, and in the predecessors the items whose dot moves over the entry symbol (they become its kernel); clicking an item goes to the state its transition leads to
+  - Hovering a lookahead (LR(1), LALR(1)) explains why it is there: carried over by a transition, $a \in \text{FIRST}(\beta)$ in the closure, passed on through a nullable $\beta$, or the end marker of the initial item; for LALR(1) also which merged LR(1) states have it
   - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
 - **University Teaching & Classroom Features**:
   - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
-  - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button above the editor copies such a link
+  - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button below the editor copies such a link
   - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
   - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)

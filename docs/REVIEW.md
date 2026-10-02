@@ -335,3 +335,32 @@ The procedure:
 - **Also fails:** the lecture's absorption example.
 
 `src/test/ll1Transformer.test.ts` checks that the result is always equivalent and that success always means an LL(1) grammar, on the presets and on random grammars.
+
+## 10. The LR automaton explains its construction
+
+**Origin of a state.** When a state is selected, the graph highlights:
+- the transition that created it in purple; the construction processes the states in the order of their ids and the symbols in a fixed order, so this is the first transition into the state in that order (`stateCreators` in `src/core/lr/lrExplain.ts`);
+- the other transitions into the state, dashed;
+- in every predecessor, the items with the dot before the entry symbol. GOTO turns exactly these items into the kernel of the selected state.
+
+Below the graph, the state panel says the same in words. For example, "g(#, *) = * from state #: L → • * R ⟶ L → * • R, then the closure adds the items below the line". It also lists the other transitions into the state.
+
+**Navigation.** Clicking an item A → α • X β, in the graph or in the panel, selects GOTO(state, X). The graph pans only when that state is outside the view. Hovering an item shows why it is in the state (kernel: from which item of which predecessor; closure: which item has the dot before its left-hand side) and where it leads. For a complete item it shows when the item reduces: always in LR(0), on FOLLOW(A) in SLR(1), on its lookaheads in LR(1) and LALR(1).
+
+**Lookaheads.** Each lookahead is a separate symbol, and hovering it shows its reasons (`explainLookahead`):
+- **the initial item:** [S' → • S, $] is given by the construction;
+- **kernel item:** the lookahead is carried over unchanged from [A → α • X β, a] of a predecessor;
+- **closure item, FIRST:** a ∈ FIRST(β) for the item [A → α • B β];
+- **closure item, passed on:** β ⇒* ε (or β is empty), so the lookahead a of [A → α • B β, a] is passed on.
+
+The reasons are ordered by the order in which the closure reaches the items, so following the first reason never goes round in a circle. For LALR(1), the tooltip also names the merged LR(1) states and which of them has the lookahead (each LALR(1) state records its LR(1) states in `mergedFrom`).
+
+**Verification of the lookaheads** (`src/test/lrLookaheads.test.ts`):
+- **Independent LALR(1).** The LALR(1) sets are compared with the Dragon Book construction, which finds spontaneous and propagated lookaheads on the LR(0) kernels (Alg. 4.62/4.63). The comparison uses its own FIRST sets and closure and is made state by state, including the closure items.
+- **LR(1) merged by core.** Merging the LR(1) states by core gives the same sets.
+- **Every lookahead has a reason** and every item has a reason. The creating transition always comes from an earlier state and moves the dot in at least one item.
+- **Acceptance.** Conflict-free LR(1) and LALR(1) tables accept exactly the words the Earley recognizer accepts. A missing lookahead would reject a word.
+
+The tests run on all presets and 150 random grammars. Two one-off sweeps also passed: 4,000 random grammars, and 700 larger grammars (up to 5 non-terminals and 4 terminals, right-hand sides of up to 4 symbols). No lookahead was wrong.
+
+**A finding: non-generating symbols.** With a non-generating non-terminal, FIRST(β a) can be empty. Canonical LR(1) then has no item with an empty lookahead set, so its states need not correspond to the LR(0) states. For example, `S → S A | S`, `A → B S`, `B → c | c S A` gives 8 LR(0) states but only 5 LR(1) and LALR(1) states. Merging LR(1) by core then differs from the propagation algorithm on the LR(0) kernels, but only in states that no word reaches. The automaton screen says so when LALR(1) has fewer states than LR(0). The test compares the two constructions only for grammars whose non-terminals all generate a word.

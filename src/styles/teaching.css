@@ -429,6 +429,229 @@
   font-weight: 700;
 }
 
+/* Origin of the selected state: creating transition, other incoming transitions, predecessors */
+.g-edge.origin {
+  stroke: var(--graph-origin);
+  stroke-width: 3.5px;
+}
+
+.g-edge.incoming {
+  stroke: var(--graph-origin);
+  stroke-width: 2px;
+  stroke-dasharray: 6 4;
+}
+
+.g-arrow.origin,
+.g-arrow.incoming {
+  fill: var(--graph-origin);
+}
+
+.g-label-bg.origin,
+.g-label-bg.incoming {
+  stroke: var(--graph-origin);
+  stroke-width: 2px;
+}
+
+.g-label.origin,
+.g-label.incoming {
+  fill: var(--graph-origin);
+}
+
+.g-node.parent {
+  stroke: var(--graph-origin);
+  stroke-width: 3px;
+  stroke-dasharray: none;
+}
+
+.g-node.pred {
+  stroke: var(--graph-origin);
+  stroke-width: 2px;
+  stroke-dasharray: 6 3;
+}
+
+.g-node-header.parent {
+  fill: var(--graph-origin);
+}
+
+.g-item-hit {
+  fill: transparent;
+}
+
+.g-item-row.navigable:hover .g-item-hit {
+  fill: var(--color-primary-subtle);
+  stroke: var(--color-primary);
+  stroke-width: 1px;
+}
+
+.g-item-hit.origin {
+  fill: var(--graph-origin-subtle);
+  stroke: var(--graph-origin);
+  stroke-width: 1.5px;
+}
+
+.g-item-hit.origin.secondary {
+  stroke-dasharray: 3 2;
+}
+
+.g-item.origin {
+  fill: var(--graph-text);
+  font-weight: 700;
+}
+
+.g-item-la.explained {
+  cursor: help;
+}
+
+.g-item-la.explained:hover {
+  text-decoration: underline;
+}
+
+/* Explanation tooltip (lookaheads) */
+.lr-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--graph-origin);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.lr-hint {
+  white-space: pre-line;
+}
+
+.lr-explain-title {
+  margin-bottom: 4px;
+}
+
+.lr-explain-item {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.lr-explain ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.lr-explain li + li {
+  margin-top: 3px;
+}
+
+.lr-explain-also {
+  color: var(--color-text-muted);
+}
+
+.lr-explain-note {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.lr-explain-error {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+/* Details of the selected state */
+.lr-origin-box {
+  margin-bottom: 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--graph-origin);
+  background-color: var(--graph-origin-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+
+.lr-origin-box ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.lr-state-link {
+  padding: 0 4px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--graph-origin);
+  background: none;
+  border: none;
+  border-bottom: 1px dashed currentColor;
+  cursor: pointer;
+}
+
+.lr-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: left;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-base);
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.lr-item-row.complete {
+  border-left-color: var(--color-warning);
+}
+
+.lr-item-row.navigable {
+  cursor: pointer;
+}
+
+.lr-item-row.navigable:hover,
+.lr-item-row.navigable:focus-visible {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-subtle);
+}
+
+.lr-item-target {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lr-la-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-left: 8px;
+}
+
+.lr-la {
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background-color: var(--color-primary-subtle);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: help;
+}
+
+.lr-la:hover,
+.lr-la:focus-visible {
+  border-color: var(--graph-origin);
+  color: var(--graph-origin);
+}
+
 .g-closure-sep {
   stroke: var(--graph-node-stroke);
   stroke-width: 0.75px;

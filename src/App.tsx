@@ -916,6 +916,7 @@ export const App: React.FC = () => {
                 {activeTab === 'graph' && (
                   <AutomatonGraphView
                     grammar={analyzedGrammar}
+                    analysis={analysisData.analysis}
                     lr0Automaton={analysisData.lr0Automaton}
                     slr1Automaton={analysisData.slr1Automaton}
                     lalr1Automaton={analysisData.lalr1Automaton}
