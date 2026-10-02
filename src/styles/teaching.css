@@ -1600,3 +1600,143 @@
   background: none;
   font-style: italic;
 }
+
+/* Membership: trees of a word */
+.membership-tree-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.membership-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.membership-pager .btn {
+  padding: 3px 6px;
+}
+
+/* CYK table */
+.cyk-table {
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.cyk-table th {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.cyk-cell {
+  min-width: 56px;
+  height: 34px;
+  padding: 4px 6px;
+  text-align: center;
+  vertical-align: middle;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-base);
+  cursor: pointer;
+}
+
+.cyk-cell span + span::before {
+  content: ', ';
+}
+
+.cyk-cell:hover {
+  border-color: var(--color-primary);
+}
+
+.cyk-cell.selected {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  background-color: var(--color-primary-subtle);
+}
+
+.cyk-cell.witness {
+  background-color: var(--graph-origin-subtle);
+  outline: 2px solid var(--graph-origin);
+  outline-offset: -2px;
+}
+
+.cyk-cell.top {
+  border-width: 2px;
+}
+
+.cyk-empty {
+  color: var(--color-text-muted);
+}
+
+.cyk-start {
+  font-weight: 800;
+  color: var(--color-success);
+}
+
+.cyk-none {
+  border: none;
+}
+
+.cyk-word td {
+  padding: 4px 6px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--color-success);
+}
+
+.cyk-index {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.cyk-detail {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  background-color: var(--color-bg-base);
+  border-radius: var(--radius-sm);
+}
+
+.cyk-detail ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.cyk-detail li {
+  cursor: default;
+}
+
+.cyk-detail li:hover {
+  color: var(--graph-origin);
+}
+
+.cnf-rules {
+  margin-bottom: 10px;
+  font-size: 12.5px;
+}
+
+.cnf-rules summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.cnf-rule-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+}

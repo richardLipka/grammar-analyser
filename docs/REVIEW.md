@@ -496,3 +496,20 @@ A test compares the search with an independent count of derivation trees (a CYK-
 - **The word generator** is described as giving the words with the shortest derivations.
 
 New tests: `precedenceAmbiguity.test.ts`, `jobs.test.ts` and the oracle audit `audit.test.ts` (section 11).
+
+## 13. Membership and CYK tab
+
+`src/core/parser/membership.ts` decides membership for any grammar. D(A, i, j), "A derives w[i..j)", is computed for the parts of the word by increasing length, over whole right-hand sides cut into consecutive parts; within a part a fixpoint handles rules whose other symbols derive ε. The number of trees is counted the same way. A cycle within a part, where A derives itself over the same part, gives infinitely many trees.
+
+The trees are listed lazily, up to 20, without repeating a cycle. Each tree comes with its left parse. A rejected word is explained by an Earley recognizer: the longest prefix that some word of the language starts with.
+
+`src/core/parser/cyk.ts` checks CNF (S → ε only when S is on no right-hand side) and builds V(i, j) with a witness for every entry (A → a, or A → B C with the split point k).
+
+The tab shows the membership, the tree count, the trees with a pager, and the CYK table, in the triangle of Hopcroft, Motwani and Ullman (length 1 at the bottom). Clicking a cell explains it and marks the two cells of each witness. For a grammar not in CNF, the rules that violate CNF are listed, and the table of `convertToChomsky` can be shown, or the editor grammar converted.
+
+`src/test/membership.test.ts` checks:
+- the Catalan numbers 1, 2, 5, 14 for E → E + E | a;
+- an infinite count for S → S | a, and ε-rules;
+- membership against the Earley recognizer, and the tree count against an independent counter, on 120 random grammars and the presets: every listed tree yields the word, and its left parse replays to the word;
+- HMU Example 7.34 cell by cell;
+- CYK on the CNF of 80 random grammars against Earley.

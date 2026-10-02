@@ -141,6 +141,7 @@ export const TRANSLATIONS = {
     tabLL: 'LL(k) parsing',
     tabLR: 'LR(k) parsing',
     tabGraph: 'LR automaton',
+    tabMembership: 'Membership & CYK',
     tabWords: 'Word generator',
     tabLatex: 'LaTeX & export',
 
@@ -545,6 +546,7 @@ export const TRANSLATIONS = {
     tabLL: 'Analýza LL(k)',
     tabLR: 'Analýza LR(k)',
     tabGraph: 'LR automat',
+    tabMembership: 'Příslušnost slova a CYK',
     tabWords: 'Generátor slov',
     tabLatex: 'LaTeX a export',
 

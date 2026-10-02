@@ -61,6 +61,10 @@
   - Step-by-step explanations for all transformations, with the added/removed rules and the grammar after each step
   - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
   - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
+- **Membership & CYK** (tab *Příslušnost slova a CYK*):
+  - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
+  - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
+  - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle; a click on a cell lists $A \to B\,C$ with $B \in V(i, k)$, $C \in V(k{+}1, j)$ and marks the two cells; for another grammar the CYK table of an equivalent grammar in CNF on request
 - **Word Generator**:
   - BFS enumeration of the words with the shortest derivations in $L(G)$
   - Random derivation with guaranteed termination (minimal derivation heights)

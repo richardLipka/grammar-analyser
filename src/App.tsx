@@ -17,6 +17,7 @@ import { LLView } from './ui/views/LLView';
 import { LRView } from './ui/views/LRView';
 import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
+import { MembershipView } from './ui/views/MembershipView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { FavLogo } from './ui/components/FavLogo';
@@ -32,7 +33,7 @@ import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
-  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck
 } from 'lucide-react';
 
 type TabId = UrlTab;
@@ -402,6 +403,7 @@ export const App: React.FC = () => {
     { id: 'll', icon: <Layers size={15} />, label: t.tabLL },
     { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR },
     { id: 'graph', icon: <Network size={15} />, label: t.tabGraph },
+    { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
@@ -938,6 +940,15 @@ export const App: React.FC = () => {
                     onSelectVariant={setLrVariant}
                     layout={lrLayout}
                     onLayoutChange={setLrLayout}
+                  />
+                )}
+
+                {activeTab === 'membership' && (
+                  <MembershipView
+                    grammar={analyzedGrammar}
+                    defaultInput={sampleInput}
+                    lang={lang}
+                    onConvertToCNF={!isStale && canAnalyse ? () => applyWholeGrammar('cnf') : undefined}
                   />
                 )}
 
