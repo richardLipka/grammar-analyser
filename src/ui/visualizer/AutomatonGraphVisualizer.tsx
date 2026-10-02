@@ -16,7 +16,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import dagre from 'dagre';
 import { LRAutomaton, LRState } from '../../core/lr/lrAutomaton';
-import { groupLR1Items, LR0Item, GroupedLR1Item } from '../../core/lr/lrItem';
+import { groupLR1Items, LR0Item, GroupedLR1Item, lr0ItemKey } from '../../core/lr/lrItem';
 import { stateCreators, incomingEdges, itemTarget } from '../../core/lr/lrExplain';
 import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon } from 'lucide-react';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
@@ -77,8 +77,10 @@ const LA_SEP = ' / ';
 
 /** Items of a state, kernel items first (S' -> •S and items with the dot inside). */
 export function stateDisplayItems(state: LRState, withLookaheads: boolean): DisplayItem[] {
+  // LALR(1) keeps the LR(0) items; with a non-generating symbol some get no lookahead (shown as ∅)
+  const grouped = new Map(groupLR1Items(state.items1 || []).map((g: GroupedLR1Item) => [lr0ItemKey(g), g.lookaheads] as const));
   const base: (LR0Item & { lookaheads?: string[] })[] = withLookaheads
-    ? groupLR1Items(state.items1 || []).map((g: GroupedLR1Item) => ({ production: g.production, dotIndex: g.dotIndex, lookaheads: g.lookaheads }))
+    ? state.items0.map(it => ({ production: it.production, dotIndex: it.dotIndex, lookaheads: grouped.get(lr0ItemKey(it)) ?? [] }))
     : state.items0;
   const items = base.map(it => ({
     production: it.production,
@@ -97,7 +99,7 @@ export function stateDisplayItems(state: LRState, withLookaheads: boolean): Disp
 /** Characters of an item row as drawn: "A → α • β, a / b" */
 function itemLength(it: DisplayItem): number {
   const core = `${it.lhs} → ${[...it.before, '•', ...it.after].join(' ')}`;
-  return it.lookaheads ? core.length + 2 + it.lookaheads.join(LA_SEP).length : core.length;
+  return it.lookaheads ? core.length + 2 + Math.max(1, it.lookaheads.join(LA_SEP).length) : core.length;
 }
 
 /** Baseline of the item row `idx` inside its node. */
@@ -432,6 +434,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
                         {it.lookaheads && (
                           <>
                             <tspan>{', '}</tspan>
+                            {it.lookaheads.length === 0 && <tspan className="g-item-la-empty">∅</tspan>}
                             {it.lookaheads.map((la, laIdx) => (
                               <React.Fragment key={la}>
                                 {laIdx > 0 && <tspan>{LA_SEP}</tspan>}

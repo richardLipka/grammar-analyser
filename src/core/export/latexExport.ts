@@ -34,18 +34,88 @@ function escapeInner(str: string): string {
   }).join('');
 }
 
-/** Typesets one grammar symbol in math mode. */
+/** Unicode symbols that pdfLaTeX cannot take literally, as math commands. */
+const MATH_SYMBOLS: Record<string, string> = {
+  '→': '\\rightarrow', '←': '\\leftarrow', '↔': '\\leftrightarrow', '⇒': '\\Rightarrow', '⇐': '\\Leftarrow', '⇔': '\\Leftrightarrow',
+  '≤': '\\leq', '≥': '\\geq', '≠': '\\neq', '≡': '\\equiv', '≈': '\\approx', '·': '\\cdot', '×': '\\times', '÷': '\\div',
+  '−': '-', '∗': '*', '¬': '\\neg', '∧': '\\wedge', '∨': '\\vee', '∈': '\\in', '∉': '\\notin', '∪': '\\cup', '∩': '\\cap',
+  '…': '\\ldots', '•': '\\bullet', '∅': '\\emptyset', '∞': '\\infty', '⊕': '\\oplus', '⊗': '\\otimes', '′': '\\prime',
+  'λ': '\\lambda', 'ε': '\\varepsilon', 'ϵ': '\\epsilon', 'α': '\\alpha', 'β': '\\beta', 'γ': '\\gamma', 'δ': '\\delta',
+  'π': '\\pi', 'σ': '\\sigma', 'τ': '\\tau', 'φ': '\\varphi', 'ω': '\\omega', 'Σ': '\\Sigma', 'Δ': '\\Delta', 'Ω': '\\Omega'
+};
+const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉';
+
+/** Escapes a string for text mode (\text{\textit{…}}). */
+function escapeText(str: string): string {
+  return [...str].map(ch => {
+    switch (ch) {
+      case '\\': return '\\textbackslash{}';
+      case '{': return '\\{';
+      case '}': return '\\}';
+      case '_': return '\\_';
+      case '^': return '\\textasciicircum{}';
+      case '~': return '\\textasciitilde{}';
+      case '%': return '\\%';
+      case '&': return '\\&';
+      case '#': return '\\#';
+      case '$': return '\\$';
+      case '<': return '\\textless{}';
+      case '>': return '\\textgreater{}';
+      case '|': return '\\textbar{}';
+      case '␣': return '\\textvisiblespace{}';
+      default: {
+        const sub = SUBSCRIPT_DIGITS.indexOf(ch);
+        if (sub >= 0) return `\\textsubscript{${sub}}`;
+        if (MATH_SYMBOLS[ch]) return `\\ensuremath{${MATH_SYMBOLS[ch]}}`;
+        return ch;
+      }
+    }
+  }).join('');
+}
+
+/** A run of the symbol in math mode: ASCII escaped inside \mathit/\mathtt, other characters as commands. */
+function mathRun(str: string, font: 'mathit' | 'mathtt'): string {
+  let out = '';
+  let plain = '';
+  const flush = () => {
+    if (plain) out += `\\${font}{${escapeInner(plain)}}`;
+    plain = '';
+  };
+  for (const ch of str) {
+    if (ch.charCodeAt(0) < 128) {
+      plain += ch;
+      continue;
+    }
+    flush();
+    if (MATH_SYMBOLS[ch]) out += `${MATH_SYMBOLS[ch]}{}`;
+    else if (ch === '␣') out += '\\text{\\textvisiblespace}';
+    else out += `\\text{${escapeText(ch)}}`;
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Typesets one grammar symbol in math mode, so that pdfLaTeX compiles it:
+ * trailing Unicode subscripts (B₂, a copied non-terminal) become B_{2}, primes
+ * stay primes, arrows and Greek letters become commands, and a name with
+ * accented letters (Výraz) is set in text mode.
+ */
 export function latexSymbol(sym: string, isTerminal: boolean): string {
   if (sym === EPSILON || sym === '') return '\\varepsilon';
   if (sym === END_MARKER) return '\\$';
-  if (!isTerminal) {
-    // Keep primes as real primes: E' -> E'
-    const m = sym.match(/^(.*?)('*)$/);
-    const base = m ? m[1] : sym;
-    const primes = m ? m[2] : '';
-    return `\\mathit{${escapeInner(base)}}${primes}`;
-  }
-  return `\\mathtt{${escapeInner(sym)}}`;
+  const font = isTerminal ? 'mathtt' : 'mathit';
+  // E', B₂, X₁₀'': base, subscript digits and primes
+  const m = sym.match(/^(.+?)([₀-₉]*)('*)$/u);
+  const base = m ? m[1] : sym;
+  const sub = m ? [...m[2]].map(c => SUBSCRIPT_DIGITS.indexOf(c)).join('') : '';
+  const primes = m && !isTerminal ? m[3] : '';
+  const body = m && isTerminal ? base + m[3] : base;
+  // Accented letters need text mode (math fonts have no accents in pdfLaTeX)
+  const typeset = /[^\x00-\x7F]/.test(body) && /\p{L}/u.test(body.replace(/[\x00-\x7F]/g, '')) && ![...body].every(c => c.charCodeAt(0) < 128 || MATH_SYMBOLS[c])
+    ? `\\text{\\${isTerminal ? 'texttt' : 'textit'}{${escapeText(body)}}}`
+    : mathRun(body, font);
+  return `${typeset}${sub ? `_{${sub}}` : ''}${primes}`;
 }
 
 function latexRhs(rhs: string[], g: Pick<Grammar, 'nonTerminals'>): string {

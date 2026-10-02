@@ -364,3 +364,135 @@ The reasons are ordered by the order in which the closure reaches the items, so 
 The tests run on all presets and 150 random grammars. Two one-off sweeps also passed: 4,000 random grammars, and 700 larger grammars (up to 5 non-terminals and 4 terminals, right-hand sides of up to 4 symbols). No lookahead was wrong.
 
 **A finding: non-generating symbols.** With a non-generating non-terminal, FIRST(β a) can be empty. Canonical LR(1) then has no item with an empty lookahead set, so its states need not correspond to the LR(0) states. For example, `S → S A | S`, `A → B S`, `B → c | c S A` gives 8 LR(0) states but only 5 LR(1) and LALR(1) states. Merging LR(1) by core then differs from the propagation algorithm on the LR(0) kernels, but only in states that no word reaches. The automaton screen says so when LALR(1) has fewer states than LR(0). The test compares the two constructions only for grammars whose non-terminals all generate a word.
+
+## 11. Whole-system audit with independent oracles; suggestions
+
+### Method
+
+`src/test/audit.test.ts` compares the core with code written independently of it. It runs on all presets and on 200 + 200 random grammars of two generators. A one-off run used 1,500 + 1,500 grammars.
+
+**The oracles:**
+- its own FIRST_k/FOLLOW_k/PREDICT_k for k = 1, 2, on token arrays;
+- its own LL(1) and strong LL(2) tests;
+- the exact LL(2) test by a bounded search over left-sentential forms w A α. Every context found must also be in the Aho–Ullman tables, and every conflict found must be reported;
+- the Earley recognizer for every word up to a length.
+
+**What is checked against them:**
+- the acceptance of the LL(1), strong LL(2), LL(2)-tables, LR(0), SLR(1), LALR(1) and LR(1) simulators, in both table layouts;
+- the left parse replayed as a leftmost derivation, and the right parse as a rightmost one;
+- the yields of all parse trees;
+- the class hierarchy: LR(0) ⇒ SLR(1) ⇒ LALR(1) ⇒ LR(1), LL(1) ⇒ LR(1) for reduced grammars, and LL(1) ⇒ strong LL(2) ⇒ LL(2);
+- the LR(0) f table against ACTION;
+- that a strict LR(0) language is prefix-free;
+- the word generator.
+
+**Further probes (not kept):**
+- the editor round trip of 400 grammars with awkward symbols;
+- 3,000 random texts through the parser and all constructions;
+- timings of large grammars and of transformations.
+
+**Result:** no discrepancy on reduced grammars. The parser never threw. The issues below are what remains.
+
+### Issues found
+
+1. **The page can freeze for minutes (high).**
+   - **Cause:** `computeAnalysis` runs synchronously in the main thread and builds everything eagerly: four LR automata, LL(1), strong LL(2) and the exact LL(2) tables. LALR(1) is obtained by merging canonical LR(1), so LR(1) is built twice.
+   - **Example:** GNF of a 9-rule grammar (`S → S a B | B c | A`, `A → A b | S d | e1`, `B → B A | a | S S`) gives 1,415 rules in 10 ms. The automatic re-analysis then takes LR(0) 1.8 s (2,247 states), LR(1) 165 s (9,272 states) and LALR(1) another 181 s. A synthetic 120-rule grammar: LR(1) 117 s, LALR(1) 101 s, LL tables 29 s (bound of 5,000 contexts reached).
+   - **Realistic grammars are fast:** a 25-rule language grammar takes 5–30 ms per step.
+   - **Fix:**
+     - run the analysis in a Web Worker that can be cancelled;
+     - build LALR(1) from LR(0) by propagation (the reference algorithm is already in `lrLookaheads.test.ts`);
+     - use a worklist closure;
+     - build LR(1) and LL(2) lazily, when their tab is opened;
+     - cap the number of states with a message;
+     - warn before applying a transformation whose result is much larger.
+2. **Simulator input is split only at spaces (medium).** With the compact notation of the lectures (`S → aSb | ab`) a student types `aabb` and gets an error; only `a a b b` works. Fix: split a token that is not a terminal by longest match over the terminals, as the grammar parser does for compact right-hand sides, and show the tokenization.
+3. **Grammars with useless symbols (low).**
+   - **Two definitions of FIRST.** FIRST₁ follows the sentential-form definition: `A → S A b` with S nullable gives FIRST₁(A) = {b}, although A derives no word. FIRST₂ follows the terminal-word definition (∅).
+   - **The verdicts depend on dead rules.** `S → a a | a A | S A`, `A → A S S` is reported not LL(1) only because of rules that never derive a word.
+   - **Unreachable non-terminals are treated differently.** The LL(1) and strong LL(2) tests include them; the exact LL(2) test and the LR automata do not.
+   - **Fix:** use one definition (FIRST over generating symbols only), or say in the overview that the classification assumes a reduced grammar and offer the reduction.
+4. **LaTeX of copied non-terminals (low).** The copy B₂ (reduction of FOLLOW sets) is written as `\mathit{B₂}`; pdfLaTeX cannot typeset the Unicode subscript. Fix: write a trailing subscript as `_{2}`, as the LR state names already are.
+5. **A backslash terminal breaks the editor text (low).** `formatGrammarForEditor` writes the terminal `\` as `"\"`, which the tokenizer reads as an escaped quote. After any transformation such a grammar no longer parses. Fix: escape `\` and `"` in `quoteTerminal`. All other symbols round-tripped, including ε keywords, `e`, `|`, `->`, `::=`, `;`, `#`, quotes, `<x>`, comment starters, `(1)`, digits, `λ`, `→` and Czech letters.
+6. **The LL(2) badge can claim "yes" without a full check (low).** When the exact test stops at its bound (`ll2Complete = false`), only the LL tab says so; the overview badge still says "yes".
+7. **Labels of left recursion (low).**
+   - `A → B A` with B ⇒* ε is labelled *indirect*; it is hidden left recursion.
+   - A non-terminal with both an immediate rule and an indirect cycle is listed as immediate only.
+8. **"Shortest words" (low).** The generator finds the words with the shortest derivations, not the shortest words: `S → A A A A | b b b b b b`, `A → a` gives `b b b b b b` before `a a a a`.
+9. **Yacc precedence is not used (low).** `%left`, `%right`, `%nonassoc` and `%prec` are read, but the tables do not use them. The Bison calculator therefore shows conflicts that Bison resolves. An optional resolution, with the resolved cells marked, would show how Bison does it.
+
+### Suggestions for teaching (by expected value)
+
+1. **"Why" for every computed set and cell**, as for the LR lookaheads (section 10):
+   - FIRST/FOLLOW computed round by round, as on paper, with the rule that added each symbol;
+   - the origin of an LL table entry: a ∈ FIRST(α), or α ⇒* ε and a ∈ FOLLOW(A);
+   - the origin of an LR table entry: the item A → α • a β for a shift, A → α • with the FOLLOW set or the lookahead for a reduction;
+   - a conflict explained by its two items.
+2. **Membership and all parse trees for any grammar.** An Earley (or CYK) parser in the UI answers "w ∈ L(G)?" even when the grammar is neither LL nor LR, and shows all parse trees up to a limit. This demonstrates ambiguity directly. A CYK table for CNF grammars is a classic exam task, and the Earley chart could be shown too.
+3. **Ambiguity witness.** A bounded search for the shortest word with two leftmost derivations, with both trees side by side: dangling else, E → E + E. Today only cycles are reported as ambiguity.
+4. **Exercise mode.** A seeded random or preset grammar with the results hidden. The student fills in nullable, FIRST/FOLLOW, the LL table, the LR items or the table, and the tool marks the wrong cells. The URL can carry the exercise.
+5. **"Check my transformation".** The student enters their own transformed grammar. The tool tests equivalence on all words up to n, gives a counterexample word when they differ, and checks the promised form: no left recursion, LL(1), CNF/GNF. The Earley recognizer of the tests would move into the core.
+6. **Derivations next to the parses.** Show the leftmost and rightmost derivation, as sentential forms, next to the left and right parse. In the LR simulation, highlight the handle being reduced and the viable prefix on the stack.
+7. **Step-by-step construction.**
+   - The canonical collection: the queue of states, then CLOSURE, then GOTO, with "new state" or "already exists".
+   - The merging of LR(1) into LALR(1), showing which states merge and where a reduce/reduce conflict appears.
+   - The LL table filled rule by rule.
+8. **A recursive-descent parser generated from an LL(1) grammar.** Pseudo-code, C, Java or Python procedures, optionally with panic-mode recovery through FOLLOW sets. This connects to the PL/0 compiler of KIV/FJP.
+9. **Error recovery in the simulators:** panic mode with synchronizing sets in LL, and the `error` token or phrase-level recovery in LR.
+10. **Translation and attribute grammars** (KIV/FJP): output symbols in the rules (infix → postfix), and attributes evaluated during LL parsing.
+11. **Regular grammars and finite automata**, if the course needs them in the same tool: RG ↔ NFA ↔ DFA ↔ minimal DFA ↔ regular expression.
+
+## 12. Fixes after the audit; precedence, ambiguity, long computations
+
+**Long computations.** The analysis and the automatic LL(1) attempt are jobs: generators that yield after every state, table or round (`src/core/jobs/job.ts`). `useSteppedJob` runs a job in 40 ms slices, so the page stays responsive and shows the progress. After every 30 s of computation it pauses and asks whether to continue. Stopped, a job returns what it has:
+- **The analysis** (`src/core/analysisJob.ts`) computes the cheap parts first: the sets, LL(1) and strong LL(2), LR(0)/SLR(1), LALR(1). The exact LL(2) test, canonical LR(1) and the ambiguity search come last. Stopped during these, the results of the grammar are shown and the missing parts are marked: "not computed" badges, LR(1) disabled, and LALR(1) shown instead with a note. Stopped earlier, the previous results stay, marked as outdated. A stopped grammar is not re-analysed on every key press.
+- **The automatic LL(1) attempt** keeps the best state, like a failed attempt.
+
+**Speed.** On the GNF of `S → S a B | B c | A`, `A → A b | S d | e1`, `B → B A | a | S S` (1,415 rules) everything now takes about 12 s instead of 6 minutes:
+
+| Part | Before | Now |
+|---|---|---|
+| LR(0) | 1.8 s | 0.05 s |
+| LR(1), 9,272 states | 165 s | 3–8 s |
+| LALR(1) | 181 s | 1.5 s |
+| Exact LL(2) | 2.2 s | 0.4 s |
+
+The changes behind this:
+- the closure uses a worklist;
+- all GOTO kernels of a state are computed in one pass;
+- states are identified by their kernels;
+- FIRST(β) is cached per item core;
+- the suffix FIRST sets of the exact LL(2) test are cached;
+- **LALR(1) from LR(0).** LALR(1) is built from the LR(0) states by spontaneous generation and propagation of lookaheads (Dragon Book, Alg. 4.62/4.63), with the closure of [K, #] cached per item. It no longer builds LR(1). `attachMergedLR1States` records the corresponding LR(1) states once LR(1) is known; the lookahead explanations use them.
+- **Dead states with non-generating symbols.** A spontaneous lookahead counts only once its kernel item has a lookahead. Otherwise lookaheads would be generated in states no word reaches, and they could not be explained. For grammars whose non-terminals all generate a word this is the textbook algorithm. With non-generating symbols, LALR(1) keeps the LR(0) states, and items without a lookahead are shown with ∅.
+- **The automatic LL(1) attempt** uses an LL(1)-only table (no FIRST₂/FOLLOW₂, no LL(2) tables).
+- **Large automata and tables.** Automata over 150 states are drawn only on request, because dagre would block the page; the states can be browsed with a selection. LR tables over 300 rows show their first rows.
+
+**Yacc precedence** (optional). Lines `%left`, `%right`, `%nonassoc` and `%precedence`, lowest precedence first, and `%prec X` at the end of an alternative work in the arrow notation and in Yacc files. `Grammar.precedence` holds them. They are written back to the editor and carried across transformations (`transferPrecedence` keeps `%prec` with the rules that are still there).
+
+`buildLRTable` resolves shift/reduce cells of SLR(1), LALR(1) and LR(1) as Bison does:
+- the rule takes the precedence of its last terminal, or of `%prec`;
+- the higher precedence wins;
+- equal precedence: `%left` reduces, `%right` shifts, `%nonassoc` makes the cell an error;
+- conflicts without precedence on both sides, reduce/reduce conflicts and LR(0) stay conflicts.
+
+Every resolution is listed with its reason, and the cell is marked in the table. A switch on the LR tab shows the table without precedence. The overview badges distinguish a table that is conflict-free only thanks to precedence (amber) from a grammar of the class.
+
+New preset: ambiguous expressions with `%left + -`, `%left * /`, `%right ^`, `%right UMINUS`. The tests check that the trees are the ones Bison builds: a + (a * a), (a - a) - a, a ^ (a ^ a), (-a) ^ a.
+
+**Ambiguity** (`src/core/analyser/ambiguity.ts`). The search explores the leftmost derivations breadth-first and records the first derivation of every left-sentential form. A second derivation of the same form is a witness: completing the form gives a word with two leftmost derivations, and both trees are shown. Forms whose shortest word is longer than the bound (10) are not expanded. When the search ends within its limits, no word up to the bound has two trees. That is not a proof of unambiguity, and the overview says so.
+
+The analysis runs the search only when neither the LL(1) nor the LR(1) table (without precedence) proves the grammar unambiguous. An ambiguous grammar without precedence declarations gets the suggestion to rewrite it or declare precedence, with an example. With declarations, the overview says how many conflicts they resolved.
+
+A test compares the search with an independent count of derivation trees (a CYK-like table saturated at 2) on 150 random grammars. One bug was found on the way: completing a form by the rule with the shortest yield could pick S → S. The rule that first reached the shortest yield is used instead, and it always ends.
+
+**Other fixes.**
+- **Simulator input** is split into terminals by longest match with backtracking when a word is not a terminal (`aabb`, `id+id`), and the split is shown (`tokenizeInput`).
+- **The overview** says that the classification assumes a reduced grammar when there are useless symbols, and offers to reduce it.
+- **The LL(2) badge** says "unknown" when the exact test did not finish.
+- **Left recursion** lists all its kinds for every non-terminal: immediate, hidden (through a prefix that generates ε) and indirect. The automatic LL(1) attempt takes the rule-by-rule removal only when all left recursion is immediate.
+- **LaTeX:** subscripts become `_{2}`, accented names use text mode, and arrows and Greek letters become commands. A test checks that a grammar with a copied non-terminal yields ASCII-only LaTeX.
+- **A backslash terminal** round-trips through the editor: `quoteTerminal` escapes, and the line scanner honours escapes like the tokenizer.
+- **The word generator** is described as giving the words with the shortest derivations.
+
+New tests: `precedenceAmbiguity.test.ts`, `jobs.test.ts` and the oracle audit `audit.test.ts` (section 11).

@@ -12,17 +12,21 @@ import { Network, Info, ArrowRight, AlertTriangle } from 'lucide-react';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
+/** Automata with more states are drawn only on request. */
+const GRAPH_STATE_LIMIT = 150;
+
 interface AutomatonGraphViewProps {
   grammar: Grammar;
   analysis: GrammarAnalysis;
   lr0Automaton: LRAutomaton;
   slr1Automaton: LRAutomaton;
   lalr1Automaton: LRAutomaton;
-  lr1Automaton: LRAutomaton;
+  /** Missing when the computation was stopped before it */
+  lr1Automaton?: LRAutomaton;
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
-  lr1Table: LRTable;
+  lr1Table?: LRTable;
   lang: Language;
   selectedVariant?: LRVariantName;
   onSelectVariant?: (v: LRVariantName) => void;
@@ -57,10 +61,16 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
     else setInternalVariant(v);
   };
 
-  const activeAutomaton = { 'LR(0)': lr0Automaton, 'SLR(1)': slr1Automaton, 'LALR(1)': lalr1Automaton, 'LR(1)': lr1Automaton }[selectedVariant];
-  const activeTable = { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table }[selectedVariant];
+  // LR(1) is missing when the computation was stopped: LALR(1) is shown instead
+  const lr1Missing = selectedVariant === 'LR(1)' && (!lr1Automaton || !lr1Table);
+  const activeAutomaton = lr1Missing ? lalr1Automaton : { 'LR(0)': lr0Automaton, 'SLR(1)': slr1Automaton, 'LALR(1)': lalr1Automaton, 'LR(1)': lr1Automaton! }[selectedVariant];
+  const activeTable = lr1Missing ? lalr1Table : { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table! }[selectedVariant];
 
   useEffect(() => setSelectedStateId(0), [activeAutomaton]);
+  // A large automaton is not drawn unless asked for: dagre would block the page for a long time
+  const [forceGraph, setForceGraph] = useState(false);
+  useEffect(() => setForceGraph(false), [activeAutomaton]);
+  const tooLarge = activeAutomaton.states.length > GRAPH_STATE_LIMIT && !forceGraph;
 
   const lecture = layout === 'lecture';
   const conflicts = lecture ? activeTable.fConflicts : activeTable.conflicts;
@@ -84,7 +94,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const ctx: ExplainContext = {
     lang,
     name,
-    lr1Name: id => (lecture ? stateLabel(lr1Table, id, layout) : `${id}`)
+    lr1Name: lr1Table ? id => (lecture ? stateLabel(lr1Table, id, layout) : `${id}`) : undefined
   };
   const gotoText = (from: number, sym: string, to: number) =>
     lecture ? `g(${name(from)}, ${sym}) = ${name(to)}` : `GOTO(${from}, ${sym}) = ${to}`;
@@ -134,13 +144,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const sameStatesNote = selectedVariant === 'SLR(1)' || selectedVariant === 'LR(0)'
     ? t.graphSharedLR0
     : selectedVariant === 'LALR(1)'
-      ? t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString()) +
-        // With a non-generating symbol FIRST(β a) can be empty: LR(1) has no item with an empty lookahead set
-        (lalr1Automaton.states.length < lr0Automaton.states.length
-          ? (lang === 'cz'
-            ? ` LR(0) má ${lr0Automaton.states.length} stavů: položky s prázdnou množinou dopředu prohlížených symbolů (kvůli nenormovanému symbolu je FIRST(β a) prázdná) v LR(1) nevznikají.`
-            : ` LR(0) has ${lr0Automaton.states.length} states: items with an empty lookahead set (FIRST(β a) is empty because of a non-generating symbol) do not arise in LR(1).`)
-          : '')
+      ? t.graphLALRStates + (lr1Automaton ? ' ' + t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString()) : '')
       : '';
 
   return (
@@ -190,16 +194,56 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         </p>
       </div>
 
-      <AutomatonGraphVisualizer
-        automaton={activeAutomaton}
-        selectedStateId={selectedStateId}
-        onSelectState={setSelectedStateId}
-        conflictStates={conflictStates}
-        nodeTitles={nodeTitles}
-        lang={lang}
-        itemHint={itemHint}
-        lookaheadTip={withLookaheads ? lookaheadTip : undefined}
-      />
+      {lr1Missing && (
+        <div className="notice-box warning" style={{ marginBottom: '12px' }}>
+          <div className="notice-title">
+            <AlertTriangle size={15} />
+            <span>
+              {cz
+                ? 'Automat LR(1) nebyl spočten: výpočet byl zastaven. Zobrazen je automat LALR(1); úplnou analýzu spustí tlačítko Přepočítat.'
+                : 'The LR(1) automaton was not computed: the computation was stopped. The LALR(1) automaton is shown; the Recalculate button starts the full analysis.'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {tooLarge ? (
+        <div className="card graph-too-large">
+          <p>
+            {cz
+              ? `Automat má ${activeAutomaton.states.length} stavů. Rozložení tak velkého grafu by trvalo dlouho (stránka by mezitím nereagovala) a graf by byl nečitelný. Stavy lze procházet pomocí výběru níže a přechodů v detailu stavu.`
+              : `The automaton has ${activeAutomaton.states.length} states. Laying out such a graph would take long (the page would not respond meanwhile) and the graph would be unreadable. Browse the states with the selection below and the transitions in the state details.`}
+          </p>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: '12.5px' }}>
+              {cz ? 'Stav: ' : 'State: '}
+              <select
+                className="whole-grammar-select"
+                value={selectedStateId ?? 0}
+                onChange={e => setSelectedStateId(Number(e.target.value))}
+              >
+                {activeAutomaton.states.map(st => (
+                  <option key={st.id} value={st.id}>{lecture ? name(st.id) : `${t.stateLabel} ${st.id}`}{conflictStates.has(st.id) ? ' ⚠' : ''}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="btn btn-secondary" onClick={() => setForceGraph(true)}>
+              {cz ? 'Přesto vykreslit graf' : 'Draw the graph anyway'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <AutomatonGraphVisualizer
+          automaton={activeAutomaton}
+          selectedStateId={selectedStateId}
+          onSelectState={setSelectedStateId}
+          conflictStates={conflictStates}
+          nodeTitles={nodeTitles}
+          lang={lang}
+          itemHint={itemHint}
+          lookaheadTip={withLookaheads ? lookaheadTip : undefined}
+        />
+      )}
       {tip && <FloatingTip anchor={tip.anchor}>{tip.content}</FloatingTip>}
 
       {selectedState && (
@@ -287,6 +331,9 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                                 <span className="sym-arrow">→</span>
                                 {it.before.join(' ')} <strong style={{ color: 'var(--color-danger)' }}>•</strong> {it.after.join(' ')}
                               </span>
+                              {it.lookaheads && it.lookaheads.length === 0 && (
+                                <span className="lr-la-list"><span className="lr-la empty" title={cz ? 'Položka nemá žádný dopředu prohlížený symbol (nenormovaný symbol)' : 'The item has no lookahead (a non-generating symbol)'}>∅</span></span>
+                              )}
                               {it.lookaheads && (
                                 <span className="lr-la-list">
                                   {it.lookaheads.map(la => (

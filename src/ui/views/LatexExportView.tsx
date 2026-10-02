@@ -18,7 +18,8 @@ interface LatexExportViewProps {
   grammar: Grammar;
   analysis: GrammarAnalysis;
   llTable: LLTable;
-  lrTables: Record<LRVariantName, LRTable>;
+  /** LR(1) is missing when the computation was stopped */
+  lrTables: Record<Exclude<LRVariantName, 'LR(1)'>, LRTable> & { 'LR(1)'?: LRTable };
   lang: Language;
   lrLayout: LRLayout;
   onLrLayoutChange: (layout: LRLayout) => void;
@@ -31,7 +32,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
   const [section, setSection] = useState<LatexSection>('all');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
   const [copied, setCopied] = useState(false);
-  const lrTable = lrTables[lrVariant];
+  const lrTable = lrTables[lrVariant] ?? lrTables['LALR(1)'];
 
   const getLatex = (): string => {
     switch (section) {
@@ -146,6 +147,8 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
                 style={{ fontSize: '11px', padding: '3px 8px' }}
                 aria-pressed={lrVariant === v}
                 onClick={() => setLrVariant(v)}
+                disabled={!lrTables[v]}
+                title={lrTables[v] ? undefined : (lang === 'cz' ? 'Nespočteno – výpočet byl zastaven' : 'Not computed – the computation was stopped')}
               >
                 {v}
               </button>

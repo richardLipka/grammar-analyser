@@ -12,9 +12,16 @@
  * LR(0) is strict in both layouts: S' → S• is a complete item like any other,
  * so a state holding it together with a shift or another complete item is a
  * conflict (an LR(0) language must be prefix-free).
+ *
+ * Optional Yacc precedence (grammar.precedence) resolves shift/reduce conflicts
+ * of the SLR(1), LALR(1) and LR(1) tables the way Bison does: the rule has the
+ * precedence of its last terminal (or of %prec X), the higher precedence wins,
+ * equal precedence is decided by the associativity (%left reduces, %right
+ * shifts, %nonassoc leaves an error). Conflicts without precedence on both
+ * sides and reduce/reduce conflicts stay conflicts.
  */
 
-import { Grammar, Production, END_MARKER } from '../ast/grammar';
+import { Grammar, Production, END_MARKER, Associativity, PrecedenceDeclarations } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { LRAutomaton, LRVariant, LRStateName } from './lrAutomaton';
 
@@ -39,6 +46,22 @@ export interface LRConflict {
   type: 'Shift/Reduce' | 'Reduce/Reduce';
 }
 
+/** A shift/reduce conflict decided by the precedence declarations. */
+export interface ResolvedConflict {
+  stateId: number;
+  symbol: string;
+  /** The actions of the cell before the resolution */
+  actions: LRAction[];
+  /** The action kept; null for %nonassoc (the cell becomes an error) */
+  chosen: LRAction | null;
+  reason: { en: string; cz: string };
+}
+
+export interface LRTableOptions {
+  /** Use grammar.precedence to resolve shift/reduce conflicts (default true). */
+  usePrecedence?: boolean;
+}
+
 export interface LRTable {
   variant: LRVariant;
   states: number[];
@@ -61,7 +84,10 @@ export interface LRTable {
   gTable: Map<number, Map<string, number>>;
   fConflicts: LRConflict[];
 
+  /** No conflict is left in the table (after the precedence resolution, if used) */
   isConflictFree: boolean;
+  /** Conflicts decided by precedence; empty without precedence declarations */
+  resolvedConflicts: ResolvedConflict[];
 }
 
 export interface GrammarLRClassification {
@@ -85,15 +111,72 @@ const addAction = (row: LRAction[] | undefined, action: LRAction) => {
   if (!same) row.push(action);
 };
 
+/** Precedence level (0 = lowest) and associativity of a token. */
+function tokenPrecedence(decl: PrecedenceDeclarations, sym: string): { level: number; assoc: Associativity } | undefined {
+  for (let i = decl.levels.length - 1; i >= 0; i--) {
+    if (decl.levels[i].symbols.includes(sym)) return { level: i, assoc: decl.levels[i].assoc };
+  }
+  return undefined;
+}
+
+/** Precedence of a rule: that of %prec X, otherwise of its last terminal (Bison). */
+function rulePrecedence(decl: PrecedenceDeclarations, p: Production, g: Grammar): { level: number; assoc: Associativity; via: string } | undefined {
+  const explicit = decl.rulePrec.get(p.id);
+  const via = explicit ?? [...p.rhs].reverse().find(s => !g.nonTerminals.has(s));
+  if (via === undefined) return undefined;
+  const prec = tokenPrecedence(decl, via);
+  return prec ? { ...prec, via } : undefined;
+}
+
+const ASSOC_NAME = { left: '%left', right: '%right', nonassoc: '%nonassoc', precedence: '%precedence' };
+
+/** Decides a shift/reduce cell by precedence (null = cannot be decided). */
+function resolveByPrecedence(
+  decl: PrecedenceDeclarations,
+  g: Grammar,
+  stateId: number,
+  symbol: string,
+  actions: LRAction[]
+): ResolvedConflict | null {
+  const shifts = actions.filter(a => a.type === 'shift');
+  const reduces = actions.filter(a => a.type === 'reduce');
+  if (shifts.length !== 1 || reduces.length !== 1 || actions.length !== 2) return null;
+  const rule = reduces[0].production!;
+  const tp = tokenPrecedence(decl, symbol);
+  const rp = rulePrecedence(decl, rule, g);
+  if (!tp || !rp) return null;
+  const ruleText = `(${rule.id}) ${rule.lhs} → ${rule.rhs.join(' ') || 'ε'}`;
+  const rulePart = { en: `rule ${ruleText} has the precedence of '${rp.via}' (level ${rp.level + 1})`, cz: `pravidlo ${ruleText} má prioritu '${rp.via}' (úroveň ${rp.level + 1})` };
+  const tokenPart = { en: `the token '${symbol}' has level ${tp.level + 1}`, cz: `token '${symbol}' má úroveň ${tp.level + 1}` };
+  const done = (chosen: LRAction | null, en: string, cz: string): ResolvedConflict => ({
+    stateId, symbol, actions: [...actions], chosen,
+    reason: { en: `${rulePart.en}, ${tokenPart.en}: ${en}`, cz: `${rulePart.cz}, ${tokenPart.cz}: ${cz}` }
+  });
+  if (rp.level > tp.level) return done(reduces[0], 'the rule binds more strongly, reduce.', 'pravidlo váže silněji, redukce.');
+  if (rp.level < tp.level) return done(shifts[0], 'the token binds more strongly, shift.', 'token váže silněji, přesun.');
+  switch (tp.assoc) {
+    case 'left': return done(reduces[0], 'equal precedence and %left, reduce (left associativity).', 'stejná priorita a %left, redukce (levá asociativita).');
+    case 'right': return done(shifts[0], 'equal precedence and %right, shift (right associativity).', 'stejná priorita a %right, přesun (pravá asociativita).');
+    case 'nonassoc': return done(null, 'equal precedence and %nonassoc, the cell becomes an error (a op b op c is not allowed).', 'stejná priorita a %nonassoc, položka bude chybou (a op b op c není dovoleno).');
+    default: return null; // %precedence has no associativity
+  }
+}
+
 export function buildLRTable(
   automaton: LRAutomaton,
   g: Grammar,
-  analysis: GrammarAnalysis
+  analysis: GrammarAnalysis,
+  options: LRTableOptions = {}
 ): LRTable {
   const actionTable = new Map<number, Map<string, LRAction[]>>();
   const gotoTable = new Map<number, Map<string, number>>();
   const gTable = new Map<number, Map<string, number>>();
   const conflicts: LRConflict[] = [];
+  const resolvedConflicts: ResolvedConflict[] = [];
+  // Precedence needs a lookahead, so LR(0) is never resolved
+  const precedence = options.usePrecedence !== false && automaton.variant !== 'LR(0)' && g.precedence && g.precedence.levels.length > 0
+    ? g.precedence
+    : undefined;
 
   const terminalCols = [...g.terminals, END_MARKER];
   const nonTerminalCols = [...g.nonTerminals];
@@ -149,9 +232,16 @@ export function buildLRTable(
       }
     }
 
-    // 3. Conflicts in this state
+    // 3. Conflicts in this state; with precedence declarations shift/reduce cells are decided first
     for (const [t, actions] of actRow.entries()) {
-      if (actions.length > 1) conflicts.push(conflictOf(s.id, t, actions));
+      if (actions.length <= 1) continue;
+      const resolution = precedence ? resolveByPrecedence(precedence, g, s.id, t, actions) : null;
+      if (resolution) {
+        resolvedConflicts.push(resolution);
+        actRow.set(t, resolution.chosen ? [resolution.chosen] : []);
+      } else {
+        conflicts.push(conflictOf(s.id, t, actions));
+      }
     }
   }
 
@@ -195,7 +285,8 @@ export function buildLRTable(
     gColumns: [...g.terminals, ...nonTerminalCols],
     gTable,
     fConflicts,
-    isConflictFree: conflicts.length === 0
+    isConflictFree: conflicts.length === 0,
+    resolvedConflicts
   };
 }
 

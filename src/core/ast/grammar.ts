@@ -16,6 +16,44 @@ export interface Grammar {
   terminals: Set<string>;
   startSymbol: string;
   productions: Production[];
+  /** Optional Yacc precedence and associativity (%left, %right, %nonassoc, %precedence, %prec) */
+  precedence?: PrecedenceDeclarations;
+}
+
+export type Associativity = 'left' | 'right' | 'nonassoc' | 'precedence';
+
+/** One %left / %right / %nonassoc / %precedence line. */
+export interface PrecedenceLevel {
+  assoc: Associativity;
+  symbols: string[];
+}
+
+/** Yacc precedence declarations; they only resolve conflicts of the LR tables. */
+export interface PrecedenceDeclarations {
+  /** Levels from the lowest precedence (the first line, as in Yacc) to the highest */
+  levels: PrecedenceLevel[];
+  /** %prec: production id -> the symbol whose precedence the rule takes */
+  rulePrec: Map<number, string>;
+}
+
+function clonePrecedence(p: PrecedenceDeclarations): PrecedenceDeclarations {
+  return { levels: p.levels.map(l => ({ assoc: l.assoc, symbols: [...l.symbols] })), rulePrec: new Map(p.rulePrec) };
+}
+
+/**
+ * The precedence declarations of `from` for the grammar `to` (after a
+ * transformation): the levels are kept, %prec stays with the rules that are
+ * still there (same left- and right-hand side).
+ */
+export function transferPrecedence(from: Grammar, to: Grammar): Grammar {
+  if (!from.precedence) return to;
+  const rulePrec = new Map<number, string>();
+  for (const [id, sym] of from.precedence.rulePrec) {
+    const p = from.productions.find(q => q.id === id);
+    const q = p && to.productions.find(r => r.lhs === p.lhs && r.rhs.join('\u0000') === p.rhs.join('\u0000'));
+    if (q) rulePrec.set(q.id, sym);
+  }
+  return { ...to, precedence: { levels: from.precedence.levels.map(l => ({ assoc: l.assoc, symbols: [...l.symbols] })), rulePrec } };
 }
 
 export function formatRhs(rhs: string[]): string {
@@ -36,7 +74,8 @@ export function cloneGrammar(g: Grammar): Grammar {
       id: p.id,
       lhs: p.lhs,
       rhs: [...p.rhs]
-    }))
+    })),
+    ...(g.precedence ? { precedence: clonePrecedence(g.precedence) } : {})
   };
 }
 
@@ -77,8 +116,10 @@ export function isPlainIdentifier(sym: string): boolean {
   return IDENTIFIER_RE.test(sym) && !/[ελ]/.test(sym) && !RESERVED_BARE.has(sym);
 }
 
+/** A quoted literal that reads back as `sym`: a backslash and the quote character are escaped. */
 function quoteTerminal(sym: string): string {
-  return sym.includes('"') ? `'${sym}'` : `"${sym}"`;
+  const q = sym.includes('"') && !sym.includes("'") ? "'" : '"';
+  return `${q}${sym.replace(/\\/g, '\\\\').split(q).join(`\\${q}`)}${q}`;
 }
 
 function editorNonTerminal(sym: string, hasRules = true): string {
@@ -112,11 +153,21 @@ export function formatGrammarForEditor(g: Grammar, style: 'plain' | 'quoted' = '
   const fmtSym = (s: string) => g.nonTerminals.has(s)
     ? editorNonTerminal(s, withRules.has(s))
     : style === 'plain' && isBareTerminal(s) ? s : quoteTerminal(s);
+  // Precedence symbols are tokens; a name that is also a non-terminal is quoted
+  const fmtToken = (s: string) => (style === 'plain' && isBareTerminal(s) ? s : quoteTerminal(s));
   const lines: string[] = [];
+  for (const level of g.precedence?.levels || []) {
+    lines.push(`%${level.assoc} ${level.symbols.map(fmtToken).join(' ')}`);
+  }
+  const rulePrec = g.precedence?.rulePrec;
   for (const lhs of lhsOrder(g)) {
     const alts = g.productions
       .filter(p => p.lhs === lhs)
-      .map(p => (p.rhs.length === 0 ? EPSILON : p.rhs.map(fmtSym).join(' ')));
+      .map(p => {
+        const body = p.rhs.length === 0 ? EPSILON : p.rhs.map(fmtSym).join(' ');
+        const prec = rulePrec?.get(p.id);
+        return prec !== undefined ? `${body} %prec ${fmtToken(prec)}` : body;
+      });
     lines.push(`${editorNonTerminal(lhs)} ${style === 'plain' ? '→' : '->'} ${alts.join(' | ')}`);
   }
   return lines.join('\n');

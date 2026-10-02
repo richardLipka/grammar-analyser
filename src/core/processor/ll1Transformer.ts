@@ -15,6 +15,10 @@
  * end (the loop is bounded). Foster's SID (1968) worked the same way and
  * reported why it failed; the result here lists every operation and, on
  * failure, the conflicts that remain.
+ *
+ * The attempt is a job (jobs/job.ts): it yields after every round, so the UI
+ * can run it in slices and ask the user before going on; stopped, it returns
+ * the best state found so far, like a failed attempt.
  */
 
 import { Grammar, cloneGrammar, formatGrammarGrouped, normalizeGrammar } from '../ast/grammar';
@@ -27,6 +31,7 @@ import {
   computeReachable
 } from '../analyser/grammarAnalyser';
 import { buildLLTable, LLConflict } from '../ll/llTable';
+import { Job, JobControl, runJob, runToEnd } from '../jobs/job';
 import {
   TransformationResult,
   TransformationStep,
@@ -75,6 +80,10 @@ function commonPrefix(a: string[], b: string[]): string[] {
 }
 
 export function transformToLL1(input: Grammar): LL1AttemptResult {
+  return runJob(transformToLL1Steps(input, runToEnd()));
+}
+
+export function* transformToLL1Steps(input: Grammar, control: JobControl): Job<LL1AttemptResult> {
   const steps: TransformationStep[] = [];
   let current = normalizeGrammar(cloneGrammar(input));
   let operations = 0;
@@ -102,7 +111,7 @@ export function transformToLL1(input: Grammar): LL1AttemptResult {
     return true;
   };
 
-  const llTable = (g: Grammar) => buildLLTable(g, analyzeGrammar(g));
+  const llTable = (g: Grammar) => buildLLTable(g, analyzeGrammar(g, { k2: false }), { ll2: false });
 
   /** After success: a non-terminal used only once, in a unit rule B -> X, is substituted (KIV/FJP 9 a 10, p. 22), if the grammar stays LL(1). */
   const simplify = () => {
@@ -162,13 +171,15 @@ export function transformToLL1(input: Grammar): LL1AttemptResult {
 
   // 2. Left recursion (Cockett step 1)
   const lr = computeLeftRecursion(current, computeNullable(current));
-  if (lr.immediate.size > 0 && lr.indirect.size === 0) {
+  // Only immediate left recursion: rule by rule; hidden or indirect recursion needs Paull's algorithm
+  const onlyImmediate = [...lr.kinds.values()].every(k => k.length === 1 && k[0] === 'immediate');
+  if (lr.immediate.size > 0 && onlyImmediate) {
     for (const nt of lr.immediate) {
       record({ en: `${nt} is immediately left-recursive; an LL(1) grammar cannot be left-recursive (Cockett step 1; Dragon Book §4.3.3).`, cz: `${nt} je přímo levorekurzivní; LL(1) gramatika nemůže být levorekurzivní (Cockett krok 1; Dragon Book §4.3.3).` },
         eliminateImmediateLeftRecursionForSymbol(current, nt), `Remove immediate left recursion of ${nt}`, `Odstranění přímé levé rekurze ${nt}`);
     }
-  } else if (lr.indirect.size > 0) {
-    record({ en: `indirect left recursion (${[...lr.immediate, ...lr.indirect].join(', ')}); an LL(1) grammar cannot be left-recursive (Cockett step 1).`, cz: `nepřímá levá rekurze (${[...lr.immediate, ...lr.indirect].join(', ')}); LL(1) gramatika nemůže být levorekurzivní (Cockett krok 1).` },
+  } else if (lr.kinds.size > 0) {
+    record({ en: `indirect or hidden left recursion (${[...lr.immediate, ...lr.indirect].join(', ')}); an LL(1) grammar cannot be left-recursive (Cockett step 1).`, cz: `nepřímá nebo skrytá levá rekurze (${[...lr.immediate, ...lr.indirect].join(', ')}); LL(1) gramatika nemůže být levorekurzivní (Cockett krok 1).` },
       removeLeftRecursion(current), "Remove left recursion (Paull's algorithm)", 'Odstranění levé rekurze (Paullův algoritmus)');
   }
 
@@ -194,6 +205,13 @@ export function transformToLL1(input: Grammar): LL1AttemptResult {
     return finish(false, en, cz);
   };
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+    yield {
+      en: `automatic LL(1) attempt: round ${iteration + 1}, ${operations} operations, ${current.productions.length} rules`,
+      cz: `automatický převod na LL(1): kolo ${iteration + 1}, operací ${operations}, pravidel ${current.productions.length}`
+    };
+    if (control.stop) {
+      return fail('Stopped by the user.', 'Zastaveno uživatelem.');
+    }
     if (useless()) {
       record({ en: 'the previous step left useless symbols.', cz: 'předchozí krok zanechal zbytečné symboly.' },
         reduceGrammar(current), 'Remove useless symbols', 'Odstranění zbytečných symbolů');
@@ -235,7 +253,7 @@ export function transformToLL1(input: Grammar): LL1AttemptResult {
       ...table.conflicts.filter(c => c.conflictType === 'First/First'),
       ...table.conflicts.filter(c => c.conflictType === 'First/Follow')
     ];
-    const first1 = analyzeGrammar(current).first1;
+    const first1 = analyzeGrammar(current, { k2: false }).first1;
     let applied = false;
 
     for (const c of conflicts) {

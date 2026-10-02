@@ -41,6 +41,20 @@ F -> "(" E ")" | "id"`,
     sampleInput: 'id + id * id'
   },
   {
+    id: 'ambiguous_expr_precedence',
+    nameEn: 'Ambiguous Expressions with Precedence (%left, %right)',
+    nameCz: 'Nejednoznačné výrazy s prioritami (%left, %right)',
+    descriptionEn: 'E → E + E | E * E | … is ambiguous: a + a * a has two derivation trees, so every LR table has shift/reduce conflicts. As in Yacc/Bison, the precedence lines (lowest first) and the associativity decide them: * binds more strongly than +, a - a - a is (a - a) - a (%left), a ^ a ^ a is a ^ (a ^ a) (%right), the unary minus takes the precedence of UMINUS (%prec). Switch the precedence off in the LR tab to see the conflicts.',
+    descriptionCz: 'E → E + E | E * E | … je nejednoznačná: a + a * a má dva derivační stromy, takže každá LR tabulka obsahuje konflikty přesun/redukce. Stejně jako v Yaccu/Bisonu je rozhodnou řádky priorit (nejnižší první) a asociativita: * váže silněji než +, a - a - a je (a - a) - a (%left), a ^ a ^ a je a ^ (a ^ a) (%right), unární minus má prioritu UMINUS (%prec). V záložce Analýza LR lze priority vypnout a konflikty zobrazit.',
+    category: 'Ambiguity',
+    grammarText: `%left + -
+%left * /
+%right ^
+%right UMINUS
+E → E + E | E - E | E * E | E / E | E ^ E | - E %prec UMINUS | ( E ) | a`,
+    sampleInput: 'a - a - a * a ^ a ^ a'
+  },
+  {
     id: 'dangling_else',
     nameEn: 'Dangling Else Ambiguity',
     nameCz: 'Nejednoznačnost if-then-else (dangling else)',
@@ -175,8 +189,8 @@ A --> bSA    (4)`,
     id: 'format_yacc',
     nameEn: 'Yacc / Bison Input (Calculator)',
     nameCz: 'Vstup ve formátu Yacc / Bison (kalkulačka)',
-    descriptionEn: 'A grammar file as written for Bison: %token and %left declarations, the %% sections, rules with the left-hand side on its own line and { semantic actions }. Declarations and actions are skipped, character literals are terminals.',
-    descriptionCz: 'Soubor gramatiky tak, jak se píše pro Bison: deklarace %token a %left, sekce %%, pravidla s levou stranou na samostatném řádku a { sémantické akce }. Deklarace a akce se přeskočí, znakové literály jsou terminály.',
+    descriptionEn: 'A grammar file as written for Bison: %token and %left declarations, the %% sections, rules with the left-hand side on its own line and { semantic actions }. Actions are skipped, character literals are terminals; %left / %right / %nonassoc / %prec are used to resolve shift/reduce conflicts of the LR tables (this grammar has none).',
+    descriptionCz: 'Soubor gramatiky tak, jak se píše pro Bison: deklarace %token a %left, sekce %%, pravidla s levou stranou na samostatném řádku a { sémantické akce }. Akce se přeskočí, znakové literály jsou terminály; %left / %right / %nonassoc / %prec řeší konflikty přesun/redukce v LR tabulkách (tato gramatika žádné nemá).',
     category: 'Formats',
     grammarText: `/* Bison: kalkulačka */
 %token NUM

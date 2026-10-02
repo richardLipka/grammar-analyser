@@ -1,13 +1,12 @@
 /**
  * Lookaheads of the LR(1) and LALR(1) automata and their explanations.
  *
- * - LALR(1) lookaheads are compared with an independent construction: the
+ * - LALR(1) lookaheads are compared with an independent implementation of the
  *   Dragon Book algorithm that finds spontaneous and propagated lookaheads on
  *   the LR(0) kernels (Aho, Lam, Sethi, Ullman, 2nd ed., Alg. 4.62/4.63), with
  *   its own FIRST sets and closure.
- * - The LR(1) lookaheads merged by core must give the same sets.
- *   (Grammars with a non-generating non-terminal are left out of this comparison,
- *   see checkGrammar.)
+ * - The LR(1) lookaheads merged by core must give the same sets (for grammars
+ *   whose non-terminals all generate a word, see checkGrammar).
  * - Every lookahead must have a reason (explainLookahead), the first reason must
  *   not go round in a circle, and every item must have a reason (explainItem).
  * - A conflict-free LR(1)/LALR(1) table must accept exactly the language
@@ -17,7 +16,7 @@ import { describe, it, expect } from 'vitest';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { Grammar, END_MARKER, EPSILON, Production } from '../core/ast/grammar';
-import { augmentGrammar, buildLR0Automaton, buildLALR1Automaton, buildLR1Automaton, LRAutomaton } from '../core/lr/lrAutomaton';
+import { attachMergedLR1States, augmentGrammar, buildLR0Automaton, buildLALR1Automaton, buildLR1Automaton, LRAutomaton } from '../core/lr/lrAutomaton';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { explainItem, explainLookahead, stateCreators, itemsMovingOver, isKernelItem } from '../core/lr/lrExplain';
@@ -96,7 +95,7 @@ function lalrByPropagation(g: Grammar): Map<string, Set<string>> {
   const kernelKey = (stateId: number, prodId: number, dot: number) => `${stateId}:${prodId}@${dot}`;
   const la = new Map<string, Set<string>>();
   const propagate = new Map<string, string[]>();
-  const spontaneous: { to: string; a: string }[] = [];
+  const spontaneous: { from: string; to: string; a: string }[] = [];
   for (const s of lr0.states) {
     for (const k of s.items0.filter(isKernelItem)) la.set(kernelKey(s.id, k.production.id, k.dotIndex), new Set());
   }
@@ -109,14 +108,16 @@ function lalrByPropagation(g: Grammar): Map<string, Set<string>> {
         if (X === undefined) continue;
         const to = kernelKey(s.transitions.get(X)!, it.p.id, it.dot + 1);
         if (it.la === DUMMY) propagate.set(from, [...(propagate.get(from) || []), to]);
-        else spontaneous.push({ to, a: it.la });
+        else spontaneous.push({ from, to, a: it.la });
       }
     }
   }
-  for (const { to, a } of spontaneous) la.get(to)!.add(a);
+  // A spontaneous lookahead counts only once its kernel item has a lookahead (this matters only with
+  // non-generating symbols, whose kernel items may never get one)
   let changed = true;
   while (changed) {
     changed = false;
+    for (const { from, to, a } of spontaneous) if (la.get(from)!.size > 0 && !la.get(to)!.has(a)) { la.get(to)!.add(a); changed = true; }
     for (const [from, tos] of propagate) {
       for (const to of tos) {
         for (const a of la.get(from)!) if (!la.get(to)!.has(a)) { la.get(to)!.add(a); changed = true; }
@@ -160,19 +161,21 @@ function checkGrammar(g: Grammar, label: string) {
   const analysis = analyzeGrammar(g);
   const lr1 = buildLR1Automaton(g, analysis);
   const lalr = buildLALR1Automaton(g, analysis);
+  attachMergedLR1States(lalr, lr1);
+  const reference = lalrByPropagation(g);
+
+  // LALR(1) = the independent propagation algorithm, state by state
+  expect(lalr.states.length, label).toBe(reference.size);
+  for (const s of lalr.states) {
+    expect([...itemKeys(lalr, s.id)].sort(), `${label} LALR state ${s.id}`).toEqual([...reference.get(kernelCore(lalr, s.id))!].sort());
+  }
+
   // With a non-generating non-terminal (A → A A) FIRST(β a) can be empty: canonical LR(1) has no
   // item with an empty lookahead set, so its states need not correspond to the LR(0) states, and
   // merging LR(1) by core differs from propagating on the LR(0) kernels (in states no word reaches).
-  // The comparison is therefore made for grammars whose non-terminals all generate a word.
-  if (allGenerating(g)) {
-    const reference = lalrByPropagation(g);
-
-    // LALR(1) = propagation algorithm, state by state
-    expect(lalr.states.length, label).toBe(reference.size);
-    for (const s of lalr.states) {
-      expect([...itemKeys(lalr, s.id)].sort(), `${label} LALR state ${s.id}`).toEqual([...reference.get(kernelCore(lalr, s.id))!].sort());
-    }
-
+  // That comparison is therefore made for grammars whose non-terminals all generate a word.
+  const generating = allGenerating(g);
+  if (generating) {
     // LR(1) states merged by core give the same sets
     const merged = new Map<string, Set<string>>();
     for (const s of lr1.states) {
@@ -201,7 +204,7 @@ function checkGrammar(g: Grammar, label: string) {
         const ex = explainLookahead(a, analysis, s.id, it.production, it.dotIndex, it.lookahead, lr1);
         const where = `${label} ${a.variant} state ${s.id} [${it.production.lhs} -> ${it.production.rhs.join(' ')} @${it.dotIndex}, ${it.lookahead}]`;
         expect(ex.reasons.length, where).toBeGreaterThan(0);
-        if (a === lalr) expect(ex.lr1States!.length, where).toBeGreaterThan(0);
+        if (a === lalr && generating) expect(ex.lr1States!.length, where).toBeGreaterThan(0);
         let cur = { production: it.production, dotIndex: it.dotIndex, la: it.lookahead };
         for (let steps = 0; cur.dotIndex === 0 && cur.production.id !== 0; steps++) {
           expect(steps, `${where}: circular first reasons`).toBeLessThan(s.items1!.length);
@@ -272,6 +275,8 @@ describe('LR(1) and LALR(1) lookaheads', () => {
     const analysis = analyzeGrammar(g);
     const lr1 = buildLR1Automaton(g, analysis);
     const lalr = buildLALR1Automaton(g, analysis);
+    expect(lalr.states.every(s => s.mergedFrom === undefined)).toBe(true);
+    attachMergedLR1States(lalr, lr1);
     const merged = lalr.states.filter(s => (s.mergedFrom || []).length > 1);
     expect(merged.length).toBe(1);
     const st = merged[0];
@@ -291,9 +296,12 @@ describe('LR(1) and LALR(1) lookaheads', () => {
     const g = parse('S -> ε | A b | a\nA -> A A A');
     expect(allGenerating(g)).toBe(false);
     checkGrammar(g, 'non-generating A');
-    // S is non-generating, so FIRST(S $) = ∅ and B → • c never gets a lookahead: LALR(1) has fewer states than LR(0)
+    // S is non-generating, so FIRST(S $) = ∅ and B → • c never gets a lookahead: LALR(1) keeps the
+    // LR(0) states (some items without lookaheads), canonical LR(1) has fewer states
     const g2 = parse('S -> S A | S\nA -> B S\nB -> c | c S A');
-    expect(buildLALR1Automaton(g2, analyzeGrammar(g2)).states.length).toBeLessThan(buildLR0Automaton(g2).states.length);
+    const a2 = analyzeGrammar(g2);
+    expect(buildLALR1Automaton(g2, a2).states.length).toBe(buildLR0Automaton(g2).states.length);
+    expect(buildLR1Automaton(g2, a2).states.length).toBeLessThan(buildLR0Automaton(g2).states.length);
     checkGrammar(g2, 'non-generating S');
     expect(allGenerating(parse('S -> a S | b'))).toBe(true);
   });

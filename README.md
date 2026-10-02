@@ -27,6 +27,7 @@
   - Several rules on one line, separated by `;` (`S -> aAS | b; A -> a | bSA`) or by a space before the next `A ->` (`S -> aAS | b A -> a | bSA`)
   - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
   - Comments: `// ...`, `# ...`, `/* ... */`
+  - Optional Yacc precedence, also in the arrow notation: lines `%left + -`, `%left * /`, `%right ^`, `%nonassoc <` (lowest precedence first) before the rules and `%prec UMINUS` at the end of an alternative; they resolve shift/reduce conflicts of the SLR(1), LALR(1) and LR(1) tables as Bison does (higher precedence wins, equal precedence by associativity), with every resolution listed and explained; a switch on the LR tab shows the table without them
   - Unicode identifiers (`Výraz`, `Člen`)
   - **Yacc / Bison files**: `%token`/`%left`/`%start` declarations, `%{ %}`, the `%%` sections, `{ actions }`, `%prec`, `%empty`, string aliases (`%token NUM "number"`), rules with or without `;` and with the left-hand side on its own line
   - **ANTLR 4 grammars**: `grammar X;` header, `options`/`tokens`/`@header` blocks, labels (`x=`, `x+=`, `# Alt`), lexer rules taken as tokens (single-literal rules unified with the literal), `EOF`, EBNF `( )`, `*`, `+`, `?` expanded into auxiliary non-terminals
@@ -38,7 +39,9 @@
   - Reachable symbols ($V_{reach}$)
   - $\text{FIRST}_1$, $\text{FIRST}_2$, $\text{FOLLOW}_1$, $\text{FOLLOW}_2$
   - Lookahead / Predict / Director sets ($k = 1, 2$)
-  - Immediate, indirect and hidden (nullable-prefix) left recursion; cycles $A \Rightarrow^+ A$
+  - Immediate, indirect and hidden (nullable-prefix) left recursion, each non-terminal with all its kinds; cycles $A \Rightarrow^+ A$
+  - Ambiguity: a bounded search for a word with two derivation trees (both trees are shown); an LL(1) or LR(1) grammar is reported as unambiguous; for an ambiguous grammar without precedence declarations the overview suggests them
+  - The classification notes when the grammar has useless symbols and offers to reduce it
 - **Grammar Processor (Equivalent Transformations)**:
   - Unreachable & unproductive symbol removal (Reduced Grammar)
   - $\varepsilon$-production elimination with start symbol preservation (a fresh start symbol only when $S$ occurs on a right-hand side)
@@ -59,7 +62,7 @@
   - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
   - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
 - **Word Generator**:
-  - BFS enumeration of shortest words in $L(G)$
+  - BFS enumeration of the words with the shortest derivations in $L(G)$
   - Random derivation with guaranteed termination (minimal derivation heights)
   - Leftmost sentential derivation sequences with the rewritten non-terminal highlighted
   - Interactive Derivation Tree visualizer (children kept in order, optional leaf row showing the yield)
@@ -81,7 +84,9 @@
   - Hovering a lookahead (LR(1), LALR(1)) explains why it is there: carried over by a transition, $a \in \text{FIRST}(\beta)$ in the closure, passed on through a nullable $\beta$, or the end marker of the initial item; for LALR(1) also which merged LR(1) states have it
   - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
 - **University Teaching & Classroom Features**:
-  - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework
+  - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework; symbol names compile with pdfLaTeX (subscripts of copied non-terminals `B₂` → `B_{2}`, accented names in text mode, arrows and Greek letters as commands)
+  - **Simulator input**: tokens separated by spaces, or a word without spaces (`aabb`, `id+id`) split into terminals by longest match; the split is shown
+  - **Long computations do not block the page**: the analysis and the automatic LL(1) attempt run in slices with their progress shown; after every 30 s of computation they pause and ask whether to continue. Stopped after the LALR(1) automaton, the results are shown with the missing parts (exact LL(2), LR(1), ambiguity) marked. LALR(1) is built from the LR(0) states by propagating lookaheads (Dragon Book, Alg. 4.62/4.63), so it does not need the canonical LR(1) collection; automata over 150 states are drawn only on request and tables over 300 rows show their first rows
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
   - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button below the editor copies such a link
   - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)

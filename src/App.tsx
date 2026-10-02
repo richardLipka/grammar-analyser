@@ -1,15 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Grammar, formatGrammarForEditor } from './core/ast/grammar';
+import { Grammar, formatGrammarForEditor, transferPrecedence } from './core/ast/grammar';
 import { parseGrammar, oneRulePerLine, ParseError } from './core/parser/grammarParser';
-import { analyzeGrammar, GrammarAnalysis } from './core/analyser/grammarAnalyser';
-import { buildLLTable, LLTable } from './core/ll/llTable';
-import {
-  buildLR0Automaton,
-  buildLR1Automaton,
-  buildLALR1Automaton,
-  LRAutomaton
-} from './core/lr/lrAutomaton';
-import { buildLRTable, LRTable, LRLayout } from './core/lr/lrTable';
+import { LRLayout } from './core/lr/lrTable';
+import { AnalysisDataResult, analyzeAllSteps } from './core/analysisJob';
+import { JobControl } from './core/jobs/job';
+import { useSteppedJob, runForAWhile } from './ui/useSteppedJob';
+import { JobStatus } from './ui/components/JobStatus';
 import { PRESET_GRAMMARS, PresetGrammar } from './core/presets/presetGrammars';
 import { Language, TRANSLATIONS } from './i18n/translations';
 
@@ -43,49 +39,6 @@ type TabId = UrlTab;
 type EChoice = 'epsilon' | 'terminal';
 type Theme = 'dark' | 'light' | 'projector';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
-
-export interface AnalysisDataResult {
-  analysis: GrammarAnalysis;
-  llTable: LLTable;
-  lr0Automaton: LRAutomaton;
-  slr1Automaton: LRAutomaton;
-  lalr1Automaton: LRAutomaton;
-  lr1Automaton: LRAutomaton;
-  lr0Table: LRTable;
-  slr1Table: LRTable;
-  lalr1Table: LRTable;
-  lr1Table: LRTable;
-}
-
-function computeAnalysis(grammar: Grammar | null): AnalysisDataResult | null {
-  if (!grammar) return null;
-
-  try {
-    const analysis = analyzeGrammar(grammar);
-    const llTable = buildLLTable(grammar, analysis);
-
-    const lr0Automaton = buildLR0Automaton(grammar, 'LR(0)');
-    const slr1Automaton = buildLR0Automaton(grammar, 'SLR(1)');
-    const lalr1Automaton = buildLALR1Automaton(grammar, analysis);
-    const lr1Automaton = buildLR1Automaton(grammar, analysis);
-
-    return {
-      analysis,
-      llTable,
-      lr0Automaton,
-      slr1Automaton,
-      lalr1Automaton,
-      lr1Automaton,
-      lr0Table: buildLRTable(lr0Automaton, grammar, analysis),
-      slr1Table: buildLRTable(slr1Automaton, grammar, analysis),
-      lalr1Table: buildLRTable(lalr1Automaton, grammar, analysis),
-      lr1Table: buildLRTable(lr1Automaton, grammar, analysis)
-    };
-  } catch (err) {
-    console.error('Analysis error:', err);
-    return null;
-  }
-}
 
 /** Per-viewer conveniences only; the app works the same when storage is unavailable. */
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -213,15 +166,46 @@ export const App: React.FC = () => {
   const initialParse = useMemo(() => parseGrammar(setup.grammarText, { eIsEpsilon }), []);
   const initialGrammar = initialParse.errors.length === 0 ? initialParse.grammar ?? null : null;
   const [analyzedGrammar, setAnalyzedGrammar] = useState<Grammar | null>(initialGrammar);
-  const [analysisData, setAnalysisData] = useState<AnalysisDataResult | null>(() => computeAnalysis(initialGrammar));
-  const [isCalculating, setIsCalculating] = useState(false);
+  // The first analysis runs before the page is shown when it is quick; a large grammar continues in slices
+  const initialRun = useMemo(() => {
+    if (!initialGrammar) return null;
+    const control: JobControl = { stop: false };
+    const job = analyzeAllSteps(initialGrammar, control);
+    return { job, control, first: runForAWhile(job, 300) };
+  }, []);
+  const [analysisData, setAnalysisData] = useState<AnalysisDataResult | null>(() =>
+    initialRun?.first.done ? initialRun.first.value : null);
+  const [isCalculating, setIsCalculating] = useState(!!initialRun && !initialRun.first.done);
   const [lastCalcDuration, setLastCalcDuration] = useState<number>(0);
   const [isHeavyGrammar, setIsHeavyGrammar] = useState(false);
+  // Long computations run in slices and ask before going on after 30 s
+  const analysisRunner = useSteppedJob();
+  const transformRunner = useSteppedJob();
 
   // Parse currently edited text for syntax error validation
   const parseResult = useMemo(() => parseGrammar(grammarText, { eIsEpsilon }), [grammarText, eIsEpsilon]);
   const canAnalyse = !!parseResult.grammar && parseResult.errors.length === 0;
   const isStale = grammarText.trim() !== analyzedGrammarText.trim();
+
+  /** The analysis of `grammar` finished (or was stopped by the user). */
+  const analysisDone = (grammar: Grammar, text: string) => (data: AnalysisDataResult | null, info: { elapsedMs: number; stopped: boolean }) => {
+    // Stopped before the LR(0)/LALR(1) automata were ready: the previous results stay, marked as outdated
+    if (data) {
+      setAnalysisData(data);
+      setAnalyzedGrammar(grammar);
+      setAnalyzedGrammarText(text);
+    }
+    setLastCalcDuration(Math.round(info.elapsedMs));
+    // A long or stopped computation is not restarted on every key press
+    setIsHeavyGrammar(info.elapsedMs > 150 || info.stopped);
+    setIsCalculating(false);
+  };
+
+  useEffect(() => {
+    if (initialRun && !initialRun.first.done && initialGrammar) {
+      analysisRunner.start(initialRun.job, initialRun.control, analysisDone(initialGrammar, setup.grammarText), initialRun.first.elapsedMs);
+    }
+  }, []);
 
   const recalculate = (overrideText?: string, epsilonE = eIsEpsilon) => {
     const textToRun = overrideText !== undefined ? overrideText : grammarText;
@@ -229,27 +213,9 @@ export const App: React.FC = () => {
     if (!parsed.grammar || parsed.errors.length > 0) {
       return;
     }
-
     setIsCalculating(true);
-
-    // Run async in next tick so React renders invalid grey state and spinner first
-    setTimeout(() => {
-      const startTime = performance.now();
-      try {
-        const data = computeAnalysis(parsed.grammar!);
-        const duration = Math.round(performance.now() - startTime);
-
-        setAnalysisData(data);
-        setAnalyzedGrammar(parsed.grammar || null);
-        setAnalyzedGrammarText(textToRun);
-        setLastCalcDuration(duration);
-        setIsHeavyGrammar(duration > 150);
-      } catch (err) {
-        console.error('Recalculation error:', err);
-      } finally {
-        setIsCalculating(false);
-      }
-    }, 15);
+    const control: JobControl = { stop: false };
+    analysisRunner.start(analyzeAllSteps(parsed.grammar, control), control, analysisDone(parsed.grammar, textToRun));
   };
 
   // Auto-recalculate on grammar changes (debounced 350ms). Heavy grammars
@@ -303,14 +269,18 @@ export const App: React.FC = () => {
     typingTimer.current = window.setTimeout(flushTyping, 800);
   };
 
-  /** Applies a transformation directly to the grammar in the editor (one undoable step). */
-  const applyTransformation = (result: TransformationResult, title: { en: string; cz: string }) => {
+  /**
+   * Applies a transformation directly to the grammar in the editor (one undoable step).
+   * Precedence declarations of the source grammar are kept (see transferPrecedence).
+   */
+  const applyTransformation = (result: TransformationResult, title: { en: string; cz: string }, source = parseResult.grammar) => {
     if (result.steps.length === 0) {
       setNotice(t.nothingChanged);
       window.setTimeout(() => setNotice(null), 2500);
       return;
     }
-    const text = formatGrammarForEditor(result.transformedGrammar);
+    const transformed = source ? transferPrecedence(source, result.transformedGrammar) : result.transformedGrammar;
+    const text = formatGrammarForEditor(transformed);
     flushTyping();
     history.commit({ text, kind: 'transform', titleEn: title.en, titleCz: title.cz, steps: result.steps });
     showText(text);
@@ -319,7 +289,15 @@ export const App: React.FC = () => {
   const applyWholeGrammar = (id: string) => {
     const tr = WHOLE_GRAMMAR_TRANSFORMATIONS.find(x => x.id === id);
     if (!tr || !parseResult.grammar || parseResult.errors.length > 0) return;
-    applyTransformation(tr.fn(parseResult.grammar), { en: tr.label(TRANSLATIONS.en), cz: tr.label(TRANSLATIONS.cz) });
+    const source = parseResult.grammar;
+    const title = { en: tr.label(TRANSLATIONS.en), cz: tr.label(TRANSLATIONS.cz) };
+    if (tr.job) {
+      // A search that may take long (automatic LL(1)): in slices, asking after 30 s; stopped, it keeps the best state
+      const control: JobControl = { stop: false };
+      transformRunner.start(tr.job(source, control), control, result => applyTransformation(result, title, source));
+      return;
+    }
+    applyTransformation(tr.fn(source), title, source);
   };
 
   const goToHistory = (i: number) => {
@@ -431,6 +409,31 @@ export const App: React.FC = () => {
   return (
     <div className="app-shell">
       <TransformationInfoDialog infoKey={infoKey} onClose={() => setInfoKey(null)} onShowAll={() => setInfoKey('all')} lang={lang} />
+      {/* Long computations: progress, and every 30 s the question whether to go on */}
+      <div className="job-status-dock">
+        <JobStatus
+          state={analysisRunner.state}
+          title={{ en: 'Analysis of the grammar', cz: 'Analýza gramatiky' }}
+          stopHint={{
+            en: 'Stopped after the LALR(1) automaton, the results of this grammar are shown with the missing parts (exact LL(2), LR(1), ambiguity) marked; stopped earlier, the previous results stay.',
+            cz: 'Zastavení po dokončení automatu LALR(1) ukáže výsledky této gramatiky s vyznačenými chybějícími částmi (přesný test LL(2), LR(1), nejednoznačnost); zastavení dříve ponechá předchozí výsledky.'
+          }}
+          lang={lang}
+          onResume={analysisRunner.resume}
+          onStop={analysisRunner.stop}
+        />
+        <JobStatus
+          state={transformRunner.state}
+          title={{ en: 'Automatic transformation to LL(1)', cz: 'Automatický převod na LL(1)' }}
+          stopHint={{
+            en: 'Stopping keeps the best grammar found so far and lists the operations, like a failed attempt.',
+            cz: 'Zastavení ponechá dosud nejlepší nalezenou gramatiku a vypíše provedené operace, jako při neúspěšném pokusu.'
+          }}
+          lang={lang}
+          onResume={transformRunner.resume}
+          onStop={transformRunner.stop}
+        />
+      </div>
       {/* Top Application Header */}
       <header className="app-header">
         <div className="brand-section">
@@ -846,7 +849,7 @@ export const App: React.FC = () => {
 
             {!analyzedGrammar || !analysisData ? (
               <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
-                {t.pleaseSpecifyGrammar}
+                {isCalculating ? t.recalculating : t.pleaseSpecifyGrammar}
               </div>
             ) : (
               <div className={isStale || isCalculating ? 'results-invalid' : ''}>
@@ -865,6 +868,10 @@ export const App: React.FC = () => {
                       if (variant) setLrVariant(variant);
                       setActiveTab(tab);
                     }}
+                    ambiguity={analysisData.ambiguity}
+                    provenUnambiguous={analysisData.provenUnambiguous}
+                    stopped={analysisData.stopped}
+                    onReduce={!isStale && canAnalyse ? () => applyWholeGrammar('reduce') : undefined}
                   />
                 )}
 
@@ -904,6 +911,7 @@ export const App: React.FC = () => {
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
+                    rawTables={analysisData.rawTables}
                     defaultInput={sampleInput}
                     lang={lang}
                     selectedVariant={lrVariant}

@@ -10,15 +10,23 @@ import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
 import { exportLRTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
+import { tokenizeInput } from '../../core/parser/inputTokenizer';
+import { TokenizedInputNote } from '../components/TokenizedInputNote';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+
+/** Rows of the parsing table shown before "show all". */
+const TABLE_ROW_LIMIT = 300;
 
 interface LRViewProps {
   grammar: Grammar;
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
-  lr1Table: LRTable;
+  /** Missing when the computation was stopped before it */
+  lr1Table?: LRTable;
+  /** The tables without the precedence declarations (only when the grammar has some) */
+  rawTables?: Partial<Record<LRVariantName, LRTable>>;
   defaultInput?: string;
   lang: Language;
   selectedVariant?: LRVariantName;
@@ -33,6 +41,7 @@ export const LRView: React.FC<LRViewProps> = ({
   slr1Table,
   lalr1Table,
   lr1Table,
+  rawTables,
   defaultInput = 'id + id * id',
   lang,
   selectedVariant: controlledVariant,
@@ -52,13 +61,23 @@ export const LRView: React.FC<LRViewProps> = ({
 
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
-  const activeTable = { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table }[selectedVariant];
+  // Large tables show their first rows unless asked for all (rendering thousands of rows blocks the page)
+  const [showAllRows, setShowAllRows] = useState(false);
+  // Precedence declarations resolve conflicts (as in Yacc); switched off, the raw table is shown
+  const [usePrecedence, setUsePrecedence] = useState(true);
+  const hasPrecedence = !!rawTables && Object.keys(rawTables).length > 0;
+  const tables: Record<LRVariantName, LRTable | undefined> = { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table };
+  const resolvedTable = tables[selectedVariant];
+  const missing = resolvedTable === undefined;
+  const activeTable: LRTable = (!usePrecedence && rawTables?.[selectedVariant]) || resolvedTable || lalr1Table;
   const lecture = layout === 'lecture';
 
-  const simulation: LRSimulationResult = useMemo(() => {
-    const tokens = inputText.trim().split(/\s+/).filter(Boolean);
-    return simulateLRParse(tokens, grammar, activeTable, layout);
-  }, [inputText, grammar, activeTable, layout]);
+  // Words written without spaces (aabb, id+id) are split into terminals
+  const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
+  const simulation: LRSimulationResult = useMemo(
+    () => simulateLRParse(tokenized.tokens, grammar, activeTable, layout),
+    [tokenized, grammar, activeTable, layout]
+  );
 
   useEffect(() => {
     setCurrentStepIdx(0);
@@ -83,6 +102,8 @@ export const LRView: React.FC<LRViewProps> = ({
   const trTable = lecture ? activeTable.gTable : activeTable.gotoTable;
   const conflicts = lecture ? activeTable.fConflicts : activeTable.conflicts;
   const conflictCells = new Set(conflicts.map(c => `${c.stateId}|${c.symbol}`));
+  const resolvedCells = new Map(activeTable.resolvedConflicts.map(r => [`${r.stateId}|${r.symbol}`, r] as const));
+  const cz = lang === 'cz';
   const fmt = (a: LRAction) => formatLayoutAction(a, layout, lang);
   const actionCellName = (state: number, col: string) =>
     lecture ? (col === LR0_ACTION_COLUMN ? `f(${name(state)})` : `f(${name(state)}, ${col})`) : `ACTION[${state}, ${col}]`;
@@ -116,6 +137,7 @@ export const LRView: React.FC<LRViewProps> = ({
                   style={{ padding: '3px 8px', fontSize: '11px' }}
                   aria-pressed={selectedVariant === v}
                   onClick={() => setSelectedVariant(v)}
+                  title={tables[v] ? undefined : (cz ? 'Nespočteno – výpočet byl zastaven' : 'Not computed – the computation was stopped')}
                 >
                   {v}
                 </button>
@@ -132,6 +154,45 @@ export const LRView: React.FC<LRViewProps> = ({
           </div>
         </div>
         <p className="hint-text" style={{ marginBottom: '12px' }}>{t.lrVariantHints[selectedVariant]}</p>
+
+        {missing && (
+          <div className="notice-box warning" style={{ marginBottom: '12px' }}>
+            <div className="notice-title">
+              <AlertTriangle size={15} />
+              <span>
+                {cz
+                  ? `Tabulka ${selectedVariant} nebyla spočtena: výpočet byl zastaven. Zobrazena je tabulka LALR(1); úplnou analýzu spustí tlačítko Přepočítat.`
+                  : `The ${selectedVariant} table was not computed: the computation was stopped. The LALR(1) table is shown; the Recalculate button starts the full analysis.`}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {hasPrecedence && selectedVariant !== 'LR(0)' && (
+          <div className="precedence-switch">
+            <label>
+              <input type="checkbox" checked={usePrecedence} onChange={e => setUsePrecedence(e.target.checked)} />
+              <span>{cz ? 'Použít priority a asociativitu (%left, %right, %nonassoc, %prec)' : 'Use precedence and associativity (%left, %right, %nonassoc, %prec)'}</span>
+            </label>
+            {usePrecedence && activeTable.resolvedConflicts.length > 0 && (
+              <details className="resolved-list">
+                <summary>
+                  {cz
+                    ? `Konflikty vyřešené prioritami: ${activeTable.resolvedConflicts.length}`
+                    : `Conflicts resolved by precedence: ${activeTable.resolvedConflicts.length}`}
+                </summary>
+                <ul>
+                  {activeTable.resolvedConflicts.map((r, i) => (
+                    <li key={i}>
+                      <code>{actionCellName(r.stateId, r.symbol)}</code>: {r.actions.map(fmt).join(' / ')} → <strong>{r.chosen ? fmt(r.chosen) : (cz ? 'chyba' : 'error')}</strong>
+                      <div className="resolved-reason">{cz ? r.reason.cz : r.reason.en}</div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
 
         <div style={{ marginBottom: '14px' }}>
           {conflicts.length > 0 ? (
@@ -176,6 +237,9 @@ export const LRView: React.FC<LRViewProps> = ({
               <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <CheckCircle2 size={15} />
                 {t.noLRConflicts.replace('{variant}', selectedVariant)}
+                {activeTable.resolvedConflicts.length > 0 && (cz
+                  ? ` (díky prioritám; vyřešeno konfliktů: ${activeTable.resolvedConflicts.length})`
+                  : ` (thanks to the precedence; ${activeTable.resolvedConflicts.length} conflict(s) resolved)`)}
               </span>
               <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
                 {t.statesCount} <strong>{activeTable.states.length}</strong>
@@ -226,7 +290,7 @@ export const LRView: React.FC<LRViewProps> = ({
               </tr>
             </thead>
             <tbody>
-              {activeTable.states.map(s => {
+              {(showAllRows ? activeTable.states : activeTable.states.slice(0, TABLE_ROW_LIMIT)).map(s => {
                 const actRow = actTable.get(s);
                 const trRow = trTable.get(s);
                 const isRowActive = currentStep?.lookupState === s;
@@ -238,12 +302,14 @@ export const LRView: React.FC<LRViewProps> = ({
                     {actColumns.map(col => {
                       const actions = actRow?.get(col) || [];
                       const isConflict = conflictCells.has(`${s}|${col}`);
+                      const resolved = resolvedCells.get(`${s}|${col}`);
                       const isCellActive = isRowActive && currentStep?.lookupSymbol === col;
                       const isAccept = actions.some(a => a.type === 'accept');
                       return (
                         <td
                           key={`a_${col}`}
-                          className={isCellActive ? 'table-cell-active' : ''}
+                          className={[isCellActive ? 'table-cell-active' : '', resolved ? 'cell-resolved' : ''].join(' ')}
+                          title={resolved ? `${resolved.actions.map(fmt).join(' / ')} → ${resolved.chosen ? fmt(resolved.chosen) : (cz ? 'chyba' : 'error')}: ${cz ? resolved.reason.cz : resolved.reason.en}` : undefined}
                           style={{
                             textAlign: 'center',
                             fontFamily: 'var(--font-mono)',
@@ -254,7 +320,7 @@ export const LRView: React.FC<LRViewProps> = ({
                             fontWeight: isCellActive || isConflict || isAccept ? 700 : 400
                           }}
                         >
-                          {actions.map(fmt).join(' / ')}
+                          {actions.length > 0 ? actions.map(fmt).join(' / ') : resolved ? '∅' : ''}
                         </td>
                       );
                     })}
@@ -284,6 +350,18 @@ export const LRView: React.FC<LRViewProps> = ({
             </tbody>
           </table>
         </div>
+        {!showAllRows && activeTable.states.length > TABLE_ROW_LIMIT && (
+          <div className="table-row-limit">
+            <span>
+              {cz
+                ? `Zobrazeno prvních ${TABLE_ROW_LIMIT} z ${activeTable.states.length} stavů (vykreslení celé tabulky chvíli trvá).`
+                : `Showing the first ${TABLE_ROW_LIMIT} of ${activeTable.states.length} states (drawing the whole table takes a while).`}
+            </span>
+            <button type="button" className="btn btn-secondary" onClick={() => setShowAllRows(true)}>
+              {cz ? 'Zobrazit všechny řádky' : 'Show all rows'}
+            </button>
+          </div>
+        )}
         <div className="hint-text" style={{ marginTop: '8px' }}>
           {lecture ? t.lrLegendLecture : t.lrLegend}
           {' '}
@@ -314,6 +392,7 @@ export const LRView: React.FC<LRViewProps> = ({
             aria-label={t.inputWord}
           />
         </div>
+        <TokenizedInputNote tokenized={tokenized} lang={lang} />
 
         {simulation.steps.length > 0 && (
           <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>

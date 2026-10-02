@@ -9,6 +9,8 @@ import { CheckCircle2, AlertTriangle, Layers, XCircle, Sparkles } from 'lucide-r
 import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
 import { LatexExportButton } from '../components/LatexExportButton';
+import { tokenizeInput } from '../../core/parser/inputTokenizer';
+import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { ProductionText, formatLookaheadSet } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { exportLLTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
@@ -53,10 +55,12 @@ export const LLView: React.FC<LLViewProps> = ({
   const useContexts = llTable.isLL2 && !llTable.isStrongLL2;
   const mode: LLParseMode = k === 1 ? { k: 1 } : { k: 2, tables: useContexts ? 'contexts' : 'strong' };
 
-  const simulation: LLSimulationResult = useMemo(() => {
-    const tokens = inputText.trim().split(/\s+/).filter(Boolean);
-    return simulateLLParse(tokens, grammar, llTable, undefined, mode);
-  }, [inputText, grammar, llTable, k, useContexts]);
+  // Words written without spaces (aabb, id+id) are split into terminals
+  const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
+  const simulation: LLSimulationResult = useMemo(
+    () => simulateLLParse(tokenized.tokens, grammar, llTable, undefined, mode),
+    [tokenized, grammar, llTable, k, useContexts]
+  );
 
   useEffect(() => {
     setCurrentStepIdx(0);
@@ -379,6 +383,7 @@ export const LLView: React.FC<LLViewProps> = ({
             aria-label={t.inputWord}
           />
         </div>
+        <TokenizedInputNote tokenized={tokenized} lang={lang} />
 
         {simulation.steps.length > 0 && (
           <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>

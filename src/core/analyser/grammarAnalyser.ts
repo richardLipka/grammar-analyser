@@ -10,6 +10,7 @@
  */
 
 import { Grammar, Production, EPSILON, END_MARKER } from '../ast/grammar';
+import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 
 export interface GrammarAnalysis {
   nullable: Set<string>;
@@ -26,25 +27,52 @@ export interface GrammarAnalysis {
   cyclic: Set<string>;
 }
 
+export type LeftRecursionKind = 'immediate' | 'hidden' | 'indirect';
+
 export interface LeftRecursionInfo {
   /** A has a rule A -> A α. */
   immediate: Set<string>;
   /** A ⇒+ A α through other non-terminals or a nullable prefix, without an immediate rule. */
   indirect: Set<string>;
+  /**
+   * Every left-recursive A with all the ways it is left-recursive: immediate
+   * (A → A α), hidden (A → B A α with B ⇒+ ε), indirect (A → B α, B ⇒+ A β).
+   */
+  kinds: Map<string, LeftRecursionKind[]>;
 }
 
-export function analyzeGrammar(g: Grammar): GrammarAnalysis {
+export interface AnalyzeOptions {
+  /** Compute FIRST₂/FOLLOW₂ (default true); without them the k = 2 maps are empty. */
+  k2?: boolean;
+}
+
+export function analyzeGrammar(g: Grammar, options: AnalyzeOptions = {}): GrammarAnalysis {
+  return runJob(analyzeGrammarSteps(g, runToEnd(), options))!;
+}
+
+/** analyzeGrammar as a job: yields during the FIRST₂/FOLLOW₂ fixpoints; null when stopped. */
+export function* analyzeGrammarSteps(g: Grammar, control: JobControl, options: AnalyzeOptions = {}): Job<GrammarAnalysis | null> {
   const nullable = computeNullable(g);
   const endable = computeEndable(g);
   const reachable = computeReachable(g);
-  
+
   const first1 = computeFirst1(g, nullable);
   const follow1 = computeFollow1(g, first1, nullable);
   const predict1 = computePredict1(g, first1, follow1, nullable);
 
-  const first2 = computeFirstK(g, 2);
-  const follow2 = computeFollowK(g, first2, 2);
-  const predict2 = computePredictK(g, first2, follow2, 2);
+  let first2 = new Map<string, Set<string>>();
+  let follow2 = new Map<string, Set<string>>();
+  let predict2 = new Map<number, Set<string>>();
+  if (options.k2 !== false) {
+    const progress = { en: 'FIRST₂ and FOLLOW₂', cz: 'FIRST₂ a FOLLOW₂' };
+    yield progress;
+    if (control.stop) return null;
+    first2 = yield* firstKSteps(g, 2, control);
+    if (control.stop) return null;
+    follow2 = yield* followKSteps(g, first2, 2, control);
+    if (control.stop) return null;
+    predict2 = computePredictK(g, first2, follow2, 2);
+  }
 
   const leftRecursion = computeLeftRecursion(g, nullable);
   const cyclic = computeCyclic(g, nullable);
@@ -103,7 +131,36 @@ export function computeLeftRecursion(g: Grammar, nullable: Set<string>): LeftRec
     g.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs)
   );
   const indirect = new Set([...all].filter(nt => !immediate.has(nt)));
-  return { immediate, indirect };
+
+  // A → X1 … Xk A α with k ≥ 1 and all Xi nullable
+  const hidden = new Set<string>();
+  for (const p of g.productions) {
+    for (let i = 0; i < p.rhs.length && nullable.has(p.rhs[i]); i++) {
+      if (p.rhs[i + 1] === p.lhs) hidden.add(p.lhs);
+    }
+  }
+  // A reaches itself through another non-terminal
+  const reaches = (from: string, to: string) => {
+    const stack = [from];
+    const seen = new Set<string>();
+    while (stack.length > 0) {
+      const x = stack.pop()!;
+      if (x === to) return true;
+      if (seen.has(x)) continue;
+      seen.add(x);
+      stack.push(...(succ.get(x) || []));
+    }
+    return false;
+  };
+  const kinds = new Map<string, LeftRecursionKind[]>();
+  for (const nt of all) {
+    const list: LeftRecursionKind[] = [];
+    if (immediate.has(nt)) list.push('immediate');
+    if (hidden.has(nt)) list.push('hidden');
+    if ([...(succ.get(nt) || [])].some(b => b !== nt && reaches(b, nt))) list.push('indirect');
+    kinds.set(nt, list);
+  }
+  return { immediate, indirect, kinds };
 }
 
 /** Cycles A ⇒+ A: rule A -> α B β with α and β nullable gives the edge A → B. */
@@ -395,6 +452,11 @@ export function computePredict1(
  * Generalized FIRST_k for strings of length <= k
  */
 export function computeFirstK(g: Grammar, k: number): Map<string, Set<string>> {
+  return runJob(firstKSteps(g, k, runToEnd()));
+}
+
+/** FIRST_k fixpoint as a job (yields after every round over the rules). */
+function* firstKSteps(g: Grammar, k: number, control: JobControl): Job<Map<string, Set<string>>> {
   const firstK = new Map<string, Set<string>>();
 
   // Terminals
@@ -407,6 +469,7 @@ export function computeFirstK(g: Grammar, k: number): Map<string, Set<string>> {
     firstK.set(nt, new Set());
   }
 
+  const tick = ticker(40);
   let changed = true;
   while (changed) {
     changed = false;
@@ -421,6 +484,10 @@ export function computeFirstK(g: Grammar, k: number): Map<string, Set<string>> {
 
       if (target.size > initialSize) {
         changed = true;
+      }
+      if (tick()) {
+        yield undefined;
+        if (control.stop) return firstK;
       }
     }
   }
@@ -461,6 +528,17 @@ export function computeFollowK(
   firstK: Map<string, Set<string>>,
   k: number
 ): Map<string, Set<string>> {
+  return runJob(followKSteps(g, firstK, k, runToEnd()));
+}
+
+/** FOLLOW_k fixpoint as a job. */
+function* followKSteps(
+  g: Grammar,
+  firstK: Map<string, Set<string>>,
+  k: number,
+  control: JobControl
+): Job<Map<string, Set<string>>> {
+  const tick = ticker(40);
   const follow = new Map<string, Set<string>>();
 
   for (const nt of g.nonTerminals) {
@@ -501,6 +579,10 @@ export function computeFollowK(
         if (followB.size > initialSize) {
           changed = true;
         }
+      }
+      if (tick()) {
+        yield undefined;
+        if (control.stop) return follow;
       }
     }
   }

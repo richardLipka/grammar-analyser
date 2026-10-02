@@ -9,6 +9,7 @@
 
 import { Grammar, Production, END_MARKER, EPSILON } from '../ast/grammar';
 import { GrammarAnalysis, first1OfString, firstKOfString } from '../analyser/grammarAnalyser';
+import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 
 export interface LLConflictReason {
   production: Production;
@@ -57,7 +58,22 @@ export interface LLTable {
 
 const MAX_LL2_CONTEXTS = 5000;
 
-export function buildLLTable(g: Grammar, analysis: GrammarAnalysis): LLTable {
+export interface LLTableOptions {
+  /** Build the strong LL(2) table and run the exact LL(2) test (default true). */
+  ll2?: boolean;
+  /** Run the exact LL(2) test (default true); without it ll2Complete is false. */
+  exact?: boolean;
+}
+
+export function buildLLTable(g: Grammar, analysis: GrammarAnalysis, options: LLTableOptions = {}): LLTable {
+  return runJob(buildLLTableSteps(g, analysis, runToEnd(), options));
+}
+
+/**
+ * buildLLTable as a job: the exact LL(2) test yields after every table T(A, L).
+ * When stopped during that test, ll2Complete is false (isLL2 is then unknown).
+ */
+export function* buildLLTableSteps(g: Grammar, analysis: GrammarAnalysis, control: JobControl, options: LLTableOptions = {}): Job<LLTable> {
   const table1 = new Map<string, Map<string, Production[]>>();
   const conflicts: LLConflict[] = [];
 
@@ -113,6 +129,12 @@ export function buildLLTable(g: Grammar, analysis: GrammarAnalysis): LLTable {
   }
 
   const isLL1 = conflicts.length === 0;
+  if (options.ll2 === false) {
+    return {
+      isLL1, isLL2: isLL1, isStrongLL2: isLL1, ll2Complete: false, terminals: columns, nonTerminals: rows, table1, conflicts,
+      ll2Table: new Map(), ll2Columns: [], ll2Tables: [], strongLL2Conflicts: [], ll2Conflicts: []
+    };
+  }
 
   // Strong LL(2) table: one row per non-terminal, columns are 2-token lookaheads
   const ll2Table = new Map<string, Map<string, Production[]>>();
@@ -142,7 +164,10 @@ export function buildLLTable(g: Grammar, analysis: GrammarAnalysis): LLTable {
     }
   }
 
-  const exact = buildLLkTables(g, analysis.first2, 2);
+  yield { en: 'exact LL(2) test', cz: 'přesný test LL(2)' };
+  const exact = control.stop || options.exact === false
+    ? { tables: [], conflicts: [], complete: false }
+    : yield* buildLLkTablesSteps(g, analysis.first2, 2, control);
 
   return {
     isLL1,
@@ -204,6 +229,32 @@ export function buildLLkTables(
   firstK: Map<string, Set<string>>,
   k: number
 ): { tables: LLkContextTable[]; conflicts: LL2Conflict[]; complete: boolean } {
+  return runJob(buildLLkTablesSteps(g, firstK, k, runToEnd()));
+}
+
+function* buildLLkTablesSteps(
+  g: Grammar,
+  firstK: Map<string, Set<string>>,
+  k: number,
+  control: JobControl
+): Job<{ tables: LLkContextTable[]; conflicts: LL2Conflict[]; complete: boolean }> {
+  const tick = ticker(20);
+  const byLhs = new Map<string, Production[]>();
+  for (const p of g.productions) {
+    if (!byLhs.has(p.lhs)) byLhs.set(p.lhs, []);
+    byLhs.get(p.lhs)!.push(p);
+  }
+  // FIRST_k of the rule suffixes, the same in every context
+  const suffixCache = new Map<string, Set<string>>();
+  const suffixFirst = (p: Production, from: number) => {
+    const key = `${p.id}:${from}`;
+    let r = suffixCache.get(key);
+    if (!r) {
+      r = firstKOfString(p.rhs.slice(from), firstK, k);
+      suffixCache.set(key, r);
+    }
+    return r;
+  };
   const tables: LLkContextTable[] = [];
   const conflicts: LL2Conflict[] = [];
   const ids = new Map<string, number>();
@@ -228,14 +279,14 @@ export function buildLLkTables(
     const follow = new Set(table.follow);
     const owner = new Map<string, Production[]>();
 
-    for (const p of g.productions.filter(q => q.lhs === table.nonTerminal)) {
+    for (const p of byLhs.get(table.nonTerminal) || []) {
       const rhsTables = p.rhs.map((sym, i) => {
         if (!g.nonTerminals.has(sym)) return null;
-        const id = tableFor(sym, concatK(firstKOfString(p.rhs.slice(i + 1), firstK, k), follow, k));
+        const id = tableFor(sym, concatK(suffixFirst(p, i + 1), follow, k));
         if (id === null) complete = false;
         return id;
       });
-      for (const la of [...concatK(firstKOfString(p.rhs, firstK, k), follow, k)].sort()) {
+      for (const la of [...concatK(suffixFirst(p, 0), follow, k)].sort()) {
         table.rows.push({ lookahead: la, production: p, rhsTables });
         if (!owner.has(la)) owner.set(la, []);
         owner.get(la)!.push(p);
@@ -246,6 +297,10 @@ export function buildLLkTables(
       if (ps.length > 1) {
         conflicts.push({ nonTerminal: table.nonTerminal, lookahead: la, productions: ps, context: table.follow });
       }
+    }
+    if (tick()) {
+      yield { en: `exact LL(2) test: ${tables.length} tables T(A, L)`, cz: `přesný test LL(2): ${tables.length} tabulek T(A, L)` };
+      if (control.stop) return { tables, conflicts, complete: false };
     }
   }
 

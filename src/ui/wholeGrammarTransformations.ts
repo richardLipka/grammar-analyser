@@ -11,7 +11,8 @@ import {
   convertToChomsky,
   convertToGreibach
 } from '../core/processor/grammarProcessor';
-import { transformToLL1 } from '../core/processor/ll1Transformer';
+import { transformToLL1, transformToLL1Steps } from '../core/processor/ll1Transformer';
+import { Job, JobControl } from '../core/jobs/job';
 import { TRANSLATIONS } from '../i18n/translations';
 
 type Texts = (typeof TRANSLATIONS)['cz'];
@@ -20,6 +21,8 @@ type Texts = (typeof TRANSLATIONS)['cz'];
 export const WHOLE_GRAMMAR_TRANSFORMATIONS: {
   id: string;
   fn: (g: Grammar) => TransformationResult;
+  /** The same as a job that may take long (run in slices, the user is asked after 30 s) */
+  job?: (g: Grammar, control: JobControl) => Job<TransformationResult>;
   label: (t: Texts) => string;
   hint: (t: Texts) => string;
   accent?: boolean;
@@ -33,5 +36,5 @@ export const WHOLE_GRAMMAR_TRANSFORMATIONS: {
   { id: 'rightfactor', fn: rightFactorGrammar, label: t => t.btnRightFactor, hint: t => t.hintRightFactor },
   { id: 'cnf', fn: convertToChomsky, label: t => t.btnCNF, hint: t => t.hintCNF, accent: true },
   { id: 'gnf', fn: convertToGreibach, label: t => t.btnGNF, hint: t => t.hintGNF, accent: true },
-  { id: 'll1', fn: transformToLL1, label: t => t.btnLL1, hint: t => t.hintLL1, accent: true }
+  { id: 'll1', fn: transformToLL1, job: transformToLL1Steps, label: t => t.btnLL1, hint: t => t.hintLL1, accent: true }
 ];

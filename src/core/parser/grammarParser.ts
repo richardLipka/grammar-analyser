@@ -20,6 +20,9 @@
  *    - Rule numbers are labels, not symbols: "S --> aAS (1)", "(1) S -> a",
  *      "1. S -> a"; a ; followed by a new rule separates rules on one line
  *    - Comments: // and # to the end of the line, /* ... *\/ blocks
+ *    - Optional Yacc precedence: lines %left / %right / %nonassoc /
+ *      %precedence with tokens (lowest precedence first) and "%prec X" at the
+ *      end of an alternative; they resolve conflicts of the LR tables
  *
  * 2. Yacc / Bison (.y): declarations with %token, %left, %right, %nonassoc,
  *    %start, %union, %{ %}, the %% sections, { actions }, %prec, %empty, rules
@@ -31,7 +34,7 @@
  *    a lexer rule that is one literal is unified with that literal), EOF.
  */
 
-import { Grammar, Production, END_MARKER } from '../ast/grammar';
+import { Grammar, Production, END_MARKER, Associativity, PrecedenceLevel } from '../ast/grammar';
 
 export interface ParseError {
   line: number;
@@ -69,7 +72,7 @@ interface RawRule {
   lineNum: number;
   lhs: string;
   /** label: the rule number written in the input, e.g. 3 for "A --> a (3)" */
-  alts: { tokens: RhsToken[]; lineNum: number; label?: number }[];
+  alts: { tokens: RhsToken[]; lineNum: number; label?: number; prec?: string }[];
 }
 
 interface PlainContext {
@@ -86,6 +89,8 @@ interface FrontEndResult {
   aliases: Map<string, string>;
   /** Extra non-terminals created by EBNF expansion (no "undefined symbol" warning). */
   auxiliary: Set<string>;
+  /** Yacc precedence levels, lowest first (%left, %right, %nonassoc, %precedence). */
+  precedenceLevels?: PrecedenceLevel[];
 }
 
 const PLAIN_EPSILON_TOKENS = new Set([
@@ -106,12 +111,21 @@ const IDENT_CHAR_BEFORE_PRIME = /[\p{L}\p{N}_']/u;
 
 const msg = (line: number, message: string, messageCz: string): ParseError => ({ line, message, messageCz });
 
+const PRECEDENCE_LINE_RE = /^\s*%(left|right|nonassoc|precedence)\b/m;
+// "… %prec UMINUS" or "… %prec '-'" at the end of an alternative
+const PREC_SUFFIX_RE = /^(.*?)\s*%prec\s+("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)\s*$/s;
+
 /** Recognises the input format from its characteristic declarations. */
 export function detectDialect(text: string): GrammarDialect {
   const noComments = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
   if (/^\s*(?:(?:lexer|parser)\s+)?grammar\s+[\p{L}_][\p{L}\p{N}_]*\s*;/mu.test(noComments)) return 'antlr';
-  if (/^\s*%(?:%|\{|token\b|left\b|right\b|nonassoc\b|precedence\b|start\b|type\b|union\b|define\b|expect\b|nterm\b|code\b)/m.test(noComments)) {
+  if (/^\s*%(?:%|\{|token\b|start\b|type\b|union\b|define\b|expect\b|nterm\b|code\b)/m.test(noComments)) {
     return 'yacc';
+  }
+  // %left / %right / … alone: Yacc rules (A : …), or arrow rules with optional precedence lines
+  if (PRECEDENCE_LINE_RE.test(noComments)) {
+    const rules = noComments.split('\n').filter(l => !/^\s*%/.test(l)).join('\n');
+    return /(->|→|⟶|::=|=>)/.test(rules) ? 'plain' : 'yacc';
   }
   return 'plain';
 }
@@ -172,6 +186,8 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
   const reportedSymbols = new Set<string>();
   // production id -> the rule number written in the input and its line
   const labels = new Map<number, { label: number; line: number }>();
+  // production id -> %prec symbol
+  const precOf = new Map<number, { sym: string; line: number }>();
   let prodId = 1;
 
   for (const rule of rules) {
@@ -241,6 +257,7 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
       }
       seenProductions.add(key);
       if (alt.label !== undefined) labels.set(prodId, { label: alt.label, line: alt.lineNum });
+      if (alt.prec !== undefined) precOf.set(prodId, { sym: alt.prec, line: alt.lineNum });
       productions.push({ id: prodId++, lhs: rule.lhs, rhs });
     }
   }
@@ -275,7 +292,43 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
       `Čísla pravidel ve vstupu se liší od číslování použitého zde (nejprve pravidla počátečního symbolu, pak v pořadí zápisu): ${list.map(r => `(${r.label}) je pravidlo ${r.id}`).join(', ')}${more}.`));
   }
 
-  return { nonTerminals, terminals, startSymbol, productions: ordered.map((p, idx) => ({ ...p, id: idx + 1 })) };
+  const grammar: Grammar = { nonTerminals, terminals, startSymbol, productions: ordered.map((p, idx) => ({ ...p, id: idx + 1 })) };
+  const precedence = assemblePrecedence(front, ordered, precOf, nonTerminals, warnings);
+  if (precedence) grammar.precedence = precedence;
+  return grammar;
+}
+
+/** Precedence levels and %prec of the rules (renumbered like the productions), with warnings. */
+function assemblePrecedence(
+  front: FrontEndResult,
+  ordered: Production[],
+  precOf: Map<number, { sym: string; line: number }>,
+  nonTerminals: Set<string>,
+  warnings: ParseError[]
+): Grammar['precedence'] {
+  const alias = (s: string) => front.aliases.get(`quoted:${s}`) ?? front.aliases.get(`bare:${s}`) ?? s;
+  const levels = (front.precedenceLevels || []).map(l => ({ assoc: l.assoc, symbols: l.symbols.map(alias) }));
+  const declared = new Map<string, number>();
+  levels.forEach((l, i) => l.symbols.forEach(sym => {
+    if (declared.has(sym)) {
+      warnings.push(msg(1, `'${sym}' has more than one precedence declaration; the last one is used.`, `'${sym}' má více deklarací priority; platí poslední.`));
+    }
+    if (nonTerminals.has(sym)) {
+      warnings.push(msg(1, `Precedence is declared for the non-terminal '${sym}'; only tokens (terminals) have precedence.`, `Priorita je deklarována pro neterminál '${sym}'; prioritu mají jen tokeny (terminály).`));
+    }
+    declared.set(sym, i);
+  }));
+  const rulePrec = new Map<number, string>();
+  ordered.forEach((p, idx) => {
+    const prec = precOf.get(p.id);
+    if (!prec) return;
+    const sym = alias(prec.sym);
+    if (!declared.has(sym)) {
+      warnings.push(msg(prec.line, `%prec ${sym}: '${sym}' has no declared precedence (%left, %right, %nonassoc), so it has no effect.`, `%prec ${sym}: '${sym}' nemá deklarovanou prioritu (%left, %right, %nonassoc), nemá tedy žádný účinek.`));
+    }
+    rulePrec.set(idx + 1, sym);
+  });
+  return levels.length > 0 || rulePrec.size > 0 ? { levels, rulePrec } : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,9 +356,22 @@ function parsePlain(
   const rawLines = cleaned.split(/\r?\n/);
   let lines: { lineNum: number; content: string }[] = [];
   let labelled = false;
+  const precedenceLevels: PrecedenceLevel[] = [];
   for (let i = 0; i < rawLines.length; i++) {
+    const stripped = stripLineComment(rawLines[i]).trim();
+    // "%left + -": a precedence level (Yacc), lowest first
+    const precLine = stripped.match(/^%(left|right|nonassoc|precedence)\b(.*)$/s);
+    if (precLine) {
+      const symbols = tokenizeRhs(precLine[2], { ...ctx, eIsEpsilon: false }).filter(t => t.kind !== 'eps').map(t => t.text);
+      if (symbols.length === 0) {
+        warnings.push(msg(i + 1, `%${precLine[1]} without symbols was ignored.`, `%${precLine[1]} bez symbolů byl vynechán.`));
+      } else {
+        precedenceLevels.push({ assoc: precLine[1] as Associativity, symbols });
+      }
+      continue;
+    }
     // "S -> aAS | b; A -> a | bSA": several rules on one line (handy in URLs)
-    for (let segment of splitRulesOnLine(stripLineComment(rawLines[i]).trim())) {
+    for (let segment of splitRulesOnLine(stripped)) {
       // "(1) S -> a", "1. S -> a": the number is a label, not a symbol
       const unlabelled = segment.replace(LEADING_LABEL_RE, '');
       if (unlabelled !== segment && findRuleOperator(unlabelled)) {
@@ -323,11 +389,18 @@ function parsePlain(
     return null;
   }
 
-  // "A --> a   (3)": a trailing number labels the alternative
+  // "A --> a   (3)": a trailing number labels the alternative; "… %prec X" gives it the precedence of X
   const readAlternative = (alt: string, lineNum: number) => {
     const m = alt.match(TRAILING_LABEL_RE);
     if (m) labelled = true;
-    return { tokens: tokenizeRhs(m ? m[1] : alt, ctx), lineNum, label: m ? Number(m[2]) : undefined };
+    let body = m ? m[1] : alt;
+    let prec: string | undefined;
+    const pm = body.match(PREC_SUFFIX_RE);
+    if (pm) {
+      body = pm[1];
+      prec = tokenizeRhs(pm[2], { ...ctx, eIsEpsilon: false })[0]?.text;
+    }
+    return { tokens: tokenizeRhs(body, ctx), lineNum, label: m ? Number(m[2]) : undefined, prec };
   };
 
   // A left-hand side standing alone on its line, operator on the next one (GNU/Yacc style)
@@ -415,7 +488,8 @@ function parsePlain(
     rules: rawRules,
     declaredTerminals: new Set(),
     aliases: new Map(),
-    auxiliary: new Set()
+    auxiliary: new Set(),
+    precedenceLevels
   };
 }
 
@@ -472,6 +546,12 @@ function scanQuotes(line: string, onChar: (idx: number, inQuote: boolean) => boo
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     const inQuote = inDouble || inSingle;
+    // Inside a literal a backslash escapes the next character ("\"", "\\"), as in the tokenizer
+    if (inQuote && ch === '\\' && i + 1 < line.length) {
+      if (onChar(i, true) === true || onChar(i + 1, true) === true) return;
+      i++;
+      continue;
+    }
     if (ch === '"' && !inSingle) {
       inDouble = !inDouble;
     } else if (ch === "'" && !inDouble) {
@@ -866,6 +946,7 @@ function parseTerminated(
   const all = scanTerminated(text, dialect);
   const declaredTerminals = new Set<string>();
   const aliases = new Map<string, string>();
+  const precedenceLevels: PrecedenceLevel[] = [];
   let startSymbol: string | undefined;
 
   interface RuleSlice { lhs: string; line: number; body: STok[]; lexer: boolean; fragment: boolean }
@@ -898,6 +979,10 @@ function parseTerminated(
         args.push(decl[j]);
         j++;
       }
+      if (['%left', '%right', '%nonassoc', '%precedence'].includes(t.text)) {
+        const symbols = args.filter(a => a.kind === 'ident' || a.kind === 'quoted').map(a => a.text);
+        if (symbols.length > 0) precedenceLevels.push({ assoc: t.text.slice(1) as Associativity, symbols });
+      }
       if (['%token', '%left', '%right', '%nonassoc', '%precedence'].includes(t.text)) {
         let lastName: string | undefined;
         for (const a of args) {
@@ -929,6 +1014,10 @@ function parseTerminated(
         }
         if (['%token', '%left', '%right', '%nonassoc', '%precedence'].includes(t.text)) {
           args.filter(a => a.kind === 'ident' || a.kind === 'quoted').forEach(a => declaredTerminals.add(a.text));
+          if (t.text !== '%token') {
+            const symbols = args.filter(a => a.kind === 'ident' || a.kind === 'quoted').map(a => a.text);
+            if (symbols.length > 0) precedenceLevels.push({ assoc: t.text.slice(1) as Associativity, symbols });
+          }
         } else if (t.text === '%start') {
           startSymbol = args.find(a => a.kind === 'ident')?.text;
         }
@@ -1094,8 +1183,8 @@ function parseTerminated(
       },
       onEof: () => undefined
     };
-    const [items] = parseEbnfAlternatives(s.body, 0, ctx);
-    const alts = items.map(seq => ({ tokens: seq.flatMap(item => expandEbnfItem(item, ctx)), lineNum: s.line }));
+    const [items, , precs] = parseEbnfAlternatives(s.body, 0, ctx);
+    const alts = items.map((seq, k) => ({ tokens: seq.flatMap(item => expandEbnfItem(item, ctx)), lineNum: s.line, prec: precs[k] }));
     rules.push({ lhs: s.lhs, lineNum: s.line, alts });
     rules.push(...ctx.aux);
   }
@@ -1106,7 +1195,7 @@ function parseTerminated(
     return null;
   }
 
-  return { rules, startSymbol, declaredTerminals, aliases, auxiliary };
+  return { rules, startSymbol, declaredTerminals, aliases, auxiliary, precedenceLevels };
 }
 
 // ---------------------------------------------------------------------------
@@ -1130,8 +1219,10 @@ interface EbnfContext {
   onEof: () => void;
 }
 
-function parseEbnfAlternatives(toks: STok[], start: number, ctx: EbnfContext): [EbnfItem[][], number] {
+function parseEbnfAlternatives(toks: STok[], start: number, ctx: EbnfContext): [EbnfItem[][], number, (string | undefined)[]] {
   const alts: EbnfItem[][] = [[]];
+  // %prec X of each alternative (Yacc)
+  const precs: (string | undefined)[] = [];
   let i = start;
   while (i < toks.length) {
     const t = toks[i];
@@ -1147,6 +1238,7 @@ function parseEbnfAlternatives(toks: STok[], start: number, ctx: EbnfContext): [
     }
     if (t.kind === 'directive') {
       if (t.text === '%prec' || t.text === '%dprec' || t.text === '%merge') {
+        if (t.text === '%prec' && toks[i + 1]) precs[alts.length - 1] = toks[i + 1].text;
         i += 2;
       } else {
         i++; // %empty and anything else
@@ -1194,7 +1286,7 @@ function parseEbnfAlternatives(toks: STok[], start: number, ctx: EbnfContext): [
     }
     alts[alts.length - 1].push({ elem, suffix });
   }
-  return [alts, i];
+  return [alts, i, precs];
 }
 
 function expandEbnfItem(item: EbnfItem, ctx: EbnfContext): RhsToken[] {

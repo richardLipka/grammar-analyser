@@ -117,11 +117,14 @@ opt :
     expect(rules(res.grammar!)).toEqual(['expr -> expr + term', 'expr -> term', 'term -> id', 'opt ->', 'opt -> x']);
   });
 
-  it('analyses the calculator as an ambiguous LALR(1) grammar with conflicts', () => {
+  it('analyses the calculator as an ambiguous grammar whose conflicts the precedence declarations resolve', () => {
     const g = parseOk(bisonCalc).grammar!;
     const a = analyzeGrammar(g);
+    const raw = buildLRTable(buildLALR1Automaton(g, a), g, a, { usePrecedence: false });
+    expect(raw.conflicts.some(c => c.type === 'Shift/Reduce')).toBe(true);
     const t = buildLRTable(buildLALR1Automaton(g, a), g, a);
-    expect(t.conflicts.some(c => c.type === 'Shift/Reduce')).toBe(true);
+    expect(t.resolvedConflicts.length).toBe(raw.conflicts.length);
+    expect(t.isConflictFree).toBe(true);
   });
 });
 
