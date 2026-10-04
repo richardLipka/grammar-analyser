@@ -8,7 +8,7 @@ export interface PresetGrammar {
   nameCz: string;
   descriptionEn: string;
   descriptionCz: string;
-  category: 'Arithmetic' | 'LL' | 'LR' | 'Ambiguity' | 'Transformations' | 'Formats';
+  category: 'Arithmetic' | 'LL' | 'LR' | 'Ambiguity' | 'Languages' | 'Transformations' | 'Formats';
   grammarText: string;
   sampleInput: string;
 }
@@ -168,6 +168,148 @@ A -> A "c" | S "d" | ε`,
     grammarText: `S → a b A | ε
 A → S a a | b`,
     sampleInput: 'a b a b b a a'
+  },
+  {
+    id: 'lang_if_matched',
+    nameEn: 'if–else without ambiguity (C, matched/open statements)',
+    nameCz: 'if–else bez nejednoznačnosti (C, uzavřené/otevřené příkazy)',
+    descriptionEn: 'The if statement of C with an optional else; the condition is the single terminal cond. Splitting statements into closed ones (MatchedStatement: every if has its else) and open ones (OpenStatement) attaches each else to the nearest if, so the grammar is unambiguous, SLR(1) and LALR(1). It is not LL(k) for any k: whether a statement is closed is decided only by an else after an arbitrarily long nested statement (Dragon Book, 4.3.2); the automatic transformation to LL(1) finds nothing to do.',
+    descriptionCz: 'Příkaz if jazyka C s volitelnou větví else; podmínka je jediný terminál cond. Rozdělení příkazů na uzavřené (MatchedStatement: každé if má svoje else) a otevřené (OpenStatement) přiřadí každé else nejbližšímu if, takže gramatika je jednoznačná, SLR(1) i LALR(1). LL(k) není pro žádné k: zda je příkaz uzavřený, rozhodne až else za libovolně dlouhým vnořeným příkazem (Dragon Book, 4.3.2); automatický převod na LL(1) nemá co udělat.',
+    category: 'Languages',
+    grammarText: `Statement → MatchedStatement | OpenStatement
+MatchedStatement → if ( cond ) MatchedStatement else MatchedStatement | other ";"
+OpenStatement → if ( cond ) Statement | if ( cond ) MatchedStatement else OpenStatement`,
+    sampleInput: 'if ( cond ) if ( cond ) other ; else other ;'
+  },
+  {
+    id: 'lang_if_precedence',
+    nameEn: 'if–then–else resolved by precedence (Pascal, Bison %nonassoc)',
+    nameCz: 'if–then–else s prioritami (Pascal, %nonassoc v Bisonu)',
+    descriptionEn: 'The short grammar of Pascal\'s if statement is ambiguous: in if cond then if cond then other else other the else may belong to either if. Yacc and Bison keep the grammar and resolve the shift/reduce conflict on else by precedence: the rule if cond then Statement takes the precedence of then, the token else has a higher one, so else is shifted and belongs to the nearest if. Switch the precedence off on the LR tab to see the conflict; the overview shows both derivation trees.',
+    descriptionCz: 'Krátká gramatika příkazu if z Pascalu je nejednoznačná: v if cond then if cond then other else other může else patřit kterémukoli if. Yacc a Bison gramatiku ponechávají a konflikt přesun/redukce na else řeší prioritou: pravidlo if cond then Statement má prioritu then, token else vyšší, takže se else přesune a patří nejbližšímu if. V záložce Analýza LR lze priority vypnout a konflikt zobrazit; Přehled ukáže oba derivační stromy.',
+    category: 'Languages',
+    grammarText: `%nonassoc then
+%nonassoc else
+Statement → if cond then Statement | if cond then Statement else Statement | other`,
+    sampleInput: 'if cond then if cond then other else other'
+  },
+  {
+    id: 'lang_if_end',
+    nameEn: 'if … end if without a dangling else (Ada, Modula-2)',
+    nameCz: 'if … end if bez visícího else (Ada, Modula-2)',
+    descriptionEn: 'A closing end if removes the dangling-else problem: every else belongs to the if of its block, the grammar is unambiguous and LL(1). The else part and the statement sequences are optional (ε-rules); the FOLLOW sets (end, else) decide when they end.',
+    descriptionCz: 'Uzavírací end if odstraní problém visícího else: každé else patří k if svého bloku, gramatika je jednoznačná a LL(1). Větev else i posloupnosti příkazů jsou volitelné (ε-pravidla); kdy končí, rozhodují množiny FOLLOW (end, else).',
+    category: 'Languages',
+    grammarText: `Statement → if cond then StatementSequence ElsePart end if ";" | other ";"
+ElsePart → else StatementSequence | ε
+StatementSequence → Statement StatementSequence | ε`,
+    sampleInput: 'if cond then if cond then other ; end if ; else other ; end if ;'
+  },
+  {
+    id: 'lang_loops',
+    nameEn: 'while and for loops (C)',
+    nameCz: 'Cykly while a for (C)',
+    descriptionEn: 'A for loop with three optional expressions, a while loop, a block and an expression statement; expressions are the terminal expr. The grammar is LL(1): the optional parts are ε-rules decided by FOLLOW(OptionalExpression) = { ;, ) }. Try the Recursive descent tab: the generated parser in PL/0 or Oberon also runs in the PL/0 interpreter.',
+    descriptionCz: 'Cyklus for se třemi volitelnými výrazy, cyklus while, blok a výrazový příkaz; výrazy jsou terminál expr. Gramatika je LL(1): volitelné části jsou ε-pravidla, o kterých rozhoduje FOLLOW(OptionalExpression) = { ;, ) }. Vyzkoušejte záložku Rekurzivní sestup: vygenerovaný analyzátor v PL/0 nebo Oberonu běží i v interpretu PL/0.',
+    category: 'Languages',
+    grammarText: `Statement → WhileStatement | ForStatement | Block | ExpressionStatement
+WhileStatement → while ( expr ) Statement
+ForStatement → for ( OptionalExpression ";" OptionalExpression ";" OptionalExpression ) Statement
+OptionalExpression → expr | ε
+Block → { StatementList }
+StatementList → Statement StatementList | ε
+ExpressionStatement → expr ";"`,
+    sampleInput: 'for ( ; expr ; ) { while ( expr ) expr ; expr ; }'
+  },
+  {
+    id: 'lang_var_decl',
+    nameEn: 'Variable declarations (C)',
+    nameCz: 'Deklarace proměnných (C)',
+    descriptionEn: 'A type and a list of declarators separated by commas, each with an optional array size and initializer. The list is left-recursive, as written for Yacc: the grammar is SLR(1) but not LL(1). Removing the immediate left recursion (or the automatic transformation) gives an LL(1) grammar.',
+    descriptionCz: 'Typ a seznam deklarátorů oddělených čárkou, každý s volitelnou velikostí pole a inicializací. Seznam je levorekurzivní, jak se píše pro Yacc: gramatika je SLR(1), ale ne LL(1). Odstraněním přímé levé rekurze (nebo automatickým převodem) vznikne LL(1) gramatika.',
+    category: 'Languages',
+    grammarText: `Declaration → Type DeclaratorList ";"
+Type → int | char | double
+DeclaratorList → DeclaratorList , Declarator | Declarator
+Declarator → id ArraySuffix Initializer
+ArraySuffix → [ num ] | ε
+Initializer → "=" expr | ε`,
+    sampleInput: 'int id [ num ] , id = expr , id ;'
+  },
+  {
+    id: 'lang_func_decl',
+    nameEn: 'Function declaration (C): LL(2), not LL(1)',
+    nameCz: 'Deklarace funkce (C): LL(2), ne LL(1)',
+    descriptionEn: 'A return type, a name, parameters and a body; statements are the terminal stmt. A parameter has a name (int x) or only a type (int), as in a prototype: both rules start with the type, so the grammar is not LL(1), but it is (strong) LL(2) – the second symbol decides. Left factoring makes it LL(1). ParameterList → void covers f(void).',
+    descriptionCz: 'Návratový typ, jméno, parametry a tělo; příkazy jsou terminál stmt. Parametr má jméno (int x), nebo jen typ (int) jako v prototypu: obě pravidla začínají typem, takže gramatika není LL(1), ale je (silná) LL(2) – rozhodne druhý symbol. Levá faktorizace z ní udělá LL(1). ParameterList → void pokrývá f(void).',
+    category: 'Languages',
+    grammarText: `FunctionDeclaration → ReturnType id ( ParameterList ) Body
+ReturnType → Type | void
+ParameterList → Parameter MoreParameters | void | ε
+MoreParameters → , Parameter MoreParameters | ε
+Parameter → Type id | Type
+Type → int | char
+Body → { Statements }
+Statements → stmt Statements | ε`,
+    sampleInput: 'int id ( int id , char ) { stmt stmt }'
+  },
+  {
+    id: 'lang_lambda_call',
+    nameEn: 'Calling a lambda expression (arrow function, JavaScript): not LR(k)',
+    nameCz: 'Volání lambda výrazu (šipková funkce, JavaScript): není LR(k)',
+    descriptionEn: '( ( a , b ) => a ) ( 1 , x ): an arrow function in parentheses called at once. The grammar is unambiguous but not LR(k) for any k: whether id in ( id , id , … ) is a parameter or an expression is decided only by => after an arbitrarily long list – the LR(1) tables have reduce/reduce and shift/reduce conflicts. JavaScript parsers therefore read the parenthesis as an expression and reinterpret it as parameters after => (a cover grammar).',
+    descriptionCz: '( ( a , b ) => a ) ( 1 , x ): šipková funkce v závorkách je hned zavolána. Gramatika je jednoznačná, ale není LR(k) pro žádné k: zda je id v ( id , id , … ) parametrem, nebo výrazem, rozhodne až => za libovolně dlouhým seznamem – tabulky LR(1) mají konflikty redukce/redukce i přesun/redukce. Parsery JavaScriptu proto čtou závorku jako výraz a na parametry ji převedou až po => (tzv. cover grammar).',
+    category: 'Languages',
+    grammarText: `Expression → ArrowFunction | CallExpression
+ArrowFunction → ArrowParameters "=>" Expression
+ArrowParameters → id | ( Parameters )
+Parameters → id | id , Parameters | ε
+CallExpression → Primary Calls
+Calls → ( Arguments ) Calls | ε
+Arguments → ExpressionList | ε
+ExpressionList → Expression | Expression , ExpressionList
+Primary → id | num | ( ExpressionList )`,
+    sampleInput: '( ( id , id ) => id ) ( num , id )'
+  },
+  {
+    id: 'lang_c_typedef',
+    nameEn: 'Declaration or multiplication? (C: a * b ;)',
+    nameCz: 'Deklarace, nebo násobení? (C: a * b ;)',
+    descriptionEn: 'In C, id * id ; is either the declaration of a pointer (when the first id is a type name from typedef) or a multiplication. A context-free grammar cannot tell them apart – it is ambiguous, the overview shows both trees. C compilers decide with the symbol table: the lexer returns a different token for type names (the "lexer hack").',
+    descriptionCz: 'V C je id * id ; buď deklarace ukazatele (je-li první id jméno typu z typedef), nebo násobení. Bezkontextová gramatika je nerozliší – je nejednoznačná, Přehled ukáže oba stromy. Překladače C rozhodují podle tabulky symbolů: lexikální analyzátor vrací pro jména typů jiný token („lexer hack“).',
+    category: 'Languages',
+    grammarText: `Statement → Declaration | ExpressionStatement
+Declaration → TypeName Declarator ";"
+Declarator → * Declarator | id
+TypeName → int | id
+ExpressionStatement → Expression ";"
+Expression → Expression * Factor | Factor
+Factor → id | num`,
+    sampleInput: 'id * id ;'
+  },
+  {
+    id: 'lang_assign_call',
+    nameEn: 'Assignment or procedure call?',
+    nameCz: 'Přiřazení, nebo volání procedury?',
+    descriptionEn: 'A statement starting with an identifier is an assignment id := expression or a call id ( arguments ). Both rules start with id, so the grammar is not LL(1) (FIRST-FIRST conflicts, also in the lists); left factoring makes it LL(1). PL/0 avoids the problem with the keyword call: call p.',
+    descriptionCz: 'Příkaz začínající identifikátorem je přiřazení id := výraz, nebo volání id ( argumenty ). Obě pravidla začínají id, takže gramatika není LL(1) (kolize FIRST-FIRST, i v seznamech); levá faktorizace ji převede na LL(1). PL/0 se problému vyhýbá klíčovým slovem call: call p.',
+    category: 'Languages',
+    grammarText: `Statement → id ":=" Expression | id ( Arguments ) | begin Statements end
+Statements → Statement | Statement ";" Statements
+Arguments → Expression | Expression , Arguments
+Expression → id | num`,
+    sampleInput: 'begin id := num ; id ( id , num ) end'
+  },
+  {
+    id: 'lang_sexpr',
+    nameEn: 'S-expressions (Lisp): an LR(0) grammar',
+    nameCz: 'S-výrazy (Lisp): LR(0) gramatika',
+    descriptionEn: 'An atom or a list in parentheses. With a left-recursive list the grammar is LR(0): no state needs to look at the input, every state either only shifts or only reduces. It is not LL(1) because of the left recursion; conversely, with the right-recursive list List → SExpression List | ε it is LL(1) but not LR(0).',
+    descriptionCz: 'Atom, nebo seznam v závorkách. S levorekurzivním seznamem je gramatika LR(0): žádný stav nepotřebuje hledět na vstup, každý buď jen přesouvá, nebo jen redukuje. LL(1) kvůli levé rekurzi není; naopak s pravorekurzivním seznamem List → SExpression List | ε je LL(1), ale ne LR(0).',
+    category: 'Languages',
+    grammarText: `SExpression → atom | ( List )
+List → List SExpression | ε`,
+    sampleInput: '( atom ( atom atom ) ( ) )'
   },
   {
     id: 'format_kiv',

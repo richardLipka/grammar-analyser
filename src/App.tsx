@@ -66,6 +66,7 @@ const PRESET_CATEGORY_LABELS: Record<PresetGrammar['category'], { en: string; cz
   LL: { en: 'LL parsing', cz: 'Analýza LL' },
   LR: { en: 'LR parsing', cz: 'Analýza LR' },
   Ambiguity: { en: 'Ambiguity', cz: 'Nejednoznačnost' },
+  Languages: { en: 'Constructs of real languages', cz: 'Konstrukce reálných jazyků' },
   Transformations: { en: 'Transformations', cz: 'Úpravy gramatiky' },
   Formats: { en: 'Input formats', cz: 'Formáty zápisu' }
 };

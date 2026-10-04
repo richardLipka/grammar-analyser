@@ -108,6 +108,7 @@
   - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
   - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
+  - **Constructs of real languages** (non-terminals named as in real grammars): if–else as matched/open statements (unambiguous, SLR(1), not LL(k)), Pascal's if–then–else resolved by `%nonassoc` as in Bison, Ada's `if … end if` (LL(1)), C `while`/`for` loops (LL(1) with ε), C variable declarations (left-recursive list: SLR(1), not LL(1)), a C function declaration (LL(2), not LL(1)), a JavaScript arrow function called at once (unambiguous but not LR(k): a cover grammar is needed), C's `a * b ;` (ambiguous without the symbol table, the "lexer hack"), assignment vs. procedure call (left factoring; PL/0's `call`), and Lisp S-expressions (an LR(0) grammar)
 
 ### Grammar links
 
