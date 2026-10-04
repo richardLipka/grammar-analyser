@@ -91,14 +91,26 @@ describe('Checks of the promised form', () => {
   });
 
   it('accepts the results of the transformations that promise the form', () => {
-    for (let s = 1; s <= 60; s++) {
+    let stopped = 0;
+    for (let s = 1; s <= 400; s++) {
       const g = parse(randomGrammarText(s));
-      expect(ok(removeEpsilonRules(g).transformedGrammar, 'epsFree').ok, `seed ${s}`).toBe(true);
-      expect(ok(removeUnitRules(g).transformedGrammar, 'noUnit').ok, `seed ${s}`).toBe(true);
-      expect(ok(removeLeftRecursion(g).transformedGrammar, 'noLeftRecursion').ok, `seed ${s}`).toBe(true);
-      expect(ok(leftFactorGrammar(g).transformedGrammar, 'leftFactored').ok, `seed ${s}`).toBe(true);
-      expect(ok(convertToChomsky(g).transformedGrammar, 'cnf').ok, `seed ${s}`).toBe(true);
-      expect(ok(convertToGreibach(g).transformedGrammar, 'gnf').ok, `seed ${s}`).toBe(true);
+      const promised: [ReturnType<typeof removeEpsilonRules>, Parameters<typeof checkForm>[1][number]][] = [
+        [removeEpsilonRules(g), 'epsFree'],
+        [removeUnitRules(g), 'noUnit'],
+        [removeLeftRecursion(g), 'noLeftRecursion'],
+        [leftFactorGrammar(g), 'leftFactored'],
+        [convertToChomsky(g), 'cnf'],
+        [convertToGreibach(g), 'gnf']
+      ];
+      for (const [res, property] of promised) {
+        // A construction that exceeded the size limit keeps the original grammar and says so (GNF can grow exponentially)
+        if (res.steps.some(st => st.title.startsWith('Stopped'))) {
+          stopped++;
+          continue;
+        }
+        expect(ok(res.transformedGrammar, property).ok, `seed ${s} ${property}`).toBe(true);
+      }
     }
+    expect(stopped).toBeLessThan(10);
   });
 });

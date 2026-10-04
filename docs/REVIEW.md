@@ -572,3 +572,66 @@ The tab shows the original grammar, a field for the student's grammar ("start fr
 - 120 pairs of random grammars against a brute-force Earley check, and every grammar against its ε-free version;
 - stopping;
 - every property, also on the outputs of the transformations that promise it.
+
+## 17. Presets: constructs of real languages
+
+A new group of ten presets uses non-terminals named as in real grammars (Statement, WhileStatement, ParameterList, …). Conditions, expressions and statements appear as single terminals (cond, expr, stmt), so that boolean and arithmetic expressions do not hide the construction.
+
+Each preset demonstrates one property:
+
+| Preset | Property |
+|---|---|
+| if–else as matched/open statements (C) | unambiguous, SLR(1) and LALR(1), not LL(k): an else after an arbitrarily long statement decides; the automatic LL(1) attempt has nothing to do |
+| if–then–else with `%nonassoc then`, `%nonassoc else` (Pascal, Bison) | ambiguous; the precedence resolves the shift/reduce conflict on else, and the else goes to the nearest if |
+| `if … end if` (Ada, Modula-2) | no dangling else; LL(1) with ε-rules decided by FOLLOW |
+| while and for loops (C) | LL(1); FOLLOW(OptionalExpression) = { ;, ) } |
+| variable declarations (C) | a left-recursive list as written for Yacc: SLR(1), not LL(1); removing the immediate left recursion gives LL(1) |
+| function declaration (C) | a parameter with or without a name: (strong) LL(2), not LL(1); left factoring gives LL(1) |
+| a lambda (JavaScript arrow function) called at once | unambiguous on all words up to length 9, but LR(1) has reduce/reduce and shift/reduce conflicts: whether `( id , … )` lists parameters is decided by `=>` after an arbitrarily long list, so it is not LR(k); JavaScript parsers use a cover grammar |
+| `a * b ;` in C | ambiguous (pointer declaration or multiplication); C compilers use the symbol table (the lexer hack) |
+| assignment or procedure call | FIRST-FIRST on id; left factoring gives LL(1); PL/0 avoids it with `call` |
+| S-expressions (Lisp) | LR(0) with a left-recursive list, not LL(1); with a right-recursive list LL(1), not LR(0) |
+
+Terminals that the notation would read otherwise are quoted: `";"` (which would end a rule), `"="`, `":="` and `"=>"` (rule operators).
+
+`src/test/languagePresets.test.ts` checks every property stated in the descriptions. The presets also take part in the suites that run over all presets: the audit, lookaheads, membership, recursive descent and the LL(1) attempt.
+
+## 18. Verification of all algorithms (2026-10-04)
+
+**The test suite** (305 tests in 20 files) passes. Most of its checks compare the implementation with independent code:
+- the Earley recognizer;
+- FIRST_k/FOLLOW_k/PREDICT_k computed on token arrays;
+- a brute-force exact LL(2) test;
+- the Dragon Book propagation algorithm for LALR(1);
+- tree counts by a CYK-like table saturated at 2;
+- the LL(1) simulator for the generated parsers.
+
+**One-off sweeps** ran every oracle-based suite on 5 to 15 times more random grammars than the committed tests:
+
+| Suite | Size of the sweep |
+|---|---|
+| audit | 1,500 + 1,500 grammars |
+| lookaheads | 2,000 grammars |
+| transformation fuzz | 1,000 grammars |
+| automatic LL(1) attempt | 600 grammars |
+| LR construction | 600 grammars |
+| membership and CYK | 600 + 400 grammars |
+| ambiguity against tree counts | 600 grammars |
+| language comparison | 600 pairs + 400 grammars |
+| recursive descent | 2,000 grammars |
+
+All passed except one test: GNF of a small cyclic grammar (random seed 162) exceeded the limit of 5,000 rules, so the construction stopped and kept the grammar, as designed and as the transformation fuzz already accepts. The form check in `equivalence.test.ts` now accepts a stopped construction too, and runs on 400 grammars.
+
+**New permanent cross-checks** (`crossChecks.test.ts`):
+- CYK and the general membership algorithm give the same number of derivation trees on the CNF of 150 random grammars;
+- every ambiguity witness has at least two trees, and "none found" means at most one tree for every short word;
+- the analysis stopped at random points returns nothing, or parts equal to the full analysis with the missing parts named;
+- the counterexamples of the language comparison are confirmed by the membership algorithm.
+
+**A crash fuzz** (`fuzzEverything.test.ts`) sends 20,000 random texts, built from the special syntax (precedence lines, %prec, quotes, comments, ε forms, rule operators), through the parser. The 451 that are grammars go through every analysis, the membership algorithm, CYK, the comparison, the form checks, the construction steps and merges, the LaTeX export and the parser generator. Nothing throws, and every editor text reads back as the same grammar.
+
+**PL/0 compiler and P-code VM against the course interpreter.** The P-code of the generated parsers of 120 LL(1) grammars, run on 2,214 inputs, plus a general PL/0 program (nested procedures, recursion, odd, truncating division, all relations), was run both by `pcodeVm.ts` and by `runHeadless` of the online-pl0-interpreter. Output and status were identical in all cases.
+
+**The user interface:** every preset on every tab (26 × 11) renders without an error or a console error; the English interface shows no untranslated placeholders.
+
+Not verified automatically: compiling the LaTeX output (no TeX installation here; its symbols are checked to be ASCII), and the Oberon output (no Oberon compiler; it uses the same nesting as the PL/0 output, which compiles and runs).
