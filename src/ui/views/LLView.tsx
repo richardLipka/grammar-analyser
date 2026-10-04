@@ -33,7 +33,7 @@ export const LLView: React.FC<LLViewProps> = ({
   grammar,
   llTable,
   analysis: _analysis,
-  defaultInput = 'id + id * id',
+  defaultInput = '',
   lang,
   onAttemptLL1,
   onShowInfo
@@ -379,7 +379,7 @@ export const LLView: React.FC<LLViewProps> = ({
             style={{ minHeight: 'unset', height: '38px', padding: '6px 12px' }}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder={t.tokensPlaceholder}
+            placeholder={defaultInput ? `${t.tokensPlaceholder} (${t.forExample} ${defaultInput})` : t.tokensPlaceholder}
             aria-label={t.inputWord}
           />
         </div>

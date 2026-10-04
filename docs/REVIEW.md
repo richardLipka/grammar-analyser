@@ -635,3 +635,31 @@ All passed except one test: GNF of a small cyclic grammar (random seed 162) exce
 **The user interface:** every preset on every tab (26 × 11) renders without an error or a console error; the English interface shows no untranslated placeholders.
 
 Not verified automatically: compiling the LaTeX output (no TeX installation here; its symbols are checked to be ASCII), and the Oberon output (no Oberon compiler; it uses the same nesting as the PL/0 output, which compiles and runs).
+
+## 19. Example words from the language of the grammar (2026-10-04)
+
+**The problem.** The LL and LR simulators started with the fixed word `id + id * id`, and the other tabs with the word of the last preset. For a grammar typed by the user, or a preset after editing, the first demonstration was a rejection.
+
+**The fix.** `core/generator/exampleWord.ts`:
+- `demonstrationWord(G, preferred)` keeps the word of the preset or the link only while the membership algorithm accepts it for the grammar being analysed. Otherwise it returns `exampleWord(G)`, a word derived from the grammar. App passes the result to the LL and LR simulators, membership & CYK and recursive descent, and to the hint in their input fields. The views no longer have a fixed default, and a link carries a word only when the user chose it.
+- `exampleWord(G)` derives a word of exactly a chosen length:
+  1. A fixpoint computes which lengths up to the maximum (14, or the length of the shortest word) every non-terminal can derive. Each length records the round in which it was reached first; a round uses only the lengths of the previous rounds.
+  2. A non-terminal is expanded by a rule not used yet that can give its length, else by a rule whose parts were all reached in earlier rounds. New rules are used at most once each, and the rounds decrease along every other branch, so every derivation ends.
+  3. The derivation is tried for the first three lengths of the start symbol from 8 up (else for the longest length there is). Each length is tried with the length shared among the parts of a rule evenly, to the left and to the right.
+  4. The word using the most different rules wins.
+- The function is deterministic and returns null for an empty language, or when the shortest word has more than 40 symbols.
+- `shortestYields` moved here from the ambiguity search, which uses it too.
+
+**Why not a simple heuristic.** A first version lengthened the sentential form greedily, using the shortest yields. It stopped below the target length on 31 of 1,500 random grammars that have longer words, e.g. `S → ε | A | a`, `A → S | A A | ε`, where a longer word first needs `A → A A`, a rule that does not lengthen anything. The exact lengths remove this.
+
+**Tests** (`exampleWord.test.ts`):
+- every preset and 600 random grammars: the word is accepted by the independent Earley recognizer, is at most 14 symbols long (unless the shortest word is longer), and reads back as the same tokens;
+- an exhaustive search over all words up to length 6 of 300 random grammars: the length is one of the first three lengths of the language that reach the target;
+- "no word" only when no short word is accepted either;
+- determinism, the limit of 40 symbols, and that a preset word is kept or replaced as described.
+
+A one-off sweep of 8,000 random grammars took at most 3.5 ms per grammar. A random grammar of 4,893 rules took 60 ms, and transformed presets (CNF, GNF, up to 552 rules) at most 10 ms.
+
+**In the browser.**
+- The link `?g=S -> a S b | ε&w=id + id * id` now shows `a a a a b b b b` on all four tabs, and all four accept it.
+- A preset keeps its word. After `*` is removed from the arithmetic grammar, the word becomes `( id ) + ( id + id )`.

@@ -102,6 +102,7 @@
 - **University Teaching & Classroom Features**:
   - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework; symbol names compile with pdfLaTeX (subscripts of copied non-terminals `B₂` → `B_{2}`, accented names in text mode, arrows and Greek letters as commands)
   - **Simulator input**: tokens separated by spaces, or a word without spaces (`aabb`, `id+id`) split into terminals by longest match; the split is shown
+  - **The example word is always a word of the grammar's language**: the LL and LR simulators, membership and recursive descent start with the word of the preset or the link only while it belongs to L(G) (also after editing or transforming the grammar); otherwise they get a word derived from the grammar itself, of a reasonable length (at least 8 symbols when the language has such words, at most 14 unless its shortest word is longer) and using as many different rules as possible
   - **Long computations do not block the page**: the analysis and the automatic LL(1) attempt run in slices with their progress shown; after every 30 s of computation they pause and ask whether to continue. Stopped after the LALR(1) automaton, the results are shown with the missing parts (exact LL(2), LR(1), ambiguity) marked. LALR(1) is built from the LR(0) states by propagating lookaheads (Dragon Book, Alg. 4.62/4.63), so it does not need the canonical LR(1) collection; automata over 150 states are drawn only on request and tables over 300 rows show their first rows
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
   - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button below the editor copies such a link
@@ -121,8 +122,8 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 | Parameter | Meaning |
 |---|---|
 | `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
-| `w` (or `word`) | The input word for the LL and LR simulators, symbols separated by spaces |
-| `tab` | `overview`, `first-follow`, `transformations`, `ll`, `lr`, `graph`, `words`, `latex` |
+| `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
+| `tab` | `overview`, `first-follow`, `transformations`, `check`, `ll`, `lr`, `graph`, `membership` (or `cyk`), `rd`, `words`, `latex` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
 | `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector` for this visit only (not remembered) |
@@ -162,7 +163,7 @@ src/
 │   ├── parser/             # Multi-syntax grammar parser
 │   ├── analyser/           # Nullable, Endable, FIRST(k), FOLLOW(k), Lookaheads
 │   ├── processor/          # Equivalent grammar transformations & proof logs
-│   ├── generator/          # Word generation & derivation traces
+│   ├── generator/          # Word generation, derivation traces, example words of L(G)
 │   ├── ll/                 # LL(1) / LL(2) tables, conflict engine & top-down simulator
 │   ├── lr/                 # LR(0), SLR(1), LALR(1), LR(1) automata & shift-reduce simulator
 │   ├── export/             # LaTeX exam/problem-set exporter

@@ -18,6 +18,7 @@
 import { Grammar, Production } from '../ast/grammar';
 import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 import { DerivationNode } from '../generator/wordGenerator';
+import { shortestYields } from '../generator/exampleWord';
 
 export type AmbiguityResult =
   | {
@@ -36,37 +37,6 @@ export type AmbiguityResult =
 export interface AmbiguityOptions {
   maxLength?: number;
   maxForms?: number;
-}
-
-/**
- * Shortest word length derivable from every generating non-terminal, with the
- * rule that first reached it. A value is only ever replaced by a strictly
- * smaller one, so these rules never lead back to their non-terminal: expanding
- * by them always ends in a word (S → S | a gives S → a, not S → S).
- */
-function shortestYields(g: Grammar): { len: Map<string, number>; rule: Map<string, Production> } {
-  const len = new Map<string, number>();
-  const rule = new Map<string, Production>();
-  for (let changed = true; changed; ) {
-    changed = false;
-    for (const p of g.productions) {
-      let sum = 0;
-      for (const s of p.rhs) {
-        if (!g.nonTerminals.has(s)) sum += 1;
-        else if (len.has(s)) sum += len.get(s)!;
-        else {
-          sum = Infinity;
-          break;
-        }
-      }
-      if (sum < (len.get(p.lhs) ?? Infinity)) {
-        len.set(p.lhs, sum);
-        rule.set(p.lhs, p);
-        changed = true;
-      }
-    }
-  }
-  return { len, rule };
 }
 
 /** Derivation tree of a left parse. */

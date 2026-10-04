@@ -31,6 +31,7 @@ import { useGrammarHistory } from './ui/useGrammarHistory';
 import { TransformationInfoDialog, InfoButton } from './ui/components/TransformationInfo';
 import { InfoKey } from './core/processor/transformationInfo';
 import { readUrlState, buildShareUrl, UrlState, UrlTab } from './ui/urlState';
+import { demonstrationWord } from './core/generator/exampleWord';
 
 // Icons
 import {
@@ -192,6 +193,11 @@ export const App: React.FC = () => {
   const parseResult = useMemo(() => parseGrammar(grammarText, { eIsEpsilon }), [grammarText, eIsEpsilon]);
   const canAnalyse = !!parseResult.grammar && parseResult.errors.length === 0;
   const isStale = grammarText.trim() !== analyzedGrammarText.trim();
+
+  // The example word of the demonstrations (simulators, membership, recursive descent): the word of
+  // the preset or of the link when it belongs to the language being processed, otherwise a word
+  // derived from the grammar itself (never a fixed string that may not belong to the language)
+  const demoWord = useMemo(() => (analyzedGrammar ? demonstrationWord(analyzedGrammar, sampleInput) : ''), [analyzedGrammar, sampleInput]);
 
   /** The analysis of `grammar` finished (or was stopped by the user). */
   const analysisDone = (grammar: Grammar, text: string) => (data: AnalysisDataResult | null, info: { elapsedMs: number; stopped: boolean }) => {
@@ -377,7 +383,8 @@ export const App: React.FC = () => {
   const copyLink = async () => {
     const url = buildShareUrl(`${window.location.origin}${window.location.pathname}`, {
       grammar: grammarText,
-      word: sampleInput,
+      // a word derived from the grammar is derived again, only a chosen one goes into the link
+      word: demoWord === sampleInput ? sampleInput : undefined,
       e: parseResult.bareE && eChoice !== null ? eChoice : undefined,
       tab: activeTab
     });
@@ -910,7 +917,7 @@ export const App: React.FC = () => {
                     grammar={analyzedGrammar}
                     llTable={analysisData.llTable}
                     analysis={analysisData.analysis}
-                    defaultInput={sampleInput}
+                    defaultInput={demoWord}
                     lang={lang}
                     onAttemptLL1={() => applyWholeGrammar('ll1')}
                     onShowInfo={setInfoKey}
@@ -925,7 +932,7 @@ export const App: React.FC = () => {
                     lalr1Table={analysisData.lalr1Table}
                     lr1Table={analysisData.lr1Table}
                     rawTables={analysisData.rawTables}
-                    defaultInput={sampleInput}
+                    defaultInput={demoWord}
                     lang={lang}
                     selectedVariant={lrVariant}
                     onSelectVariant={setLrVariant}
@@ -957,7 +964,7 @@ export const App: React.FC = () => {
                 {activeTab === 'membership' && (
                   <MembershipView
                     grammar={analyzedGrammar}
-                    defaultInput={sampleInput}
+                    defaultInput={demoWord}
                     lang={lang}
                     onConvertToCNF={!isStale && canAnalyse ? () => applyWholeGrammar('cnf') : undefined}
                   />
@@ -968,7 +975,7 @@ export const App: React.FC = () => {
                     grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     llTable={analysisData.llTable}
-                    defaultInput={sampleInput}
+                    defaultInput={demoWord}
                     lang={lang}
                     onAttemptLL1={!isStale && canAnalyse ? () => applyWholeGrammar('ll1') : undefined}
                   />

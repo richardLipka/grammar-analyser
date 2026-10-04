@@ -42,7 +42,7 @@ export const LRView: React.FC<LRViewProps> = ({
   lalr1Table,
   lr1Table,
   rawTables,
-  defaultInput = 'id + id * id',
+  defaultInput = '',
   lang,
   selectedVariant: controlledVariant,
   onSelectVariant,
@@ -388,7 +388,7 @@ export const LRView: React.FC<LRViewProps> = ({
             style={{ minHeight: 'unset', height: '38px', padding: '6px 12px' }}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder={t.tokensPlaceholder}
+            placeholder={defaultInput ? `${t.tokensPlaceholder} (${t.forExample} ${defaultInput})` : t.tokensPlaceholder}
             aria-label={t.inputWord}
           />
         </div>

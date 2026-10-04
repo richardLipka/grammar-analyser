@@ -65,7 +65,7 @@ export const MembershipView: React.FC<MembershipViewProps> = ({ grammar, default
           style={{ minHeight: 'unset', height: '38px', padding: '6px 12px', marginBottom: '10px' }}
           value={inputText}
           onChange={e => setInputText(e.target.value)}
-          placeholder={cz ? 'Slovo: tokeny oddělené mezerami, nebo bez mezer (aabb)' : 'Word: tokens separated by spaces, or without spaces (aabb)'}
+          placeholder={(cz ? 'Slovo: tokeny oddělené mezerami, nebo bez mezer' : 'Word: tokens separated by spaces, or without spaces') + (defaultInput ? (cz ? ` (např. ${defaultInput})` : ` (e.g. ${defaultInput})`) : '')}
           aria-label={cz ? 'Slovo' : 'Word'}
         />
         <TokenizedInputNote tokenized={tokenized} lang={lang} />
