@@ -934,6 +934,21 @@
   gap: 4px;
 }
 
+/* On a phone the history and whole-grammar buttons go on a second line */
+@media (max-width: 560px) {
+  .editor-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .editor-toolbar .editor-toolbar-right {
+    flex: 1 1 auto;
+  }
+
+  .editor-toolbar-sep {
+    display: none;
+  }
+}
+
 .whole-grammar-select {
   height: 26px;
   max-width: 150px;

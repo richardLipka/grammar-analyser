@@ -47,6 +47,7 @@
   - $\varepsilon$-production elimination with start symbol preservation (a fresh start symbol only when $S$ occurs on a right-hand side)
   - Unit-production elimination ($A \to B$)
   - **Transform by clicking**: in the editor's click mode, a click on a non-terminal applies a transformation directly to the grammar; undo/redo (also Ctrl+Z / Ctrl+Y) and a protocol of all steps with their explanations
+  - **History of the grammar**: selecting an example starts a new history (undo does not lead back to the previous grammar); next to undo/redo, one button clears the history and keeps the grammar, another clears the grammar together with its history (it asks for a second click, as this cannot be undone)
     - left-hand side: left recursion (with ε, or without ε as in the KIV/FJP lectures), left factoring, elimination of rules with a leading non-terminal, ε-rule and unit-rule elimination, substitution and removal, merging non-terminals with the same rules, removal of useless symbols
     - occurrence on a right-hand side: substitution of its right-hand sides, **absorption of the following symbol** `A → α B a β` ⇒ `A → α [Ba] β`, `[Ba] → αᵢ a` (turns a FIRST-FOLLOW conflict into a FIRST-FIRST one for left factoring), and a copy `B₂` for this occurrence (reduction of FOLLOW sets)
     - LL(1) conflicts are marked (FF / FFL) and the actions that address them are tagged

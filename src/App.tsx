@@ -36,7 +36,8 @@ import { demonstrationWord } from './core/generator/exampleWord';
 // Icons
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
-  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2, ClipboardCheck
+  Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2, ClipboardCheck,
+  ListX, Trash2
 } from 'lucide-react';
 
 type TabId = UrlTab;
@@ -260,14 +261,65 @@ export const App: React.FC = () => {
     recalculate(text);
   };
 
+  /** Drops typed text that has not been recorded yet (the history starts again). */
+  const cancelTyping = () => {
+    if (typingTimer.current !== undefined) {
+      window.clearTimeout(typingTimer.current);
+      typingTimer.current = undefined;
+    }
+  };
+
+  const flash = (message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 2500);
+  };
+
+  // A new grammar starts a new history: undo does not lead back to the previous grammar
   const handleSelectPreset = (presetId: string) => {
     const preset = PRESET_GRAMMARS.find(p => p.id === presetId);
     if (preset) {
-      flushTyping();
-      history.commit({ text: preset.grammarText, kind: 'preset', titleEn: preset.nameEn, titleCz: preset.nameCz });
+      cancelTyping();
+      history.reset({ text: preset.grammarText, kind: 'preset', titleEn: preset.nameEn, titleCz: preset.nameCz });
       setSampleInput(preset.sampleInput);
       showText(preset.grammarText);
     }
+  };
+
+  /** Keeps the grammar and forgets how it was reached (undo/redo and the protocol of transformations). */
+  const clearHistory = () => {
+    cancelTyping();
+    const text = grammarTextRef.current;
+    const preset = PRESET_GRAMMARS.find(p => p.grammarText === text);
+    history.reset(preset
+      ? { text, kind: 'preset', titleEn: preset.nameEn, titleCz: preset.nameCz }
+      : { text, kind: 'initial' });
+    flash(t.historyCleared);
+  };
+
+  // Clearing the grammar cannot be undone, so it asks for a second click
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clearGrammar = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      window.setTimeout(() => setConfirmClear(false), 4000);
+      return;
+    }
+    setConfirmClear(false);
+    cancelTyping();
+    analysisRunner.stop();
+    history.reset({ text: '', kind: 'initial' });
+    grammarTextRef.current = '';
+    setGrammarText('');
+    setSelectedPresetId(CUSTOM_PRESET_ID);
+    setSampleInput('');
+    setAnalysisData(null);
+    setAnalyzedGrammar(null);
+    setAnalyzedGrammarText('');
+    setIsCalculating(false);
+    setIsHeavyGrammar(false);
+    setLastCalcDuration(0);
+    setEditorMode('text');
+    window.setTimeout(() => editorRef.current?.focus(), 0);
   };
 
   const handleEditGrammar = (text: string) => {
@@ -287,8 +339,7 @@ export const App: React.FC = () => {
    */
   const applyTransformation = (result: TransformationResult, title: { en: string; cz: string }, source = parseResult.grammar) => {
     if (result.steps.length === 0) {
-      setNotice(t.nothingChanged);
-      window.setTimeout(() => setNotice(null), 2500);
+      flash(t.nothingChanged);
       return;
     }
     const transformed = source ? transferPrecedence(source, result.transformedGrammar) : result.transformedGrammar;
@@ -328,6 +379,7 @@ export const App: React.FC = () => {
   const canUndo = history.index > 0 || grammarText !== history.entries[history.index].text;
   const currentEntry = history.entries[history.index];
   const canRedo = history.index < history.entries.length - 1;
+  const hasHistory = history.entries.length > 1 || grammarText !== history.entries[history.index].text;
 
   /** Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z) act on the grammar history. */
   const handleUndoKeys = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; key: string; preventDefault: () => void }) => {
@@ -607,6 +659,21 @@ export const App: React.FC = () => {
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={redo} disabled={!canRedo} title={t.redoTitle} aria-label={t.redo}>
                     <Redo2 size={13} />
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={clearHistory} disabled={!hasHistory} title={t.clearHistoryTitle} aria-label={t.clearHistory}>
+                    <ListX size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${confirmClear ? 'btn-danger' : 'btn-secondary'}`}
+                    onClick={clearGrammar}
+                    onBlur={() => setConfirmClear(false)}
+                    disabled={(!grammarText && !hasHistory) || transformRunner.state.running}
+                    title={confirmClear ? t.clearGrammarConfirmTitle : t.clearGrammarTitle}
+                    aria-label={confirmClear ? t.clearGrammarConfirmTitle : t.clearGrammar}
+                  >
+                    <Trash2 size={13} />
+                    {confirmClear && <span>{t.clearGrammarConfirm}</span>}
                   </button>
                   <select
                     className="whole-grammar-select"

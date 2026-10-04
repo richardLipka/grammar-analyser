@@ -663,3 +663,22 @@ A one-off sweep of 8,000 random grammars took at most 3.5 ms per grammar. A rand
 **In the browser.**
 - The link `?g=S -> a S b | ε&w=id + id * id` now shows `a a a a b b b b` on all four tabs, and all four accept it.
 - A preset keeps its word. After `*` is removed from the arithmetic grammar, the word becomes `( id ) + ( id + id )`.
+
+## 20. History of the grammar (2026-10-04)
+
+**Selecting an example now starts a new history.** It used to add a step, so undo led back to the previous grammar, and the protocol on the Transformations tab mixed the steps of different grammars. Now the history holds only the loaded example. A pending edit that was not yet recorded is dropped, not added. The hook `useGrammarHistory` has a new `reset(entry)` for this.
+
+**Two new buttons next to undo/redo:**
+- **Clear history** keeps the grammar and starts the history with it. The first entry is named as the example when the text is one, otherwise "Initial grammar". The button is disabled when there is nothing to clear.
+- **Clear grammar and history** empties the editor and the history. It also stops a running analysis, forgets the analysis and the example word, switches to the text mode and puts the cursor in the editor.
+  - Clearing cannot be undone, so the first click only arms the button. It turns red and says "Clear?", and the second click within 4 s clears.
+  - The button is disabled while the automatic LL(1) attempt runs, since its result would fill the editor again.
+
+**On a phone (≤ 560 px)** the editor toolbar wraps: the history buttons and the whole-grammar menu go on a second line. The single line was already about 15 px wider than a 375 px screen, so the page scrolled sideways. On a wider screen the toolbar stays on one line.
+
+**Checked in the browser (both languages):**
+- transform → select another example: undo is disabled, and the protocol shows only "Example loaded";
+- transform → clear history: the grammar is kept, undo is disabled, and the notice is shown;
+- clear grammar: the first click arms the button, the second gives an empty editor with the cursor in it and the "enter a grammar" card;
+- a grammar typed afterwards is analysed, and its example word is accepted;
+- at 375 px there is no horizontal scrolling.

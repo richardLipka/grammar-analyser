@@ -44,11 +44,15 @@ export function useGrammarHistory(initialText: string) {
     return entries[i];
   };
 
+  /** Starts a new history with this state only (a new grammar, or the history cleared). */
+  const reset = (entry: HistoryEntry) => update({ entries: [entry], index: 0 });
+
   return {
     entries: ref.current.entries,
     index: ref.current.index,
     get: () => ref.current,
     commit,
-    goTo
+    goTo,
+    reset
   };
 }
