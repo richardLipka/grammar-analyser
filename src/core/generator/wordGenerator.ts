@@ -14,6 +14,12 @@ export interface DerivationNode {
   isTerminal: boolean;
   /** Synthetic root that only groups the trees of a parse forest (LR stack). */
   isForestRoot?: boolean;
+  /**
+   * In a failed derivation attempt: the terminal the derivation needs where
+   * the word has another symbol or ends ('mismatch'), or a symbol after it
+   * that was not derived any more ('pending').
+   */
+  mark?: 'mismatch' | 'pending';
   children?: DerivationNode[];
 }
 

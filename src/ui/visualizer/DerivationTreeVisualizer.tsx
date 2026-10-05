@@ -27,6 +27,7 @@ interface PlacedNode {
   isTerminal: boolean;
   isLeaf: boolean;
   hidden: boolean;
+  mark?: DerivationNode['mark'];
   x: number;
   y: number;
   width: number;
@@ -87,7 +88,7 @@ function layoutTree(root: DerivationNode, alignLeaves: boolean) {
 
     if (kids.length === 0) {
       const p: PlacedNode = {
-        id: n.id, symbol: n.symbol, isTerminal: n.isTerminal, isLeaf: true, hidden,
+        id: n.id, symbol: n.symbol, isTerminal: n.isTerminal, isLeaf: true, hidden, mark: n.mark,
         x: width / 2, y: depth * LEVEL_GAP, width, depth, children: []
       };
       const s = minGapShift(p);
@@ -99,7 +100,7 @@ function layoutTree(root: DerivationNode, alignLeaves: boolean) {
     const children = kids.map(c => place(c, hidden ? depth : depth + 1));
     const x = (children[0].x + children[children.length - 1].x) / 2;
     const p: PlacedNode = {
-      id: n.id, symbol: n.symbol, isTerminal: n.isTerminal, isLeaf: false, hidden,
+      id: n.id, symbol: n.symbol, isTerminal: n.isTerminal, isLeaf: false, hidden, mark: n.mark,
       x, y: depth * LEVEL_GAP, width, depth, children
     };
     if (!hidden) {
@@ -245,7 +246,7 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
           {layout.edges.map(({ from, to }) => (
             <line
               key={`e_${from.id}_${to.id}`}
-              className={`t-edge ${alignLeaves && to.isLeaf && to.y - from.y > LEVEL_GAP ? 'to-leaf-row' : ''}`}
+              className={`t-edge ${alignLeaves && to.isLeaf && to.y - from.y > LEVEL_GAP ? 'to-leaf-row' : ''} ${to.mark ? `mark-${to.mark}` : ''}`}
               x1={from.x}
               y1={from.y + NODE_H}
               x2={to.x}
@@ -260,12 +261,12 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
             return (
               <g key={`n_${n.id}`} transform={`translate(${n.x - n.width / 2}, ${n.y})`}>
                 <rect
-                  className={`t-node-${kind} ${unexpanded ? 'unexpanded' : ''}`}
+                  className={`t-node-${kind} ${unexpanded ? 'unexpanded' : ''} ${n.mark ? `mark-${n.mark}` : ''}`}
                   width={n.width}
                   height={NODE_H}
                   rx={n.isTerminal ? NODE_H / 2 : 6}
                 />
-                <text className={`t-text-${kind}`} x={n.width / 2} y={NODE_H / 2 + 4.5} textAnchor="middle">
+                <text className={`t-text-${kind} ${n.mark ? `mark-${n.mark}` : ''}`} x={n.width / 2} y={NODE_H / 2 + 4.5} textAnchor="middle">
                   {n.symbol}
                 </text>
               </g>

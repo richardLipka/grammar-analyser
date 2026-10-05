@@ -935,7 +935,8 @@ export const App: React.FC = () => {
                 {isCalculating ? t.recalculating : t.pleaseSpecifyGrammar}
               </div>
             ) : (
-              <div className={isStale || isCalculating ? 'results-invalid' : ''}>
+              // the comparison works on the text in the editor, not on the analysis, so it is not greyed out
+              <div className={(isStale || isCalculating) && activeTab !== 'check' ? 'results-invalid' : ''}>
                 {activeTab === 'overview' && (
                   <OverviewView
                     grammar={analyzedGrammar}
@@ -976,7 +977,7 @@ export const App: React.FC = () => {
                 )}
 
                 {activeTab === 'check' && (
-                  <EquivalenceView grammar={analyzedGrammar} text={checkText} onTextChange={setCheckText} eIsEpsilon={eIsEpsilon} lang={lang} />
+                  <EquivalenceView grammar={canAnalyse ? parseResult.grammar ?? null : null} text={checkText} onTextChange={setCheckText} eIsEpsilon={eIsEpsilon} lang={lang} />
                 )}
 
                 {activeTab === 'll' && (

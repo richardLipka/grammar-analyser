@@ -328,3 +328,29 @@ export function testMembership(g: Grammar, w: string[], maxTrees = 20): Membersh
     viablePrefix: count > 0 ? w.length : viablePrefixLength(g, w)
   };
 }
+
+/**
+ * For the parts of w: one derivation tree for each symbol of a sequence over
+ * consecutive parts of w[i..j), or null when the sequence does not derive it.
+ */
+export function sequenceTrees(g: Grammar, w: string[]): (symbols: string[], i: number, j: number) => DerivationNode[] | null {
+  const t = buildTables(g, w);
+  const ids = { next: 0 };
+  return (symbols, i, j) => {
+    const p: Production = { id: -2, lhs: '', rhs: symbols };
+    for (const parts of cuts(t, g, w, p, 0, i, j)) {
+      const nodes: DerivationNode[] = [];
+      for (const [X, a, b] of parts) {
+        if (!g.nonTerminals.has(X)) {
+          nodes.push({ id: `m${ids.next++}`, symbol: X, isTerminal: true });
+          continue;
+        }
+        const first = treesOf(t, g, w, X, a, b, new Set(), ids).next();
+        if (first.done) break;
+        nodes.push(first.value.node);
+      }
+      if (nodes.length === parts.length) return nodes;
+    }
+    return null;
+  };
+}

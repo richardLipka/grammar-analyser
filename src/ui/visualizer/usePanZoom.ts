@@ -30,11 +30,15 @@ export function usePanZoom(
     if (!el) return;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0 || content.width === 0) return;
-    const k = clamp(Math.min((r.width - 40) / content.width, (r.height - 50) / content.height, 1.25), MIN_ZOOM, 1.25);
+    // The toolbar covers the top of the canvas and a caption may cover its bottom: frame the content between them
+    const top = 44;
+    const bottom = 34;
+    const free = Math.max(40, r.height - top - bottom);
+    const k = clamp(Math.min((r.width - 40) / content.width, free / content.height, 1.25), MIN_ZOOM, 1.25);
     setView({
       k,
       x: Math.max(10, (r.width - content.width * k) / 2),
-      y: Math.max(10, (r.height - content.height * k) / 2)
+      y: top + Math.max(0, (free - content.height * k) / 2)
     });
   }, [containerRef, content.width, content.height]);
 

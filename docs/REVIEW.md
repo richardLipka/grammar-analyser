@@ -682,3 +682,46 @@ A one-off sweep of 8,000 random grammars took at most 3.5 ms per grammar. A rand
 - clear grammar: the first click arms the button, the second gives an empty editor with the cursor in it and the "enter a grammar" card;
 - a grammar typed afterwards is analysed, and its example word is accepted;
 - at 375 px there is no horizontal scrolling.
+
+## 21. "Check my transformation": the grammars in the text fields, and both derivations (2026-10-05)
+
+**What was wrong.**
+- The original grammar of the comparison was the last *analysed* grammar, not the text in the editor. After an edit, until the analysis ran again (or always, for a grammar too heavy to re-analyse automatically), the comparison used an older grammar than the one on the screen.
+- While the analysis was outdated, the whole tab was greyed out and could not be clicked, although the comparison does not use the analysis.
+- For a counterexample only one tree was shown, the one of the grammar that generates the word. It sat under the verdict below both grammars, so it was not clear which grammar it belonged to, and nothing showed why the other grammar fails.
+
+**The fix.**
+- The original is now the grammar in the editor as it is now. It is parsed with the same reading of `e`. While the text has errors, the original column says so and Compare is disabled. The tab is no longer greyed out.
+- A result is shown only while both text fields hold the grammars that were compared. The key now includes the start symbol.
+- The page is reordered: controls, then the verdict, then two columns. Each column holds a grammar and, under it, how that grammar handles the counterexample:
+  - **generates it:** the derivation tree and the leftmost derivation;
+  - **does not:** the attempt of the general analyser (`core/parser/derivationAttempt.ts`, `explainWord`), described next.
+
+**How the attempt is found.**
+1. An Earley recognizer, over the rules whose symbols all generate, finds the longest prefix w[0..k) that some word of the language starts with. At position k it collects the terminals that can follow and whether the word may end.
+2. The partial tree is built from an item [A → α • t β, i] at k. A breadth-first search goes up the chain of items that predicted A, back to the start (the shortest chain, no cycles).
+3. On every level, the symbols before the dot become complete subtrees over their part of the prefix (`sequenceTrees`, new in `membership.ts`, from the same span table D(X, i, j)). The symbol at the dot is the next level, or at the bottom the needed terminal t, marked red. The symbols after the dot stay as dashed leaves.
+4. When nothing can follow a prefix that is itself a word, the attempt is the full tree of the prefix ("the word goes on").
+5. The leftmost derivation of the partial tree is the broken sequence, marked where it stops matching the word. The text names the matched beginning, what the grammar needs, and what the word has. It notes when that symbol is not a terminal of the grammar at all, when the word ended too early, and when the language is empty.
+
+**The trees:** `DerivationNode.mark` ('mismatch', 'pending') is drawn by the tree visualizer, and exports with the theme colours. The pan/zoom fit now frames the content between the toolbar and the caption, so the root of a short canvas is no longer hidden under the toolbar (all tree and automaton views).
+
+**Tests.**
+- `derivationAttempt.test.ts`:
+  - the prefix equals `viablePrefixLength`;
+  - exactly the expected terminals extend it (checked for every terminal), and "may end" equals membership of the prefix;
+  - the tree uses only rules of the grammar, and its leaves are the prefix, the marked terminal, then only dashed symbols;
+  - the leftmost derivation ends in the leaves;
+  - over 1,000 failed attempts on 250 random grammars, and cases with ε-rules, cycles, left recursion, unknown symbols and an empty language.
+- `checkTransformation.test.ts`, the verification asked for:
+  - **Transformations:** every whole-grammar transformation and every click-mode transformation of every non-terminal and right-hand-side occurrence of every preset. That is 920 transformations, each written as editor text, read back as "your grammar" and compared with the original: all keep the language.
+  - **Modified grammars:** 357 modifications, made by removing a rule or adding one.
+    - 222 differ. Each counterexample is confirmed by the Earley recognizer and by brute force on all shorter words. In each case `explainWord` agrees on which grammar generates the word, and the other grammar has an attempt.
+    - 135 show no difference, which brute force confirms on all words up to length 4.
+
+**In the browser (both languages):**
+- an added word, the attempt broken at `*`;
+- a lost word with a symbol that is not a terminal of the student grammar;
+- the empty word ("the word ends here");
+- an editor grammar with errors;
+- the original following the editor text without waiting for the analysis.
