@@ -16,6 +16,9 @@ import { transformToLL1 } from '../core/processor/ll1Transformer';
 import { testMembership } from '../core/parser/membership';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 import { DerivationNode } from '../core/generator/wordGenerator';
+import { generateRecursiveDescent } from '../core/codegen/recursiveDescent';
+import { compilePl0 } from '../core/codegen/pl0Compiler';
+import { runPcode } from '../core/codegen/pcodeVm';
 
 const preset = (id: string): Grammar => {
   const p = PRESET_GRAMMARS.find(x => x.id === id);
@@ -46,7 +49,7 @@ const bracket = (n: DerivationNode): string =>
 describe('Constructs of real languages', () => {
   it('form their own group of presets, each sample in its language', () => {
     const ids = PRESET_GRAMMARS.filter(p => p.category === 'Languages').map(p => p.id);
-    expect(ids.length).toBe(10);
+    expect(ids.length).toBe(11);
     for (const id of ids) {
       const p = PRESET_GRAMMARS.find(x => x.id === id)!;
       expect(testMembership(preset(id), p.sampleInput.split(' ')).accepted, id).toBe(true);
@@ -123,5 +126,19 @@ describe('Constructs of real languages', () => {
     expect(buildLRTable(buildLR0Automaton(g, 'LR(0)'), g, a).fConflicts).toEqual([]);
     const right = parseGrammar('SExpression → atom | ( List )\nList → SExpression List | ε').grammar!;
     expect(classes(right)).toMatchObject({ LL1: true, LR0: false });
+  });
+
+  it('PL/0: LL(1) and SLR(1), not LR(0); the parser generated in PL/0 nests its procedures and parses the sample', () => {
+    const g = preset('lang_pl0');
+    expect(classes(g)).toMatchObject({ LL1: true, LR0: false, SLR: true, LALR: true, LR1: true });
+    const sample = PRESET_GRAMMARS.find(x => x.id === 'lang_pl0')!.sampleInput.split(' ');
+    const membership = testMembership(g, sample);
+    expect(membership.treeCount).toBe(1);
+    const gen = generateRecursiveDescent(g, analyzeGrammar(g));
+    expect(gen.nested).toBe(true);
+    const charOf = new Map(gen.tokens.map(t => [t.terminal, t.char]));
+    const run = runPcode(compilePl0(gen.pl0), `${sample.map(t => charOf.get(t)).join('')}$`);
+    // the left parse of the generated parser is the leftmost derivation of the only tree
+    expect(run.output.trim()).toBe(`${membership.trees[0].leftParse.join(' ')} \nOK`);
   });
 });

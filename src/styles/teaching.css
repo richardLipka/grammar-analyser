@@ -754,11 +754,9 @@
   }
 }
 
-/* Phones: one scrollable row of tabs instead of several wrapped rows */
+/* Phones: the two rows of tabs scroll sideways together instead of wrapping */
 @media (max-width: 640px) {
   .tabs-header {
-    flex-wrap: nowrap;
-    overflow-x: auto;
     padding: 6px 10px;
   }
 

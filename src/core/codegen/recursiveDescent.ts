@@ -1,7 +1,7 @@
 /**
  * Recursive-descent parsers generated from an LL(1) grammar, in PL/0 and in
  * Oberon, the languages of N. Wirth's compilers (the PL/0 compiler of the
- * KIV/FJP course is one).
+ * KIV/FJP course is one), and in C and Python.
  *
  * Every non-terminal A gets a procedure; it chooses the rule of A by the
  * current input symbol (the director sets of the LL(1) table), prints the
@@ -11,7 +11,9 @@
  * Input: every terminal is one character (its own character when it is a
  * single printable ASCII character, otherwise a substitute letter); spaces
  * and line ends are skipped and the input ends with $. Output: the left
- * parse, then OK, or ERR and the symbol where the error was found.
+ * parse, then OK, or ERR and the symbol where the error was found. All four
+ * programs print the same. Comments give the rules of every procedure and
+ * the rule of every branch.
  *
  * Neither PL/0 nor Oberon-07 has forward declarations, so a procedure may only
  * call itself, procedures of enclosing blocks and procedures declared before
@@ -19,7 +21,9 @@
  * procedures are nested along a depth-first search of the calls; when that is
  * not enough for some call graph, PL/0 uses one procedure for all
  * non-terminals with the chosen non-terminal in a variable, and Oberon calls
- * through procedure variables (as ORP.Mod does for expression).
+ * through procedure variables (as ORP.Mod does for expression). C declares
+ * the functions first (prototypes) and Python resolves a name when it is
+ * called, so there every procedure is a top-level function.
  */
 
 import { Grammar, Production, END_MARKER } from '../ast/grammar';
@@ -41,9 +45,13 @@ const PUNCT_NAMES: Record<string, string> = {
   '@': 'at', '~': 'tilde', "'": 'quote', '"': 'dquote', '\\': 'backslash', '_': 'underscore', '`': 'backquote'
 };
 const PL0_KEYWORDS = new Set(['const', 'var', 'procedure', 'call', 'begin', 'end', 'if', 'then', 'while', 'do', 'odd']);
+const C_KEYWORDS = new Set(['auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register', 'restrict', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while', 'bool', 'true', 'false', 'printf', 'getchar', 'putchar', 'EOF', 'NULL', 'stdin', 'stdout', 'exit']);
+const PYTHON_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield', 'match', 'case', 'type', 'print', 'sys', 'len', 'input', 'int', 'str']);
 const OBERON_KEYWORDS = new Set(['ARRAY', 'BEGIN', 'BY', 'CASE', 'CONST', 'DIV', 'DO', 'ELSE', 'ELSIF', 'END', 'FALSE', 'FOR', 'IF', 'IMPORT', 'IN', 'IS', 'MOD', 'MODULE', 'NIL', 'OF', 'OR', 'POINTER', 'PROCEDURE', 'RECORD', 'REPEAT', 'RETURN', 'THEN', 'TO', 'TRUE', 'TYPE', 'UNTIL', 'VAR', 'WHILE']);
 /** Names used by the generated programs themselves; avoided regardless of case (some PL/0 compilers ignore it) */
-const RESERVED_NAMES = new Set(['sym', 'ok', 'want', 'num', 'dig', 'rule', 'mine', 'which', 'next', 'error', 'expect', 'writenum', 'parse', 'tend', 'parser', 'in', 'out']);
+const RESERVED_NAMES = new Set(['sym', 'ok', 'want', 'num', 'dig', 'rule', 'mine', 'which', 'next', 'error', 'expect', 'writenum', 'parse', 'tend', 'parser', 'in', 'out', 'main', 'data', 'pos']);
+/** A keyword (or a name the program uses) of one of the four languages */
+const isKeyword = (x: string) => PL0_KEYWORDS.has(x.toLowerCase()) || OBERON_KEYWORDS.has(x.toUpperCase()) || C_KEYWORDS.has(x) || PYTHON_KEYWORDS.has(x);
 const clashes = (names: Set<string>, x: string) => names.has(x) || RESERVED_NAMES.has(x.toLowerCase());
 
 /** Characters for the terminals: their own when single printable ASCII, otherwise substitutes. */
@@ -64,7 +72,7 @@ export function tokenCodes(g: Grammar): TokenCode[] {
       used.add(ch);
     }
     let base = /^[A-Za-z][A-Za-z0-9]*$/.test(tm) ? `t${tm}` : PUNCT_NAMES[tm] ? `t${PUNCT_NAMES[tm]}` : `t${codes.length + 1}`;
-    if (PL0_KEYWORDS.has(base.toLowerCase()) || OBERON_KEYWORDS.has(base)) base = `${base}0`;
+    if (isKeyword(base)) base = `${base}0`;
     let name = base;
     for (let k = 2; clashes(names, name); k++) name = `${base}${k}`;
     names.add(name);
@@ -82,7 +90,7 @@ function procedureNames(nts: string[], taken: Set<string>): Map<string, string> 
     let base = nt.replace(/'+$/, '').normalize('NFD').replace(/[^A-Za-z0-9]/g, '');
     if (!/^[A-Za-z]/.test(base)) base = `N${base}`;
     base += primes === 0 ? '' : primes === 1 ? 'prime' : `prime${primes}`;
-    if (PL0_KEYWORDS.has(base.toLowerCase()) || OBERON_KEYWORDS.has(base.toUpperCase())) base = `${base}0`;
+    if (isKeyword(base)) base = `${base}0`;
     let name = base;
     for (let k = 2; clashes(names, name); k++) name = `${base}${k}`;
     names.add(name);
@@ -100,6 +108,8 @@ export interface GeneratedParser {
   nested: boolean;
   pl0: string;
   oberon: string;
+  c: string;
+  python: string;
 }
 
 /** Calls of each non-terminal (the non-terminals of its right-hand sides, in order). */
@@ -174,11 +184,18 @@ export function generateRecursiveDescent(g: Grammar, analysis: GrammarAnalysis):
     procNames,
     nested,
     pl0: generatePl0(g, reach, nest, nested, tokens, procNames, rules, predict, constOf),
-    oberon: generateOberon(g, reach, nest, nested, tokens, procNames, rules, predict)
+    oberon: generateOberon(g, reach, nest, nested, tokens, procNames, rules, predict),
+    c: generateC(g, reach, tokens, procNames, rules, predict, constOf),
+    python: generatePython(g, reach, tokens, procNames, rules, predict, constOf)
   };
 }
 
-const ruleText = (p: Production) => `${p.lhs} -> ${p.rhs.join(' ') || 'eps'}`;
+/** The rule as a comment: its number and A -> X Y (ASCII, so every compiler reads it). */
+const ruleText = (p: Production) => `${p.id}: ${p.lhs} -> ${p.rhs.join(' ') || 'eps'}`;
+/** Text inside (* ... *) of PL/0 and Oberon (Oberon comments nest) */
+const inParens = (x: string) => x.replace(/\*\)/g, '* )').replace(/\(\*/g, '( *');
+/** Text inside a C comment */
+const inC = (x: string) => x.replace(/\*\//g, '* /').replace(/\/\*/g, '/ *');
 
 function generatePl0(
   g: Grammar,
@@ -192,6 +209,9 @@ function generatePl0(
   constOf: (la: string) => string
 ): string {
   const out: string[] = [];
+  out.push('(* recursive descent, generated from an LL(1) grammar *)');
+  out.push('(* every terminal is one input character; the input ends with $ *)');
+  for (const t of tokens) out.push(`(* ${t.name} = ${t.code}: ${inParens(t.terminal)} *)`);
   const consts = [...tokens.map(t => `${t.name} = ${t.code}`), 'tend = 36'];
   out.push(`const ${consts.join(', ')};`);
   out.push('var sym, ok, want, num, dig, which;');
@@ -250,7 +270,7 @@ function generatePl0(
         if (g.nonTerminals.has(X)) stmts.push(...call(X));
         else stmts.push(`want := ${constOf(X)}`, 'call expect');
       }
-      lines.push(`${indent}  if rule = ${p.id} then`);
+      lines.push(`${indent}  if rule = ${p.id} then (* ${inParens(ruleText(p))} *)`);
       lines.push(`${indent}  begin`);
       lines.push(...stmts.map((st, k) => `${indent}    ${st}${k < stmts.length - 1 ? ';' : ''}`));
       lines.push(`${indent}  end;`);
@@ -264,6 +284,7 @@ function generatePl0(
   if (nested) {
     const emitProc = (A: string, depth: number) => {
       const ind = '  '.repeat(depth);
+      for (const p of rules(A)) out.push(`${ind}(* ${inParens(ruleText(p))} *)`);
       out.push(`${ind}procedure ${names.get(A)};`);
       out.push(`${ind}var rule;`);
       for (const C of nest.children.get(A) || []) emitProc(C, depth + 1);
@@ -281,6 +302,7 @@ function generatePl0(
     out.push('begin');
     out.push('  mine := which;');
     nts.forEach((A, i) => {
+      for (const p of rules(A)) out.push(`  (* ${inParens(ruleText(p))} *)`);
       out.push(`  if mine = ${num.get(A)} then`);
       out.push('  begin');
       out.push(...body(A, '    ', B => [`which := ${num.get(B)}`, 'call parse']));
@@ -326,7 +348,7 @@ function generateOberon(
   out.push('');
   out.push('  (* every terminal is one input character; the input ends with $ *)');
   out.push('  CONST');
-  for (const t of tokens) out.push(`    ${t.name} = ${oberonChar(t.code)}; (* ${t.terminal.replace(/\*\)/g, '* )')} *)`);
+  for (const t of tokens) out.push(`    ${t.name} = ${oberonChar(t.code)}; (* ${inParens(t.terminal)} *)`);
   out.push('    tend = "$";');
   out.push('');
   out.push('  VAR sym: CHAR; ok: BOOLEAN;');
@@ -360,7 +382,7 @@ function generateOberon(
     lines.push(`${ind}IF ok THEN`);
     rules(A).forEach((p, i) => {
       const cond = predict(p).map(la => `(sym = ${nameOf(la)})`).join(' OR ') || 'FALSE';
-      lines.push(`${ind}  ${i === 0 ? 'IF' : 'ELSIF'} ${cond} THEN (* ${p.id}: ${ruleText(p).replace(/\*\)/g, '* )')} *)`);
+      lines.push(`${ind}  ${i === 0 ? 'IF' : 'ELSIF'} ${cond} THEN (* ${inParens(ruleText(p))} *)`);
       const stmts = [`Out.Int(${p.id}, 0); Out.Char(" ")`];
       for (const X of p.rhs) stmts.push(g.nonTerminals.has(X) ? call(X) : `Expect(${nameOf(X)})`);
       lines.push(`${ind}    ${stmts.join('; ')}`);
@@ -374,6 +396,7 @@ function generateOberon(
   if (nested) {
     const emitProc = (A: string, depth: number) => {
       const ind = '  '.repeat(depth + 1);
+      for (const p of rules(A)) out.push(`${ind}(* ${inParens(ruleText(p))} *)`);
       out.push(`${ind}PROCEDURE ${names.get(A)};`);
       for (const C of nest.children.get(A) || []) emitProc(C, depth + 1);
       out.push(`${ind}BEGIN`);
@@ -384,6 +407,7 @@ function generateOberon(
     emitProc(g.startSymbol, 0);
   } else {
     for (const A of nts) {
+      for (const p of rules(A)) out.push(`  (* ${inParens(ruleText(p))} *)`);
       out.push(`  PROCEDURE ${names.get(A)};`);
       out.push('  BEGIN');
       out.push(...procBody(A, '    ', B => `p${names.get(B)}`));
@@ -400,4 +424,181 @@ function generateOberon(
   out.push('  Out.Ln');
   out.push('END Parser.');
   return out.join('\n');
+}
+
+function cChar(code: number): string {
+  if (code === 39) return "'\\''";
+  if (code === 92) return "'\\\\'";
+  return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : String(code);
+}
+
+function generateC(
+  g: Grammar,
+  nts: string[],
+  tokens: TokenCode[],
+  names: Map<string, string>,
+  rules: (A: string) => Production[],
+  predict: (p: Production) => string[],
+  constOf: (la: string) => string
+): string {
+  const out: string[] = [];
+  out.push('/* Recursive descent, generated from an LL(1) grammar.');
+  out.push(' * Every terminal is one input character; the input ends with $.');
+  out.push(' * Output: the left parse (rule numbers), then OK, or ERR and the symbol');
+  out.push(' * where the error was found. */');
+  out.push('#include <stdio.h>');
+  out.push('');
+  out.push('/* the terminals and their characters */');
+  out.push('enum {');
+  for (const t of tokens) out.push(`  ${t.name} = ${cChar(t.code)}, /* ${inC(t.terminal)} */`);
+  out.push("  tend = '$'");
+  out.push('};');
+  out.push('');
+  out.push('static int sym;    /* the current input symbol */');
+  out.push('static int ok = 1; /* no error found yet */');
+  out.push('');
+  out.push('static void next(void)');
+  out.push('{');
+  out.push("  do sym = getchar(); while (sym != EOF && sym <= ' ');");
+  out.push('  if (sym == EOF) sym = tend;');
+  out.push('}');
+  out.push('');
+  out.push('static void error(void)');
+  out.push('{');
+  out.push('  if (ok) {');
+  out.push('    printf("\\nERR %c", sym);');
+  out.push('    ok = 0;');
+  out.push('  }');
+  out.push('}');
+  out.push('');
+  out.push('static void expect(int want)');
+  out.push('{');
+  out.push('  if (ok) {');
+  out.push('    if (sym == want) next();');
+  out.push('    else error();');
+  out.push('  }');
+  out.push('}');
+  out.push('');
+  out.push('/* one function per non-terminal; the prototypes allow any order of calls */');
+  for (const A of nts) out.push(`static void ${names.get(A)}(void);`);
+  for (const A of nts) {
+    out.push('');
+    for (const p of rules(A)) out.push(`/* ${inC(ruleText(p))} */`);
+    out.push(`static void ${names.get(A)}(void)`);
+    out.push('{');
+    out.push('  if (!ok) return;');
+    out.push('  switch (sym) {');
+    for (const p of rules(A)) {
+      const cases = predict(p).map(la => `case ${constOf(la)}:`).join(' ');
+      if (!cases) continue;
+      out.push(`  ${cases} /* ${inC(ruleText(p))} */`);
+      const stmts = [`printf("${p.id} ");`];
+      for (const X of p.rhs) stmts.push(g.nonTerminals.has(X) ? `${names.get(X)}();` : `expect(${constOf(X)});`);
+      stmts.push('break;');
+      out.push(`    ${stmts.join(' ')}`);
+    }
+    out.push('  default:');
+    out.push('    error();');
+    out.push('  }');
+    out.push('}');
+  }
+  out.push('');
+  out.push('int main(void)');
+  out.push('{');
+  out.push('  next();');
+  out.push(`  ${names.get(g.startSymbol)}();`);
+  out.push('  if (ok && sym != tend) error();');
+  out.push('  if (ok) printf("\\nOK");');
+  out.push('  printf("\\n");');
+  out.push('  return ok ? 0 : 1;');
+  out.push('}');
+  return out.join('\n');
+}
+
+function pyChar(code: number): string {
+  if (code === 39) return '"\'"';
+  if (code === 92) return "'\\\\'";
+  return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : `chr(${code})`;
+}
+
+function generatePython(
+  g: Grammar,
+  nts: string[],
+  tokens: TokenCode[],
+  names: Map<string, string>,
+  rules: (A: string) => Production[],
+  predict: (p: Production) => string[],
+  constOf: (la: string) => string
+): string {
+  const out: string[] = [];
+  out.push('# Recursive descent, generated from an LL(1) grammar.');
+  out.push('# Every terminal is one input character; the input ends with $.');
+  out.push('# Output: the left parse (rule numbers), then OK, or ERR and the symbol');
+  out.push('# where the error was found.');
+  out.push('import sys');
+  out.push('');
+  out.push('# the terminals and their characters');
+  for (const t of tokens) out.push(`${t.name} = ${pyChar(t.code)}  # ${t.terminal}`);
+  out.push("tend = '$'");
+  out.push('');
+  out.push('data = sys.stdin.read()');
+  out.push('pos = 0');
+  out.push('sym = tend  # the current input symbol');
+  out.push('ok = True  # no error found yet');
+  out.push('');
+  out.push('');
+  out.push('def next():');
+  out.push('    global sym, pos');
+  out.push("    while pos < len(data) and data[pos] <= ' ':");
+  out.push('        pos += 1');
+  out.push('    if pos < len(data):');
+  out.push('        sym = data[pos]');
+  out.push('        pos += 1');
+  out.push('    else:');
+  out.push('        sym = tend');
+  out.push('');
+  out.push('');
+  out.push('def error():');
+  out.push('    global ok');
+  out.push('    if ok:');
+  out.push("        print('\\nERR', sym, end='')");
+  out.push('        ok = False');
+  out.push('');
+  out.push('');
+  out.push('def expect(want):');
+  out.push('    if ok:');
+  out.push('        if sym == want:');
+  out.push('            next()');
+  out.push('        else:');
+  out.push('            error()');
+  for (const A of nts) {
+    out.push('');
+    out.push('');
+    for (const p of rules(A)) out.push(`# ${ruleText(p)}`);
+    out.push(`def ${names.get(A)}():`);
+    out.push('    if not ok:');
+    out.push('        return');
+    let first = true;
+    for (const p of rules(A)) {
+      const las = predict(p).map(constOf);
+      if (las.length === 0) continue;
+      const cond = las.length === 1 ? `sym == ${las[0]}` : `sym in (${las.join(', ')})`;
+      out.push(`    ${first ? 'if' : 'elif'} ${cond}:  # ${ruleText(p)}`);
+      first = false;
+      out.push(`        print(${p.id}, end=' ')`);
+      for (const X of p.rhs) out.push(g.nonTerminals.has(X) ? `        ${names.get(X)}()` : `        expect(${constOf(X)})`);
+    }
+    out.push(first ? '    error()' : '    else:');
+    if (!first) out.push('        error()');
+  }
+  out.push('');
+  out.push('');
+  out.push('next()');
+  out.push(`${names.get(g.startSymbol)}()`);
+  out.push('if ok and sym != tend:');
+  out.push('    error()');
+  out.push('if ok:');
+  out.push("    print('\\nOK', end='')");
+  out.push('print()');
+  return out.join('\n') + '\n';
 }

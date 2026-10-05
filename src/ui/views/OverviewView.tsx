@@ -544,7 +544,7 @@ const AmbiguityCard: React.FC<{
       {hasPrecedence ? (
         <p className="hint-text" style={{ marginTop: '8px' }}>
           {cz
-            ? `Deklarované priority a asociativita vyřešily v tabulce LALR(1) ${resolvedCount} konfliktů přesun/redukce: LR analyzátor z obou stromů zvolí jeden (stejně jako Yacc/Bison). Konflikty bez priorit zůstávají; jsou vidět v záložce Analýza LR.`
+            ? `Deklarované priority a asociativita vyřešily v tabulce LALR(1) ${resolvedCount} konfliktů přesun/redukce: LR analyzátor z obou stromů zvolí jeden (stejně jako Yacc/Bison). Konflikty bez priorit zůstávají; jsou vidět v záložce LR analyzátory.`
             : `The declared precedence and associativity resolved ${resolvedCount} shift/reduce conflict(s) of the LALR(1) table: the LR parser chooses one of the trees (as Yacc/Bison does). Conflicts without precedence remain; they are shown on the LR tab.`}
         </p>
       ) : (

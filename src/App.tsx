@@ -128,7 +128,7 @@ export const App: React.FC = () => {
   const [eChoice, setEChoice] = useState<EChoice | null>(setup.url.e ?? null);
   const eIsEpsilon = eChoice !== 'terminal';
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
-  // The student's grammar of the tab "Check my transformation" (kept when switching tabs)
+  // The student's grammar of the tab "Language comparison" (kept when switching tabs)
   const [checkText, setCheckText] = useState('');
   const editorRef = useRef<HTMLTextAreaElement>(null);
   // Text editing, or transformations by clicking symbols of the grammar
@@ -460,18 +460,23 @@ export const App: React.FC = () => {
   const categories = [...new Set(PRESET_GRAMMARS.map(p => p.category))];
   const msg = (e: ParseError) => (lang === 'cz' ? e.messageCz || e.message : e.message);
 
-  const tabs: { id: TabId; icon: React.ReactNode; label: string }[] = [
+  const tabs: { id: TabId; icon: React.ReactNode; label: string; title?: string }[] = [
     { id: 'overview', icon: <Eye size={15} />, label: t.tabOverview },
     { id: 'firstFollow', icon: <GitCommit size={15} />, label: t.tabFirstFollow },
     { id: 'transformations', icon: <Sparkles size={15} />, label: t.tabTransform },
     { id: 'check', icon: <ClipboardCheck size={15} />, label: t.tabCheck },
-    { id: 'll', icon: <Layers size={15} />, label: t.tabLL },
-    { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR },
-    { id: 'graph', icon: <Network size={15} />, label: t.tabGraph },
-    { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership },
+    { id: 'll', icon: <Layers size={15} />, label: t.tabLL, title: t.tabLLTitle },
+    { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR, title: t.tabLRTitle },
+    { id: 'graph', icon: <Network size={15} />, label: t.tabGraph, title: t.tabGraphTitle },
+    { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership, title: t.tabMembershipTitle },
     { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
+  ];
+  // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
+  const TAB_ROWS: TabId[][] = [
+    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership'],
+    ['transformations', 'check', 'rd', 'latex']
   ];
 
   return (
@@ -887,17 +892,22 @@ export const App: React.FC = () => {
         <main className="right-pane">
           {/* Navigation Tabs */}
           <nav className="tabs-header" role="tablist">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                className={`tab-button ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
+            {TAB_ROWS.map((row, r) => (
+              <div key={r} className="tabs-row" role="presentation">
+                {row.map(id => tabs.find(x => x.id === id)!).map(tab => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
+                    className={`tab-button ${activeTab === tab.id ? 'active' : ''} ${tab.id === 'latex' ? 'tab-end' : ''}`}
+                    title={tab.title}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
 

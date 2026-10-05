@@ -466,19 +466,32 @@ body {
   z-index: 50;
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 4px;
+  overflow-x: auto;
   padding: 8px 16px;
   background-color: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
+/* The tabs come in two fixed rows (see TAB_ROWS in App); a pane too narrow for a row scrolls sideways */
+.tabs-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: max-content;
+}
+
+.tab-button.tab-end {
+  margin-left: auto;
+}
+
 .tab-button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
   border: none;

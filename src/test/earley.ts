@@ -50,14 +50,18 @@ export function wordsUpTo(alphabet: string[], n: number): string[][] {
   let layer: string[][] = [[]];
   for (let len = 1; len <= n; len++) {
     layer = layer.flatMap(w => alphabet.map(a => [...w, a]));
-    result.push(...layer);
+    // one by one: a layer can have more words than a call can take arguments
+    for (const w of layer) result.push(w);
   }
   return result;
 }
 
+/** L(g1) = L(g2) on all words up to maxLen; with a large alphabet only up to the length that keeps it below 200,000 words. */
 export function expectEquivalent(g1: Grammar, g2: Grammar, maxLen = 6) {
   const alphabet = [...new Set([...g1.terminals, ...g2.terminals])];
-  for (const w of wordsUpTo(alphabet, maxLen)) {
+  let len = maxLen;
+  while (len > 1 && alphabet.length ** len > 200000) len--;
+  for (const w of wordsUpTo(alphabet, len)) {
     const a = accepts(g1, w);
     const b = accepts(g2, w);
     if (a !== b) {

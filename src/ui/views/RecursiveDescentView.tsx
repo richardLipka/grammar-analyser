@@ -13,7 +13,9 @@ import { Code2, Copy, Check, Download, ExternalLink, Play, AlertTriangle } from 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
 export const PL0_INTERPRETER_URL = 'https://richardlipka.github.io/online-pl0-interpreter/';
 
-type CodeLang = 'pl0' | 'oberon' | 'pcode';
+type CodeLang = 'pl0' | 'oberon' | 'c' | 'python' | 'pcode';
+
+const FILE_NAMES: Record<CodeLang, string> = { pl0: 'parser.pl0', oberon: 'Parser.Mod', c: 'parser.c', python: 'parser.py', pcode: 'parser.pcode.txt' };
 
 function base64Url(text: string): string {
   const bytes = new TextEncoder().encode(text);
@@ -36,7 +38,7 @@ interface RecursiveDescentViewProps {
   onAttemptLL1?: () => void;
 }
 
-/** Recursive-descent parsers in PL/0 and Oberon generated from an LL(1) grammar, runnable in the PL/0 interpreter. */
+/** Recursive-descent parsers in PL/0, Oberon, C and Python generated from an LL(1) grammar; the PL/0 one runs in the PL/0 interpreter. */
 export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ grammar, analysis, llTable, defaultInput = '', lang, onAttemptLL1 }) => {
   const cz = lang === 'cz';
   const [codeLang, setCodeLang] = useState<CodeLang>('pl0');
@@ -94,8 +96,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ gram
     return <div className="card"><div className="report-box danger">{generated && 'error' in generated ? generated.error : ''}</div></div>;
   }
   const { gen, pcodeText } = generated;
-  const text = codeLang === 'pl0' ? gen.pl0 : codeLang === 'oberon' ? gen.oberon : pcodeText;
-  const fileName = codeLang === 'pl0' ? 'parser.pl0' : codeLang === 'oberon' ? 'Parser.Mod' : 'parser.pcode.txt';
+  const text = codeLang === 'pcode' ? pcodeText : gen[codeLang];
+  const fileName = FILE_NAMES[codeLang];
 
   const copy = async () => {
     try {
@@ -126,17 +128,17 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ gram
         </div>
         <p className="hint-text">
           {cz
-            ? 'Každý neterminál má proceduru. Ta podle aktuálního symbolu vstupu (množiny řídicích symbolů z tabulky LL(1)) vybere pravidlo, vypíše jeho číslo (vzniká levý rozklad) a pak pro každý symbol pravé strany zavolá proceduru neterminálu, nebo zkontroluje a přečte terminál. Výstupem je levý rozklad a OK, nebo ERR a symbol, u kterého analyzátor chybu zjistil.'
-            : 'Every non-terminal has a procedure. It chooses the rule by the current input symbol (the director sets of the LL(1) table), prints the rule number (giving the left parse), and then for every symbol of the right-hand side calls the procedure of a non-terminal or checks and reads a terminal. The output is the left parse and OK, or ERR and the symbol where the parser found the error.'}
+            ? 'Každý neterminál má proceduru. Ta podle aktuálního symbolu vstupu (množiny řídicích symbolů z tabulky LL(1)) vybere pravidlo, vypíše jeho číslo (vzniká levý rozklad) a pak pro každý symbol pravé strany zavolá proceduru neterminálu, nebo zkontroluje a přečte terminál. Výstupem je levý rozklad a OK, nebo ERR a symbol, u kterého analyzátor chybu zjistil. Komentáře uvádějí nad každou procedurou její pravidla a u každé větve pravidlo, které provádí. Všechny čtyři jazyky vypisují pro stejný vstup totéž.'
+            : 'Every non-terminal has a procedure. It chooses the rule by the current input symbol (the director sets of the LL(1) table), prints the rule number (giving the left parse), and then for every symbol of the right-hand side calls the procedure of a non-terminal or checks and reads a terminal. The output is the left parse and OK, or ERR and the symbol where the parser found the error. Comments give the rules above every procedure and the rule of every branch. All four languages print the same for the same input.'}
         </p>
         <p className="hint-text" style={{ marginTop: '4px' }}>
           {gen.nested
             ? (cz
-              ? 'PL/0 ani Oberon-07 nemají dopředné deklarace, procedura tedy smí volat jen sebe, procedury obklopujících bloků a procedury deklarované před ní. Procedury jsou proto vnořeny podle volání, stejně jako expression ⊃ term ⊃ factor ve Wirthově překladači PL/0.'
-              : 'Neither PL/0 nor Oberon-07 has forward declarations, so a procedure may only call itself, procedures of enclosing blocks and procedures declared before it. The procedures are therefore nested along the calls, like expression ⊃ term ⊃ factor in Wirth\'s PL/0 compiler.')
+              ? 'PL/0 ani Oberon-07 nemají dopředné deklarace, procedura tedy smí volat jen sebe, procedury obklopujících bloků a procedury deklarované před ní. Procedury jsou proto vnořeny podle volání, stejně jako expression ⊃ term ⊃ factor ve Wirthově překladači PL/0. V C (prototypy) a v Pythonu (jméno se hledá až při volání) vnoření potřeba není.'
+              : 'Neither PL/0 nor Oberon-07 has forward declarations, so a procedure may only call itself, procedures of enclosing blocks and procedures declared before it. The procedures are therefore nested along the calls, like expression ⊃ term ⊃ factor in Wirth\'s PL/0 compiler. C (prototypes) and Python (a name is looked up when it is called) need no nesting.')
             : (cz
-              ? 'Vnoření procedur nestačí na volání této gramatiky (PL/0 ani Oberon-07 nemají dopředné deklarace). PL/0 proto používá jednu proceduru parse, která neterminál dostane v proměnné which, a Oberon volá procedury přes procedurové proměnné (jako ORP.Mod u expression).'
-              : 'Nesting the procedures is not enough for the calls of this grammar (neither PL/0 nor Oberon-07 has forward declarations). PL/0 therefore uses one procedure parse that gets the non-terminal in the variable which, and Oberon calls through procedure variables (as ORP.Mod does for expression).')}
+              ? 'Vnoření procedur nestačí na volání této gramatiky (PL/0 ani Oberon-07 nemají dopředné deklarace). PL/0 proto používá jednu proceduru parse, která neterminál dostane v proměnné which, a Oberon volá procedury přes procedurové proměnné (jako ORP.Mod u expression). V C (prototypy) a v Pythonu je každý neterminál samostatnou funkcí.'
+              : 'Nesting the procedures is not enough for the calls of this grammar (neither PL/0 nor Oberon-07 has forward declarations). PL/0 therefore uses one procedure parse that gets the non-terminal in the variable which, and Oberon calls through procedure variables (as ORP.Mod does for expression). In C (prototypes) and Python every non-terminal is a function of its own.')}
         </p>
 
         <div className="rd-tokens">
@@ -153,9 +155,9 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ gram
       <div className="card">
         <div className="rd-toolbar">
           <div className="construction-modes" role="group" aria-label={cz ? 'Jazyk' : 'Language'}>
-            {(['pl0', 'oberon', 'pcode'] as const).map(l => (
+            {(['pl0', 'oberon', 'c', 'python', 'pcode'] as const).map(l => (
               <button key={l} type="button" className={`btn ${codeLang === l ? 'btn-primary' : 'btn-secondary'}`} aria-pressed={codeLang === l} onClick={() => setCodeLang(l)}>
-                {l === 'pl0' ? 'PL/0' : l === 'oberon' ? 'Oberon' : (cz ? 'P-kód' : 'P-code')}
+                {l === 'pl0' ? 'PL/0' : l === 'oberon' ? 'Oberon' : l === 'c' ? 'C' : l === 'python' ? 'Python' : (cz ? 'P-kód' : 'P-code')}
               </button>
             ))}
           </div>
@@ -173,13 +175,21 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ gram
         <p className="hint-text" style={{ margin: '8px 0' }}>
           {codeLang === 'pl0'
             ? (cz
-              ? 'PL/0 podle Wirtha se znakovým vstupem a výstupem: ? x přečte jeden znak (instrukce REA), ! v vypíše znak s kódem v (WRI). PL/0 nemá else ani or, proto procedura nejdřív do proměnné rule určí pravidlo a pak je provede.'
-              : 'Wirth\'s PL/0 with character input and output: ? x reads one character (instruction REA), ! v writes the character with the code v (WRI). PL/0 has neither else nor or, so a procedure first determines the rule in the variable rule and then expands it.')
+              ? 'PL/0 podle Wirtha se znakovým vstupem a výstupem: ? x přečte jeden znak (instrukce REA), ! v vypíše znak s kódem v (WRI). PL/0 nemá else ani or, proto procedura nejdřív do proměnné rule určí pravidlo a pak je provede. Komentáře (* … *) Wirthův původní PL/0 nemá; pro překladač bez komentářů je smažte.'
+              : 'Wirth\'s PL/0 with character input and output: ? x reads one character (instruction REA), ! v writes the character with the code v (WRI). PL/0 has neither else nor or, so a procedure first determines the rule in the variable rule and then expands it. Wirth\'s original PL/0 has no comments (* … *); delete them for a compiler without comments.')
             : codeLang === 'oberon'
               ? (cz
                 ? 'Oberon-07 s moduly In a Out (Oakwood): In.Char čte znak, Out.Int a Out.String vypisují.'
                 : 'Oberon-07 with the modules In and Out (Oakwood): In.Char reads a character, Out.Int and Out.String write.')
-              : (cz
+              : codeLang === 'c'
+                ? (cz
+                  ? 'C99 se standardní knihovnou stdio: getchar čte znak, printf vypisuje (gcc -std=c99 parser.c). Funkce jsou nejdřív deklarovány prototypy, takže se mohou volat v libovolném pořadí; každá vybírá pravidlo příkazem switch podle aktuálního symbolu. Návratový kód programu je 0 pro přijaté slovo.'
+                  : 'C99 with the standard library stdio: getchar reads a character, printf writes (gcc -std=c99 parser.c). The functions are declared first by prototypes, so they can call each other in any order; each one chooses the rule with a switch on the current symbol. The exit status is 0 for an accepted word.')
+                : codeLang === 'python'
+                  ? (cz
+                    ? 'Python 3: vstup se čte ze standardního vstupu (python parser.py < vstup). Jméno funkce se hledá až při volání, na pořadí funkcí tedy nezáleží; pravidlo se vybírá podle aktuálního symbolu příkazy if a elif.'
+                    : 'Python 3: the input is read from the standard input (python parser.py < input). A function name is looked up when it is called, so the order of the functions does not matter; the rule is chosen by the current symbol with if and elif.')
+                  : (cz
                 ? 'P-kód programu v PL/0 přeložený jako ve Wirthově překladači (JMC, RET, OPR 0, 8–13 pro relace), ve tvaru pro interpret PL/0 z předmětu KIV/FJP.'
                 : 'The P-code of the PL/0 program compiled as by Wirth\'s compiler (JMC, RET, OPR 0, 8–13 for the relations), in the form read by the PL/0 interpreter of the KIV/FJP course.')}
         </p>
@@ -214,8 +224,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({ gram
                 <pre className="rd-output">{run.output}{run.error ? `\n[${run.error}]` : ''}</pre>
                 <div className="hint-text">
                   {cz
-                    ? 'Čísla jsou levý rozklad – stejný jako v simulaci v záložce Analýza LL(k).'
-                    : 'The numbers are the left parse – the same as in the simulation on the LL(k) tab.'}
+                    ? 'Čísla jsou levý rozklad – stejný jako v simulaci v záložce LL. Programy v C a v Pythonu vypíšou pro stejný vstup totéž.'
+                    : 'The numbers are the left parse – the same as in the simulation on the LL tab. The C and Python programs print the same for the same input.'}
                 </div>
               </div>
             )}

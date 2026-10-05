@@ -26,7 +26,7 @@ const TAB_ALIASES: Record<string, UrlTab> = {
   overview: 'overview',
   firstfollow: 'firstFollow', 'first-follow': 'firstFollow', ff: 'firstFollow', first: 'firstFollow',
   transformations: 'transformations', transform: 'transformations',
-  check: 'check', equivalence: 'check', same: 'check',
+  check: 'check', equivalence: 'check', same: 'check', comparison: 'check', compare: 'check',
   ll: 'll', lr: 'lr',
   graph: 'graph', automaton: 'graph',
   membership: 'membership', cyk: 'membership', word: 'membership', parse: 'membership',

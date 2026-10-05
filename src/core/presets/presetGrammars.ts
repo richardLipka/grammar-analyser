@@ -45,7 +45,7 @@ F -> "(" E ")" | "id"`,
     nameEn: 'Ambiguous Expressions with Precedence (%left, %right)',
     nameCz: 'Nejednoznačné výrazy s prioritami (%left, %right)',
     descriptionEn: 'E → E + E | E * E | … is ambiguous: a + a * a has two derivation trees, so every LR table has shift/reduce conflicts. As in Yacc/Bison, the precedence lines (lowest first) and the associativity decide them: * binds more strongly than +, a - a - a is (a - a) - a (%left), a ^ a ^ a is a ^ (a ^ a) (%right), the unary minus takes the precedence of UMINUS (%prec). Switch the precedence off in the LR tab to see the conflicts.',
-    descriptionCz: 'E → E + E | E * E | … je nejednoznačná: a + a * a má dva derivační stromy, takže každá LR tabulka obsahuje konflikty přesun/redukce. Stejně jako v Yaccu/Bisonu je rozhodnou řádky priorit (nejnižší první) a asociativita: * váže silněji než +, a - a - a je (a - a) - a (%left), a ^ a ^ a je a ^ (a ^ a) (%right), unární minus má prioritu UMINUS (%prec). V záložce Analýza LR lze priority vypnout a konflikty zobrazit.',
+    descriptionCz: 'E → E + E | E * E | … je nejednoznačná: a + a * a má dva derivační stromy, takže každá LR tabulka obsahuje konflikty přesun/redukce. Stejně jako v Yaccu/Bisonu je rozhodnou řádky priorit (nejnižší první) a asociativita: * váže silněji než +, a - a - a je (a - a) - a (%left), a ^ a ^ a je a ^ (a ^ a) (%right), unární minus má prioritu UMINUS (%prec). V záložce LR analyzátory lze priority vypnout a konflikty zobrazit.',
     category: 'Ambiguity',
     grammarText: `%left + -
 %left * /
@@ -186,7 +186,7 @@ OpenStatement → if ( cond ) Statement | if ( cond ) MatchedStatement else Open
     nameEn: 'if–then–else resolved by precedence (Pascal, Bison %nonassoc)',
     nameCz: 'if–then–else s prioritami (Pascal, %nonassoc v Bisonu)',
     descriptionEn: 'The short grammar of Pascal\'s if statement is ambiguous: in if cond then if cond then other else other the else may belong to either if. Yacc and Bison keep the grammar and resolve the shift/reduce conflict on else by precedence: the rule if cond then Statement takes the precedence of then, the token else has a higher one, so else is shifted and belongs to the nearest if. Switch the precedence off on the LR tab to see the conflict; the overview shows both derivation trees.',
-    descriptionCz: 'Krátká gramatika příkazu if z Pascalu je nejednoznačná: v if cond then if cond then other else other může else patřit kterémukoli if. Yacc a Bison gramatiku ponechávají a konflikt přesun/redukce na else řeší prioritou: pravidlo if cond then Statement má prioritu then, token else vyšší, takže se else přesune a patří nejbližšímu if. V záložce Analýza LR lze priority vypnout a konflikt zobrazit; Přehled ukáže oba derivační stromy.',
+    descriptionCz: 'Krátká gramatika příkazu if z Pascalu je nejednoznačná: v if cond then if cond then other else other může else patřit kterémukoli if. Yacc a Bison gramatiku ponechávají a konflikt přesun/redukce na else řeší prioritou: pravidlo if cond then Statement má prioritu then, token else vyšší, takže se else přesune a patří nejbližšímu if. V záložce LR analyzátory lze priority vypnout a konflikt zobrazit; Přehled ukáže oba derivační stromy.',
     category: 'Languages',
     grammarText: `%nonassoc then
 %nonassoc else
@@ -310,6 +310,37 @@ Expression → id | num`,
     grammarText: `SExpression → atom | ( List )
 List → List SExpression | ε`,
     sampleInput: '( atom ( atom atom ) ( ) )'
+  },
+  {
+    id: 'lang_pl0',
+    nameEn: 'PL/0 (Wirth): a whole language, LL(1)',
+    nameCz: 'PL/0 (Wirth): celý jazyk, LL(1)',
+    descriptionEn: 'Wirth\'s PL/0 (Algorithms + Data Structures = Programs), the language of the KIV/FJP compiler, with ? x and ! e for input and output; identifiers and numbers are the terminals ident and number. The repetitions { … } of Wirth\'s EBNF are right-recursive lists (…Rest) and the optional parts [ … ] ε-alternatives, so the grammar is LL(1): the Recursive descent tab generates from it a parser of PL/0, in PL/0 itself with the procedures nested as in Wirth\'s compiler (Block inside Program, Factor inside Term inside Expression). It is also SLR(1), but not LR(0): the ε-alternatives need a look at the next symbol.',
+    descriptionCz: 'Wirthův PL/0 (Algorithms + Data Structures = Programs), jazyk překladače z KIV/FJP, s ? x a ! e pro vstup a výstup; identifikátory a čísla jsou terminály ident a number. Opakování { … } z Wirthovy EBNF jsou pravě rekurzivní seznamy (…Rest) a nepovinné části [ … ] ε-alternativy, takže gramatika je LL(1): záložka Rekurzivní sestup z ní vygeneruje analyzátor PL/0, v PL/0 samotném s procedurami vnořenými jako ve Wirthově překladači (Block uvnitř Program, Factor uvnitř Term uvnitř Expression). Je také SLR(1), ale ne LR(0): ε-alternativy potřebují nahlédnout na další symbol.',
+    category: 'Languages',
+    grammarText: `Program → Block "."
+Block → ConstPart VarPart ProcPart Statement
+ConstPart → const ConstDef ConstRest ";" | ε
+ConstDef → ident "=" number
+ConstRest → "," ConstDef ConstRest | ε
+VarPart → var ident VarRest ";" | ε
+VarRest → "," ident VarRest | ε
+ProcPart → procedure ident ";" Block ";" ProcPart | ε
+Statement → ident ":=" Expression | call ident | "?" ident | "!" Expression
+  | begin Statement StatementRest end | if Condition then Statement
+  | while Condition do Statement | ε
+StatementRest → ";" Statement StatementRest | ε
+Condition → odd Expression | Expression RelOp Expression
+RelOp → "=" | "#" | "<" | "<=" | ">" | ">="
+Expression → Sign Term ExpressionRest
+Sign → "+" | "-" | ε
+ExpressionRest → AddOp Term ExpressionRest | ε
+AddOp → "+" | "-"
+Term → Factor TermRest
+TermRest → MulOp Factor TermRest | ε
+MulOp → "*" | "/"
+Factor → ident | number | "(" Expression ")"`,
+    sampleInput: 'var ident ; procedure ident ; ident := ident - number ; begin ? ident ; while ident > number do call ident ; ! ident end .'
   },
   {
     id: 'format_kiv',

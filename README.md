@@ -62,20 +62,21 @@
   - Step-by-step explanations for all transformations, with the added/removed rules and the grammar after each step
   - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
   - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
-- **Check my transformation** (tab *Kontrola úpravy*, "Is my grammar the same?"):
+- **Language comparison** (tab *Porovnání jazyků*, "Is my grammar the same?"):
   - A student's grammar is compared with the grammar in the editor (the text as it is now, also before it is analysed) on all words up to a chosen length, shortest first, so the first difference found is a shortest counterexample
   - For the counterexample, each grammar shows below it how it handles the word: the grammar that generates it its derivation tree and leftmost derivation; the other one the attempt of the general analyser (Earley) — a partial derivation tree with the beginning of the word it derives, the terminal it needs at the place where the word differs (red) and the symbols it did not derive any more (dashed), the leftmost derivation up to where it breaks off, and in words what may follow (e.g. "it derives `id`, then it needs `+`, `*` or the end of the word, while the word continues with `id`")
   - Both grammars run as incremental Earley recognizers over a tree of prefixes; a prefix neither grammar can extend is not extended (25,000 words of the expression grammar up to length 12 in well under a second)
   - The search runs in slices and asks after every 30 s whether to continue; stopped, it reports the lengths checked completely
   - Agreement is reported as a hint only (equivalence of context-free grammars is undecidable)
   - The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the violating rules
-- **Membership & CYK** (tab *Příslušnost slova a CYK*):
+- **Membership & CYK** (tab *CYK*):
   - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
   - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
   - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle; a click on a cell lists $A \to B\,C$ with $B \in V(i, k)$, $C \in V(k{+}1, j)$ and marks the two cells; for another grammar the CYK table of an equivalent grammar in CNF on request
 - **Recursive-descent parser generator** (tab *Rekurzivní sestup*, LL(1) grammars):
-  - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine) and in **Oberon-07** (modules `In`, `Out`): one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side
-  - Without forward declarations a procedure can call only itself, enclosing procedures and earlier ones, so the procedures are nested along the calls as `expression ⊃ term ⊃ factor` in Wirth's compiler; when nesting cannot express the calls, PL/0 uses one dispatching procedure and Oberon procedure variables (as ORP.Mod)
+  - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine), in **Oberon-07** (modules `In`, `Out`), in **C99** (stdio, a `switch` per non-terminal, exit status 0 for an accepted word) and in **Python 3**: one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side; all four print the same for the same input
+  - Comments give the rules of every procedure above it and the rule of every branch (`(* 2: E' -> + T E' *)`, `/* … */`, `# …`); Wirth's original PL/0 has no comments, so for a compiler without them they have to be deleted
+  - Without forward declarations a PL/0 or Oberon procedure can call only itself, enclosing procedures and earlier ones, so the procedures are nested along the calls as `expression ⊃ term ⊃ factor` in Wirth's compiler; when nesting cannot express the calls, PL/0 uses one dispatching procedure and Oberon procedure variables (as ORP.Mod). C (prototypes) and Python (names looked up at the call) need no nesting
   - The **P-code** of the PL/0 program (a built-in PL/0 compiler with Wirth's code generation and the course mnemonics JMC/RET), runnable here, and a button that opens it with the input in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/) (`#code_b64=…&input=…`); its output equals the left parse of the LL(1) simulation
 - **Word Generator**:
   - BFS enumeration of the words with the shortest derivations in $L(G)$
@@ -111,7 +112,7 @@
   - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
   - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
-  - **Constructs of real languages** (non-terminals named as in real grammars): if–else as matched/open statements (unambiguous, SLR(1), not LL(k)), Pascal's if–then–else resolved by `%nonassoc` as in Bison, Ada's `if … end if` (LL(1)), C `while`/`for` loops (LL(1) with ε), C variable declarations (left-recursive list: SLR(1), not LL(1)), a C function declaration (LL(2), not LL(1)), a JavaScript arrow function called at once (unambiguous but not LR(k): a cover grammar is needed), C's `a * b ;` (ambiguous without the symbol table, the "lexer hack"), assignment vs. procedure call (left factoring; PL/0's `call`), and Lisp S-expressions (an LR(0) grammar)
+  - **Constructs of real languages** (non-terminals named as in real grammars): if–else as matched/open statements (unambiguous, SLR(1), not LL(k)), Pascal's if–then–else resolved by `%nonassoc` as in Bison, Ada's `if … end if` (LL(1)), C `while`/`for` loops (LL(1) with ε), C variable declarations (left-recursive list: SLR(1), not LL(1)), a C function declaration (LL(2), not LL(1)), a JavaScript arrow function called at once (unambiguous but not LR(k): a cover grammar is needed), C's `a * b ;` (ambiguous without the symbol table, the "lexer hack"), assignment vs. procedure call (left factoring; PL/0's `call`), Lisp S-expressions (an LR(0) grammar), and the whole of Wirth's **PL/0** (EBNF repetitions as right-recursive lists: LL(1) and SLR(1), so the recursive-descent tab generates a PL/0 parser written in PL/0, nested like Wirth's compiler)
 
 ### Grammar links
 
@@ -125,7 +126,7 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 |---|---|
 | `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
 | `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
-| `tab` | `overview`, `first-follow`, `transformations`, `check`, `ll`, `lr`, `graph`, `membership` (or `cyk`), `rd`, `words`, `latex` |
+| `tab` | `overview`, `first-follow`, `transformations`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `rd`, `words`, `latex` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
 | `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector` for this visit only (not remembered) |

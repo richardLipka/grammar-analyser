@@ -725,3 +725,33 @@ A one-off sweep of 8,000 random grammars took at most 3.5 ms per grammar. A rand
 - the empty word ("the word ends here");
 - an editor grammar with errors;
 - the original following the editor text without waiting for the analysis.
+
+## 22. PL/0 as an example, recursive descent in C and Python, the menu in two rows (2026-10-05)
+
+**The PL/0 grammar** (preset `lang_pl0`, group Languages) is Wirth's PL/0 with `? x` and `! e` for input and output, as in the course compiler. Identifiers and numbers are the terminals `ident` and `number`, and the non-terminals follow Wirth's names (Program, Block, Statement, Condition, Expression, Term, Factor). The EBNF repetitions `{ … }` are right-recursive lists (`…Rest`), and the optional parts `[ … ]` are ε-alternatives.
+
+*Properties* (pinned in `languagePresets.test.ts`):
+- 47 rules, LL(1), SLR(1), LALR(1) and LR(1), not LR(0) (the ε-alternatives need a lookahead);
+- the 27-token sample program, with a procedure and a while loop, has exactly one derivation tree;
+- the parser generated in PL/0 nests its procedures (Block inside Program, Factor inside Term inside Expression). On the P-code VM it prints the leftmost derivation of that tree, then OK.
+
+**Recursive descent in C99 and Python 3.**
+- *Same output in every language:* both print exactly what the PL/0 and Oberon parsers print: the left parse, then OK, or ERR and the symbol.
+- *No nesting needed:* C declares all functions by prototypes and Python looks a name up at the call, so every non-terminal is a top-level function. C chooses the rule with a `switch`, Python with `if`/`elif`.
+- *Exit status:* the C program returns 0 exactly for an accepted word.
+- *Rule comments in all four languages:* the rules of a procedure go above it, and the rule of each branch goes on that branch (`(* 2: E' -> + T E' *)`, `/* … */`, `# …`). Text that would close a comment early is broken up. The PL/0 comments `(* … *)` are an extension that our compiler reads; Wirth's original PL/0 has none, as the tab says.
+- *Name clashes:* procedure and constant names now also avoid C and Python keywords and the names the programs use (`main`, `data`, `pos`).
+
+*Tests* (`rdLanguages.test.ts`):
+- every rule appears as a comment in all four programs;
+- the C and Python versions of every LL(1) preset (PL/0 included) and of 8 random LL(1) grammars are run on right and wrong words: the sample, the example word, a shortened word, a doubled symbol and random symbols. The C is compiled by gcc with `-std=c99 -Wall -Wextra -pedantic -Werror`. Both outputs equal the output of the PL/0 program on the P-code VM, and the C exit status matches.
+- The run needs gcc and Python. They are on the GitHub runners; without them that part is skipped. `@types/node` is now a dev dependency for this test.
+
+**The menu** has two fixed rows, as the owner listed them:
+1. Overview, Word generator, FIRST & FOLLOW, LL, LR automaton, LR parsers, CYK;
+2. Transformations, Language comparison, Recursive descent, and LaTeX & export (at the end of the row).
+
+*Labels:*
+- Each row stays on one line. A pane too narrow for a row (phones, windows between 1,025 and about 1,270 px) scrolls the two rows sideways together. The page itself never scrolls sideways.
+- The shorter labels the owner used (LL, LR parsers / LR analyzátory, CYK) make the first row fit from a 1,280 px window. The full descriptions are tooltips.
+- "Check my transformation" is now "Language comparison" (Porovnání jazyků). Texts that named the tabs by their old names were updated, and the link parameter `tab=` also accepts `comparison`.
