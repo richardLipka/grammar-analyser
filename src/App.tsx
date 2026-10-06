@@ -42,6 +42,8 @@ import {
 
 type TabId = UrlTab;
 type EChoice = 'epsilon' | 'terminal';
+// Course notation: is bxc one terminal ('whole') or b x c ('split')?
+type WordsChoice = 'split' | 'whole';
 type Theme = 'dark' | 'light' | 'projector';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
@@ -127,6 +129,9 @@ export const App: React.FC = () => {
   // How a standalone e is read; null = not decided yet (read as ε and ask)
   const [eChoice, setEChoice] = useState<EChoice | null>(setup.url.e ?? null);
   const eIsEpsilon = eChoice !== 'terminal';
+  // How words such as bxc are read when every left-hand side is a capital; null = not decided yet (whole, and ask)
+  const [wordsChoice, setWordsChoice] = useState<WordsChoice | null>(setup.url.words ?? null);
+  const parseOptions = useMemo(() => ({ eIsEpsilon, splitWords: wordsChoice === 'split' }), [eIsEpsilon, wordsChoice]);
   const [linkFeedback, setLinkFeedback] = useState<string | null>(null);
   // The student's grammar of the tab "Language comparison" (kept when switching tabs)
   const [checkText, setCheckText] = useState('');
@@ -162,6 +167,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     document.documentElement.setAttribute('lang', lang === 'cz' ? 'cs' : 'en');
+    document.title = TRANSLATIONS[lang].documentTitle;
   }, [lang]);
 
   // On phones the tab bar is a single scrollable row: keep the active tab visible
@@ -171,7 +177,7 @@ export const App: React.FC = () => {
 
   // Recalculation & Stale state management. The initial grammar (also one from a link) is analysed right away.
   const [analyzedGrammarText, setAnalyzedGrammarText] = useState(setup.grammarText);
-  const initialParse = useMemo(() => parseGrammar(setup.grammarText, { eIsEpsilon }), []);
+  const initialParse = useMemo(() => parseGrammar(setup.grammarText, parseOptions), []);
   const initialGrammar = initialParse.errors.length === 0 ? initialParse.grammar ?? null : null;
   const [analyzedGrammar, setAnalyzedGrammar] = useState<Grammar | null>(initialGrammar);
   // The first analysis runs before the page is shown when it is quick; a large grammar continues in slices
@@ -191,7 +197,7 @@ export const App: React.FC = () => {
   const transformRunner = useSteppedJob();
 
   // Parse currently edited text for syntax error validation
-  const parseResult = useMemo(() => parseGrammar(grammarText, { eIsEpsilon }), [grammarText, eIsEpsilon]);
+  const parseResult = useMemo(() => parseGrammar(grammarText, parseOptions), [grammarText, parseOptions]);
   const canAnalyse = !!parseResult.grammar && parseResult.errors.length === 0;
   const isStale = grammarText.trim() !== analyzedGrammarText.trim();
 
@@ -220,9 +226,9 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  const recalculate = (overrideText?: string, epsilonE = eIsEpsilon) => {
+  const recalculate = (overrideText?: string, options = parseOptions) => {
     const textToRun = overrideText !== undefined ? overrideText : grammarText;
-    const parsed = parseGrammar(textToRun, { eIsEpsilon: epsilonE });
+    const parsed = parseGrammar(textToRun, options);
     if (!parsed.grammar || parsed.errors.length > 0) {
       return;
     }
@@ -428,7 +434,13 @@ export const App: React.FC = () => {
   /** The user's answer to "does e mean ε?"; the analysis is redone at once. */
   const chooseE = (choice: EChoice) => {
     setEChoice(choice);
-    recalculate(grammarText, choice === 'epsilon');
+    recalculate(grammarText, { ...parseOptions, eIsEpsilon: choice === 'epsilon' });
+  };
+
+  /** The user's answer to "is bxc one terminal or b x c?"; the analysis is redone at once. */
+  const chooseWords = (choice: WordsChoice) => {
+    setWordsChoice(choice);
+    recalculate(grammarText, { ...parseOptions, splitWords: choice === 'split' });
   };
 
   /** Copies a link that reopens this grammar; it is also put in the address bar in case copying is refused. */
@@ -438,6 +450,7 @@ export const App: React.FC = () => {
       // a word derived from the grammar is derived again, only a chosen one goes into the link
       word: demoWord === sampleInput ? sampleInput : undefined,
       e: parseResult.bareE && eChoice !== null ? eChoice : undefined,
+      words: parseResult.multiLetterWords.length > 0 && wordsChoice !== null ? wordsChoice : undefined,
       tab: activeTab
     });
     try {
@@ -823,6 +836,36 @@ export const App: React.FC = () => {
               </div>
             ))}
 
+            {/* Every left-hand side a capital: is bxc one terminal or b x c? Asked when no symbols are spaced apart */}
+            {parseResult.multiLetterWords.length > 0 && (() => {
+              const words = parseResult.multiLetterWords;
+              const list = words.slice(0, 6).map(w => w.word).join(', ') + (words.length > 6 ? ', …' : '');
+              const fill = (text: string) => text
+                .replace('{words}', () => list)
+                .replace('{word}', () => words[0].word)
+                .replace('{symbols}', () => words[0].symbols.join(' '));
+              return wordsChoice === null && !parseResult.spacedSymbols ? (
+                <div className="notice-box question" role="group" aria-labelledby="words-question-title">
+                  <div className="notice-title">
+                    <HelpCircle size={15} />
+                    <span id="words-question-title">{t.wordsQuestionTitle}</span>
+                  </div>
+                  <p>{fill(t.wordsQuestionText)}</p>
+                  <div className="notice-actions">
+                    <button className="btn btn-primary" onClick={() => chooseWords('split')}>{fill(t.wordsAsSymbols)}</button>
+                    <button className="btn btn-secondary" onClick={() => chooseWords('whole')}>{fill(t.wordsAsTerminal)}</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="e-choice-line">
+                  <span>{fill(wordsChoice === 'split' ? t.wordsReadSplit : t.wordsReadWhole)}</span>
+                  <button className="link-button" onClick={() => chooseWords(wordsChoice === 'split' ? 'whole' : 'split')}>
+                    {t.eChange}
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Detected input format and notes on how it was read */}
             {parseResult.info.length > 0 && (
               <div className="notice-box info">
@@ -987,7 +1030,7 @@ export const App: React.FC = () => {
                 )}
 
                 {activeTab === 'check' && (
-                  <EquivalenceView grammar={canAnalyse ? parseResult.grammar ?? null : null} text={checkText} onTextChange={setCheckText} eIsEpsilon={eIsEpsilon} lang={lang} />
+                  <EquivalenceView grammar={canAnalyse ? parseResult.grammar ?? null : null} text={checkText} onTextChange={setCheckText} parseOptions={parseOptions} lang={lang} />
                 )}
 
                 {activeTab === 'll' && (

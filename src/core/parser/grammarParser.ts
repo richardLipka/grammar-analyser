@@ -9,14 +9,24 @@
  *    - A trailing ; or . (or a line holding only ; or .) ends a rule
  *    - The left-hand side may stand alone on the line before the operator
  *    - Quoted terminals "..." / '...' (always terminals, never ε or non-terminals)
- *    - Non-terminals: <...> or any symbol that appears on a left-hand side
+ *    - Non-terminals: <...> or any symbol that appears on a left-hand side,
+ *      including the bracketed names of the lectures ([Ba] after absorbing a,
+ *      [A-X] of the left-corner transformation)
+ *    - An arrow inside a right-hand side is an error (a line whose left-hand
+ *      side was not recognised); a terminal -> has to be quoted
  *    - Epsilon: ε, ϵ, eps, epsilon, λ, lambda, %empty, "", '' and # as a whole
  *      alternative; a standalone e (KIV/FJP notation) unless options.eIsEpsilon
  *      is false, and the result reports that e occurred (bareE)
- *    - Compact notation "S → aSb | ab", "E' → +TE'", "A1 → aA2": when every
- *      left-hand side is a capital letter with optional digits and primes and
- *      some word glues a non-terminal to other symbols, words are split into
- *      the defined non-terminals (longest match) and single characters
+ *    - Course notation (every left-hand side a capital letter with optional
+ *      digits and primes, or a [bracketed] name):
+ *      - compact words "S → aSb | ab", "E' → +TE'", "A1 → aA2": when some word
+ *        glues a non-terminal to other symbols, or options.splitWords is set,
+ *        words are split into the defined non-terminals (longest match) and
+ *        single characters; otherwise a word such as bxc or id stays one
+ *        terminal and the result lists it (multiLetterWords) so that the UI
+ *        can ask
+ *      - a capital letter without rules (D, A2, B') is a non-terminal that
+ *        generates nothing, with a warning
  *    - Rule numbers are labels, not symbols: "S --> aAS (1)", "(1) S -> a",
  *      "1. S -> a"; a ; followed by a new rule separates rules on one line
  *    - Comments: // and # to the end of the line, /* ... *\/ blocks
@@ -54,18 +64,31 @@ export interface ParseResult {
   dialect: GrammarDialect;
   /** A standalone `e` occurs; it was read as ε or as a terminal according to `ParseOptions.eIsEpsilon`. */
   bareE: boolean;
+  /**
+   * Course notation without a non-terminal glued into a word: the unquoted words of several
+   * characters (bxc, id) with the symbols they split into (b x c); split or kept whole
+   * according to `ParseOptions.splitWords`.
+   */
+  multiLetterWords: { word: string; symbols: string[] }[];
+  /** Some right-hand side separates its symbols by spaces (then a word is most likely meant whole). */
+  spacedSymbols: boolean;
 }
 
 export interface ParseOptions {
   /** Read a standalone `e` as the empty word (KIV/FJP notation, default) or as the terminal e. */
   eIsEpsilon?: boolean;
+  /** Course notation: split words such as bxc into b x c even when no non-terminal is glued into a word. */
+  splitWords?: boolean;
 }
 
-type TokenKind = 'bare' | 'quoted' | 'angle' | 'eps';
+// 'bracket': [Ba] before it is known to be a left-hand side; 'arrow': -> inside a right-hand side
+type TokenKind = 'bare' | 'quoted' | 'angle' | 'eps' | 'bracket' | 'arrow';
 
 interface RhsToken {
   text: string;
   kind: TokenKind;
+  /** Written right after the previous token, without white space. */
+  glued?: boolean;
 }
 
 interface RawRule {
@@ -78,6 +101,9 @@ interface RawRule {
 interface PlainContext {
   eIsEpsilon: boolean;
   bareE: boolean;
+  splitWords: boolean;
+  multiLetterWords: { word: string; symbols: string[] }[];
+  spacedSymbols: boolean;
 }
 
 interface FrontEndResult {
@@ -91,6 +117,8 @@ interface FrontEndResult {
   auxiliary: Set<string>;
   /** Yacc precedence levels, lowest first (%left, %right, %nonassoc, %precedence). */
   precedenceLevels?: PrecedenceLevel[];
+  /** Course notation: an undefined capital letter (D, A2) is a non-terminal without rules. */
+  courseNotation?: boolean;
 }
 
 const PLAIN_EPSILON_TOKENS = new Set([
@@ -105,6 +133,29 @@ const LEADING_LABEL_RE = /^(?:\(\d+\)|\[\d+\]|\d+[.)])\s+/;
 const RULE_OPERATORS = ['::=', ':==', ':=', '-->', '->', '=>', '→', '⟶', ':', '='];
 
 const LHS_RE = /^(<[^<>]+>|[\p{L}_][\p{L}\p{N}_]*'*)$/u;
+// Bracketed names of the lectures: [Ba] (absorption), [A-X] (left corner), nested [[Ba]b]
+const BRACKET_NAME_SRC = String.raw`\[(?:[^\s\[\]|"<>]|\[(?:[^\s\[\]|"<>]|\[[^\s\[\]|"<>]*\])*\])+\]`;
+const BRACKET_HEAD_RE = new RegExp(`^${BRACKET_NAME_SRC}`, 'u');
+// A capital letter with optional digits and primes: the non-terminals of the course notation
+const COURSE_NT_RE = /^\p{Lu}\p{N}*'*$/u;
+// Arrows that cannot be terminals of a right-hand side unless quoted (':=', ':' and '=' can)
+const RHS_ARROWS = ['-->', '->', '→', '::=', '=>'];
+
+/** [Ba], [A-X]; [1] is a rule number, not a name. */
+function isBracketName(sym: string): boolean {
+  const m = sym.match(BRACKET_HEAD_RE);
+  return !!m && m[0] === sym && !/^\[\d+\]$/.test(sym);
+}
+
+function isLhsName(sym: string): boolean {
+  return LHS_RE.test(sym) || isBracketName(sym);
+}
+
+/** Every left-hand side is a capital letter with optional digits and primes, or a [bracketed] name. */
+function isCourseNotation(rules: RawRule[]): boolean {
+  return rules.length > 0 && rules.every(r => COURSE_NT_RE.test(r.lhs) || isBracketName(r.lhs));
+}
+
 const IDENT_START = /[\p{L}\p{N}_]/u;
 const IDENT_PART = /[\p{L}\p{N}_']/u;
 const IDENT_CHAR_BEFORE_PRIME = /[\p{L}\p{N}_']/u;
@@ -135,25 +186,31 @@ export function parseGrammar(text: string, options: ParseOptions = {}): ParseRes
   const warnings: ParseError[] = [];
   const info: ParseError[] = [];
   const dialect = detectDialect(text);
-  const ctx: PlainContext = { eIsEpsilon: options.eIsEpsilon ?? true, bareE: false };
+  const ctx: PlainContext = {
+    eIsEpsilon: options.eIsEpsilon ?? true,
+    bareE: false,
+    splitWords: options.splitWords ?? false,
+    multiLetterWords: [],
+    spacedSymbols: false
+  };
 
   const front = dialect === 'plain'
     ? parsePlain(text, errors, warnings, info, ctx)
     : parseTerminated(text, dialect, errors, warnings, info);
-  const bareE = ctx.bareE;
+  const notes = { dialect, bareE: ctx.bareE, multiLetterWords: ctx.multiLetterWords, spacedSymbols: ctx.spacedSymbols };
 
   if (!front) {
-    return { errors, warnings, info, dialect, bareE };
+    return { errors, warnings, info, ...notes };
   }
   if (front.rules.length === 0) {
     if (errors.length === 0) {
       errors.push(msg(1, 'No valid grammar rules found.', 'Nebylo nalezeno žádné platné pravidlo.'));
     }
-    return { errors, warnings, info, dialect, bareE };
+    return { errors, warnings, info, ...notes };
   }
 
   const grammar = assemble(front, dialect, errors, warnings);
-  return { grammar, errors, warnings, info, dialect, bareE };
+  return { grammar, errors, warnings, info, ...notes };
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +231,21 @@ function assemble(front: FrontEndResult, dialect: GrammarDialect, errors: ParseE
           warnings.push(msg(alt.lineNum,
             `Non-terminal <${tok.text}> has no rules, so it cannot generate any word.`,
             `Neterminál <${tok.text}> nemá žádná pravidla, nemůže tedy generovat žádné slovo.`));
+        }
+      }
+    }
+  }
+  // Course notation: D without rules is a non-terminal that generates nothing (nenormovaný symbol)
+  if (front.courseNotation) {
+    for (const rule of rules) {
+      for (const alt of rule.alts) {
+        for (const tok of alt.tokens) {
+          if (tok.kind === 'bare' && COURSE_NT_RE.test(tok.text) && !nonTerminals.has(tok.text)) {
+            nonTerminals.add(tok.text);
+            warnings.push(msg(alt.lineNum,
+              `'${tok.text}' has no rules. As the left-hand sides are capital letters (the notation of the lectures), '${tok.text}' is a non-terminal that generates no word. Quote it ("${tok.text}") if it is a terminal.`,
+              `'${tok.text}' nemá žádná pravidla. Levé strany jsou velká písmena (zápis z přednášek), proto je '${tok.text}' neterminál, který negeneruje žádné slovo. Je-li to terminál, uzavřete jej do uvozovek ("${tok.text}").`));
+          }
         }
       }
     }
@@ -362,7 +434,7 @@ function parsePlain(
     // "%left + -": a precedence level (Yacc), lowest first
     const precLine = stripped.match(/^%(left|right|nonassoc|precedence)\b(.*)$/s);
     if (precLine) {
-      const symbols = tokenizeRhs(precLine[2], { ...ctx, eIsEpsilon: false }).filter(t => t.kind !== 'eps').map(t => t.text);
+      const symbols = tokenizeRhs(precLine[2], { ...ctx, eIsEpsilon: false }, false).filter(t => t.kind !== 'eps').map(t => t.text);
       if (symbols.length === 0) {
         warnings.push(msg(i + 1, `%${precLine[1]} without symbols was ignored.`, `%${precLine[1]} bez symbolů byl vynechán.`));
       } else {
@@ -398,7 +470,7 @@ function parsePlain(
     const pm = body.match(PREC_SUFFIX_RE);
     if (pm) {
       body = pm[1];
-      prec = tokenizeRhs(pm[2], { ...ctx, eIsEpsilon: false })[0]?.text;
+      prec = tokenizeRhs(pm[2], { ...ctx, eIsEpsilon: false }, false)[0]?.text;
     }
     return { tokens: tokenizeRhs(body, ctx), lineNum, label: m ? Number(m[2]) : undefined, prec };
   };
@@ -407,7 +479,7 @@ function parsePlain(
   const merged: typeof lines = [];
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];
-    if (next && LHS_RE.test(lines[i].content) && RULE_OPERATORS.some(op => next.content.startsWith(op))) {
+    if (next && isLhsName(lines[i].content) && RULE_OPERATORS.some(op => next.content.startsWith(op))) {
       merged.push({ lineNum: lines[i].lineNum, content: `${lines[i].content} ${next.content}` });
       i++;
     } else {
@@ -419,6 +491,24 @@ function parsePlain(
   const rawRules: (RawRule & { emptyHead?: boolean })[] = [];
   let current: (typeof rawRules)[number] | null = null;
   let ruleClosed = false;
+
+  // "[Ba] --> a" whose left-hand side was not recognised becomes alternatives of the previous
+  // rule with the terminals - - >; an arrow in a right-hand side is therefore an error
+  const checkArrows = (alts: RawRule['alts'], lineNum: number, content: string, lhs: string, newRule: boolean) => {
+    const arrow = alts.flatMap(a => a.tokens).find(t => t.kind === 'arrow');
+    if (!arrow) return;
+    const a = arrow.text;
+    errors.push(newRule
+      ? msg(lineNum,
+        `'${a}' inside the right-hand side of ${lhs}: '${content}'. A rule has one symbol on the left of the arrow; write further rules on their own lines or separate them by ';', and quote a terminal '${a}' ("${a}").`,
+        `'${a}' uvnitř pravé strany pravidla pro ${lhs}: '${content}'. Pravidlo má vlevo od šipky jediný symbol; další pravidla pište na samostatné řádky nebo je oddělte středníkem a terminál '${a}' uzavřete do uvozovek ("${a}").`)
+      : msg(lineNum,
+        `'${a}' inside a right-hand side: the line '${content}' was read as alternatives of ${lhs}, because what stands before '${a}' is not one symbol. A rule needs one symbol on the left (A, A', A1, <name>, [Ba]); a terminal '${a}' has to be quoted ("${a}").`,
+        `'${a}' uvnitř pravé strany: řádek '${content}' byl přečten jako alternativy ${lhs}, protože před '${a}' nestojí jediný symbol. Pravidlo musí mít vlevo jediný symbol (A, A', A1, <název>, [Ba]); terminál '${a}' je třeba uzavřít do uvozovek ("${a}").`));
+    for (const alt of alts) {
+      alt.tokens = alt.tokens.map(t => (t.kind === 'arrow' ? { ...t, kind: 'bare' } : t));
+    }
+  };
 
   for (const item of lines) {
     let line = item.content;
@@ -444,9 +534,9 @@ function parsePlain(
       rawRules.push(current);
       ruleClosed = false;
       if (rhsPart.length > 0) {
-        for (const alt of splitAlternatives(rhsPart)) {
-          current.alts.push(readAlternative(alt, item.lineNum));
-        }
+        const alts = splitAlternatives(rhsPart).map(alt => readAlternative(alt, item.lineNum));
+        checkArrows(alts, item.lineNum, item.content, current.lhs, true);
+        current.alts.push(...alts);
       } else {
         // "S :" followed by "| x" means S -> ε | x (Yacc); indented alternatives do not
         current.emptyHead = true;
@@ -460,9 +550,9 @@ function parsePlain(
         rhsPart = rhsPart.slice(1).trim();
       }
       current.emptyHead = false;
-      for (const alt of splitAlternatives(rhsPart)) {
-        current.alts.push(readAlternative(alt, item.lineNum));
-      }
+      const alts = splitAlternatives(rhsPart).map(alt => readAlternative(alt, item.lineNum));
+      checkArrows(alts, item.lineNum, item.content, current.lhs, false);
+      current.alts.push(...alts);
     } else {
       errors.push(ruleClosed && current !== null
         ? msg(item.lineNum,
@@ -482,26 +572,48 @@ function parsePlain(
       'Čísla pravidel jako (1) nebo 1. byla brána jako označení pravidel, ne jako symboly.'));
   }
 
-  applyCompactNotation(rawRules, info);
+  resolveBracketNames(rawRules, ctx);
+  const courseNotation = isCourseNotation(rawRules);
+  if (courseNotation) applyCompactNotation(rawRules, info, ctx);
 
   return {
     rules: rawRules,
     declaredTerminals: new Set(),
     aliases: new Map(),
     auxiliary: new Set(),
-    precedenceLevels
+    precedenceLevels,
+    courseNotation
   };
 }
 
 /**
- * Compact textbook notation "S → aSb | ab", "E' → +TE'", "A1 → aA2": when every
- * left-hand side is a capital letter with optional digits and primes and some
- * unquoted word glues such a non-terminal to further symbols, words are split
- * into the defined non-terminals (longest match, E' before E, A1 before A) and
- * single characters; an undefined capital keeps its primes (E'').
+ * [Ba] is a non-terminal when it has rules; otherwise it is read as before, the
+ * terminals [ and ] around their contents (an index a[i] of a programming language).
  */
-function applyCompactNotation(rules: RawRule[], info: ParseError[]) {
-  if (rules.length === 0 || !rules.every(r => /^\p{Lu}\p{N}*'*$/u.test(r.lhs))) return;
+function resolveBracketNames(rules: RawRule[], ctx: PlainContext) {
+  const lhsSet = new Set(rules.map(r => r.lhs));
+  const resolve = (t: RhsToken): RhsToken[] => {
+    if (t.kind !== 'bracket') return [t];
+    if (lhsSet.has(t.text)) return [{ text: t.text, kind: 'bare', glued: t.glued }];
+    const inner = tokenizeRhs(t.text.slice(1, -1), ctx).flatMap(resolve);
+    if (inner.length > 0) inner[0] = { ...inner[0], glued: true };
+    return [{ text: '[', kind: 'bare', glued: t.glued }, ...inner, { text: ']', kind: 'bare', glued: true }];
+  };
+  for (const r of rules) {
+    for (const a of r.alts) a.tokens = a.tokens.flatMap(resolve);
+  }
+}
+
+/**
+ * Compact textbook notation "S → aSb | ab", "E' → +TE'", "A1 → aA2" (the rules
+ * are in course notation): when some unquoted word glues a non-terminal to
+ * further symbols, or the user said so (ctx.splitWords), words are split into
+ * the defined non-terminals (longest match, E' before E, A1 before A) and single
+ * characters; an undefined capital keeps its digits and primes (E'', A2).
+ * Without that, a word such as bxc or id stays one terminal and is reported in
+ * ctx.multiLetterWords, since it may mean either.
+ */
+function applyCompactNotation(rules: RawRule[], info: ParseError[], ctx: PlainContext) {
   const lhsSet = new Set(rules.map(r => r.lhs));
   const names = [...lhsSet].sort((a, b) => b.length - a.length);
   const splitWord = (w: string): string[] => {
@@ -509,24 +621,43 @@ function applyCompactNotation(rules: RawRule[], info: ParseError[]) {
     let i = 0;
     while (i < w.length) {
       const nt = names.find(n => w.startsWith(n, i) && w[i + n.length] !== "'");
-      const piece = nt ?? w.slice(i).match(/^(?:\p{L}'*|.)/su)![0];
+      const piece = nt ?? w.slice(i).match(/^(?:\p{Lu}\p{N}*'*|\p{L}'*|.)/su)![0];
       out.push(piece);
       i += piece.length;
     }
     return out;
   };
+  const splittable = (t: RhsToken) =>
+    t.kind === 'bare' && IDENT_START.test(t.text[0]) && !lhsSet.has(t.text) && splitWord(t.text).length > 1;
+  const isNonTerminal = (t?: RhsToken) => !!t && (t.kind === 'bare' || t.kind === 'angle') && lhsSet.has(t.text);
 
-  const evidence = rules.some(r => r.alts.some(a => a.tokens.some(t =>
-    t.kind === 'bare' && !lhsSet.has(t.text) && splitWord(t.text).length > 1 &&
-    splitWord(t.text).some(piece => lhsSet.has(piece))
-  )));
-  if (!evidence) return;
+  // aSb, +TE', or a word glued to a [bracketed] non-terminal (ab[Ba])
+  const evidence = rules.some(r => r.alts.some(a => a.tokens.some((t, k) => splittable(t) && (
+    splitWord(t.text).some(piece => lhsSet.has(piece)) ||
+    (k > 0 && t.glued && isNonTerminal(a.tokens[k - 1])) ||
+    (a.tokens[k + 1]?.glued && isNonTerminal(a.tokens[k + 1]))
+  ))));
+  ctx.spacedSymbols = rules.some(r => r.alts.some(a => a.tokens.some((t, k) => k > 0 && !t.glued)));
+  if (!evidence) {
+    const seen = new Set<string>();
+    for (const r of rules) {
+      for (const a of r.alts) {
+        for (const t of a.tokens) {
+          if (splittable(t) && !seen.has(t.text)) {
+            seen.add(t.text);
+            ctx.multiLetterWords.push({ word: t.text, symbols: splitWord(t.text) });
+          }
+        }
+      }
+    }
+    if (!ctx.splitWords || ctx.multiLetterWords.length === 0) return;
+  }
 
   for (const r of rules) {
     for (const a of r.alts) {
       a.tokens = a.tokens.flatMap(t =>
-        t.kind === 'bare' && splitWord(t.text).length > 1 && !lhsSet.has(t.text)
-          ? splitWord(t.text).map(ch => ({ text: ch, kind: 'bare' as TokenKind }))
+        splittable(t)
+          ? splitWord(t.text).map((ch, k) => ({ text: ch, kind: 'bare' as TokenKind, glued: k > 0 || t.glued }))
           : [t]);
     }
   }
@@ -608,9 +739,9 @@ function endsInsideQuotes(line: string): boolean {
 
 /** Finds the first rule operator outside quotes whose left side is a single symbol. */
 function findRuleOperator(line: string): { index: number; op: string } | null {
-  // A bracketed left-hand side may itself contain operator characters (<if-then>).
-  const angle = line.match(/^<[^<>]+>/);
-  const from = angle ? angle[0].length : 0;
+  // A bracketed left-hand side may itself contain operator characters (<if-then>, [B:]).
+  const head = line.match(/^<[^<>]+>/) ?? line.match(BRACKET_HEAD_RE);
+  const from = head ? head[0].length : 0;
   let found: { index: number; op: string } | null = null;
   scanQuotes(line, (i, inQuote) => {
     if (i < from || inQuote || line[i] === '"' || line[i] === "'") return;
@@ -622,11 +753,11 @@ function findRuleOperator(line: string): { index: number; op: string } | null {
   });
   if (!found) return null;
   const { index, op } = found as { index: number; op: string };
-  return LHS_RE.test(line.slice(0, index).trim()) ? { index, op } : null;
+  return isLhsName(line.slice(0, index).trim()) ? { index, op } : null;
 }
 
 // A new rule "A ->" after white space inside a right-hand side; only arrows, since ':' and '=' are common terminals
-const NEXT_RULE_RE = /\s+(?:<[^<>]+>|[\p{L}_][\p{L}\p{N}_]*'*)\s*(?:-->|->|→|⟶|::=)/uy;
+const NEXT_RULE_RE = new RegExp(String.raw`\s+(?:<[^<>]+>|[\p{L}_][\p{L}\p{N}_]*'*|${BRACKET_NAME_SRC})\s*(?:-->|->|→|⟶|::=)`, 'uy');
 
 /**
  * Where further rules start on one line: after a ';' that is followed by a rule
@@ -713,9 +844,19 @@ function splitAlternatives(rhs: string): string[] {
   return alts;
 }
 
-function tokenizeRhs(altStr: string, ctx: PlainContext): RhsToken[] {
+/**
+ * The symbols of one alternative. In a right-hand side (`rhs`, not a %left line)
+ * [Ba] is a 'bracket' token and an arrow an 'arrow' token.
+ */
+function tokenizeRhs(altStr: string, ctx: PlainContext, rhs = true): RhsToken[] {
   const tokens: RhsToken[] = [];
   let i = 0;
+  let prevEnd = -1; // where the previous token ended
+  const push = (text: string, kind: TokenKind, start: number, end: number) => {
+    tokens.push({ text, kind, glued: tokens.length > 0 && prevEnd === start });
+    prevEnd = end;
+    i = end;
+  };
 
   while (i < altStr.length) {
     const ch = altStr[i];
@@ -733,15 +874,13 @@ function tokenizeRhs(altStr: string, ctx: PlainContext): RhsToken[] {
         j++;
       }
       const raw = altStr.slice(i + 1, j).replace(/\\(.)/g, '$1');
-      tokens.push(raw === '' ? { text: '', kind: 'eps' } : { text: raw, kind: 'quoted' });
-      i = j + 1;
+      push(raw, raw === '' ? 'eps' : 'quoted', i, j + 1);
       continue;
     }
 
     // Bison's explicit empty alternative
     if (altStr.startsWith('%empty', i)) {
-      tokens.push({ text: '', kind: 'eps' });
-      i += '%empty'.length;
+      push('', 'eps', i, i + '%empty'.length);
       continue;
     }
 
@@ -750,8 +889,16 @@ function tokenizeRhs(altStr: string, ctx: PlainContext): RhsToken[] {
       const close = altStr.indexOf('>', i + 1);
       const inner = close === -1 ? '' : altStr.slice(i + 1, close);
       if (close !== -1 && inner.trim().length > 0 && !inner.includes('<')) {
-        tokens.push({ text: inner.trim(), kind: 'angle' });
-        i = close + 1;
+        push(inner.trim(), 'angle', i, close + 1);
+        continue;
+      }
+    }
+
+    // [Ba]: a non-terminal of the lectures if it has rules, else the terminals [ Ba ] (resolveBracketNames)
+    if (rhs && ch === '[') {
+      const m = altStr.slice(i).match(BRACKET_HEAD_RE);
+      if (m && isBracketName(m[0])) {
+        push(m[0], 'bracket', i, i + m[0].length);
         continue;
       }
     }
@@ -766,17 +913,22 @@ function tokenizeRhs(altStr: string, ctx: PlainContext): RhsToken[] {
       if (word === 'e') {
         // KIV/FJP lectures write the empty word as e; the UI asks whether that is meant
         ctx.bareE = true;
-        tokens.push({ text: word, kind: ctx.eIsEpsilon ? 'eps' : 'bare' });
+        push(word, ctx.eIsEpsilon ? 'eps' : 'bare', i, j);
       } else {
-        tokens.push({ text: word, kind: PLAIN_EPSILON_TOKENS.has(word) ? 'eps' : 'bare' });
+        push(word, PLAIN_EPSILON_TOKENS.has(word) ? 'eps' : 'bare', i, j);
       }
-      i = j;
+      continue;
+    }
+
+    // An arrow: the next rule did not start on its own line, or a terminal that should be quoted
+    const arrow = rhs ? RHS_ARROWS.find(a => altStr.startsWith(a, i)) : undefined;
+    if (arrow) {
+      push(arrow, 'arrow', i, i + arrow.length);
       continue;
     }
 
     // Standalone punctuation/operator symbol (e.g. +, *, -, (, ), ε, #)
-    tokens.push({ text: ch, kind: PLAIN_EPSILON_TOKENS.has(ch) ? 'eps' : 'bare' });
-    i++;
+    push(ch, PLAIN_EPSILON_TOKENS.has(ch) ? 'eps' : 'bare', i, i + 1);
   }
 
   return tokens;

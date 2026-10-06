@@ -13,6 +13,15 @@ import { Code2, Copy, Check, Download, ExternalLink, Play, AlertTriangle } from 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
 export const PL0_INTERPRETER_URL = 'https://richardlipka.github.io/online-pl0-interpreter/';
 
+/**
+ * The interpreter next to this page: on home.zcu.cz the course pages hold the same version
+ * as fjp/pl0 beside fjp/grammar-analyser, elsewhere (GitHub Pages, development) the GitHub copy.
+ */
+export function pl0InterpreterUrl(page: string = window.location.href): string {
+  const url = new URL(page);
+  return url.hostname === 'home.zcu.cz' ? new URL('../pl0/', url).href : PL0_INTERPRETER_URL;
+}
+
 type CodeLang = 'pl0' | 'oberon' | 'c' | 'python' | 'pcode';
 
 const FILE_NAMES: Record<CodeLang, string> = { pl0: 'parser.pl0', oberon: 'Parser.Mod', c: 'parser.c', python: 'parser.py', pcode: 'parser.pcode.txt' };
@@ -25,8 +34,8 @@ function base64Url(text: string): string {
 }
 
 /** A link that opens the P-code with its input in the interpreter (the hash is not sent to the server, so length is no problem). */
-export function interpreterLink(pcode: string, input: string): string {
-  return `${PL0_INTERPRETER_URL}#code_b64=${base64Url(pcode)}&input=${encodeURIComponent(input)}`;
+export function interpreterLink(pcode: string, input: string, page?: string): string {
+  return `${pl0InterpreterUrl(page)}#code_b64=${base64Url(pcode)}&input=${encodeURIComponent(input)}`;
 }
 
 interface RecursiveDescentViewProps {

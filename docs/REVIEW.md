@@ -755,3 +755,25 @@ A one-off sweep of 8,000 random grammars took at most 3.5 ms per grammar. A rand
 - Each row stays on one line. A pane too narrow for a row (phones, windows between 1,025 and about 1,270 px) scrolls the two rows sideways together. The page itself never scrolls sideways.
 - The shorter labels the owner used (LL, LR parsers / LR analyzátory, CYK) make the first row fit from a 1,280 px window. The full descriptions are tooltips.
 - "Check my transformation" is now "Language comparison" (Porovnání jazyků). Texts that named the tabs by their old names were updated, and the link parameter `tab=` also accepts `comparison`.
+
+## 23. Grammars copied from the lectures: [Ba], arrows, bxc, rule-less capitals (2026-10-06)
+
+The owner reported five problems found while linking the FJP exercises to the analyser.
+
+**1. `[Ba] --> a | abCa` was silently misread.** The lectures and the LL(k) exercise name an absorbed symbol `[Ba]`. A left-hand side `[Ba]` was not recognised, so the line became alternatives of the previous rule, with the terminals `[`, `Ba`, `]`, `-`, `-`, `>`.
+- Bracketed names (`[Ba]`, `[A-X]` of the left-corner transformation, nested `[[Ba]b]`) are now left-hand sides. On a right-hand side `[Ba]` is that non-terminal when it has rules; otherwise it is read as before, so `a[i]` stays the terminals `[`, `i`, `]`. `[1]` stays a rule number. The analyser still writes `<[Ba]>`, which reads the same.
+- An arrow (`-->`, `->`, `→`, `::=`, `=>`) inside a right-hand side is now an error that names the cause: a line whose left-hand side is not one symbol (`A B --> c`), or two rules on one line without a separator. A terminal `->` has to be quoted. `:=`, `:` and `=` stay ordinary terminals. No preset contains an unquoted arrow on a right-hand side.
+
+**2. `bxc` was one terminal without notice.** The compact notation splits words only when some word glues a defined non-terminal to other symbols. So `A --> bxc | yc | bxzd | yzd` had four terminals and no FIRST-FIRST conflict, while the exercise expects one. That condition stays (it keeps `id` whole), but it is no longer silent. In the course notation (every left-hand side a capital with optional digits and primes, or a bracketed name) the parser lists the words that could be either (`multiLetterWords`) and says whether some right-hand side separates its symbols by spaces (`spacedSymbols`).
+- *No spaces anywhere:* the editor asks, like it asks about `e`: "Separate symbols (b x c)" or "One terminal (bxc)". Until answered, each word is one terminal.
+- *Spaces elsewhere* (`F → ( E ) | id`): a word is one terminal, and a line under the editor says so, with a link that changes it.
+- The answer is the parse option `splitWords` and the link parameter `split=1|0`; the tab "Language comparison" reads the student's grammar the same way.
+- None of the presets has such words, so no preset shows the question or the line.
+
+**3. A capital without rules was a terminal.** In the course notation `D` without rules is now a non-terminal that generates no word (a non-generating symbol for the reduction exercise), with a warning that says how to quote it if it is a terminal. Inside compact words an undefined capital keeps its digits and primes (`aA3b` = `a A3 b`). Outside the course notation an undefined `ID` stays a terminal with the old warning. The editor writes such a non-terminal as `<D>`, which reads back the same.
+
+**4. The PL/0 interpreter link** opens `../pl0/` when the analyser runs on home.zcu.cz (`fjp/pl0` next to `fjp/grammar-analyser`, the same version; its bundle reads `#code_b64=`), and the GitHub Pages copy elsewhere.
+
+**5. The browser tab title** follows the interface language (`documentTitle`); `index.html` has the Czech title and description, as Czech is the default.
+
+*Tests:* `courseNotation.test.ts` (18 tests). All 27 presets are parsed exactly as before (compared rule by rule before and after the change).

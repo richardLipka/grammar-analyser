@@ -1,5 +1,5 @@
 /**
- * Grammar links: ?g=<grammar>&w=<word>&tab=ll&e=eps&preset=<id>&lang=en&theme=projector
+ * Grammar links: ?g=<grammar>&w=<word>&tab=ll&e=eps&split=1&preset=<id>&lang=en&theme=projector
  *
  * - Values are percent-encoded (encodeURIComponent). A '+' stays a plus sign
  *   (E' -> +TE'), it is not read as a space as in HTML forms.
@@ -18,6 +18,8 @@ export interface UrlState {
   tab?: UrlTab;
   /** How a standalone e is read; undefined = ask. */
   e?: 'epsilon' | 'terminal';
+  /** Course notation: bxc as the symbols b x c ('split', split=1) or one terminal ('whole', split=0); undefined = ask. */
+  words?: 'split' | 'whole';
   lang?: 'en' | 'cz';
   theme?: 'light' | 'dark' | 'projector';
 }
@@ -38,6 +40,11 @@ const TAB_ALIASES: Record<string, UrlTab> = {
 const E_ALIASES: Record<string, 'epsilon' | 'terminal'> = {
   eps: 'epsilon', epsilon: 'epsilon', 'ε': 'epsilon', '1': 'epsilon', true: 'epsilon', yes: 'epsilon',
   term: 'terminal', terminal: 'terminal', '0': 'terminal', false: 'terminal', no: 'terminal'
+};
+
+const SPLIT_ALIASES: Record<string, 'split' | 'whole'> = {
+  '1': 'split', true: 'split', yes: 'split', split: 'split', symbols: 'split', chars: 'split',
+  '0': 'whole', false: 'whole', no: 'whole', whole: 'whole', words: 'whole'
 };
 
 /** Decodes every valid %XX sequence and keeps anything else literally. */
@@ -76,6 +83,8 @@ export function readUrlState(search: string, hash: string): UrlState {
   if (tab) state.tab = tab;
   const e = E_ALIASES[(get('e') ?? '').toLowerCase()];
   if (e) state.e = e;
+  const words = SPLIT_ALIASES[(get('split') ?? '').toLowerCase()];
+  if (words) state.words = words;
   const lang = (get('lang', 'l') ?? '').toLowerCase();
   if (lang === 'en') state.lang = 'en';
   else if (lang === 'cz' || lang === 'cs') state.lang = 'cz';
@@ -90,6 +99,7 @@ export function buildShareUrl(base: string, state: UrlState): string {
     ['g', state.grammar],
     ['w', state.word || undefined],
     ['e', state.e === undefined ? undefined : state.e === 'epsilon' ? 'eps' : 'term'],
+    ['split', state.words === undefined ? undefined : state.words === 'split' ? '1' : '0'],
     ['tab', state.tab === 'overview' ? undefined : state.tab],
     ['preset', state.preset],
     ['lang', state.lang],

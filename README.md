@@ -18,11 +18,15 @@
   - BNF & EBNF: `::=`, `:==`, `:=`
   - Yacc / Bison / ANTLR: `:`; a trailing `;` or `.` (or a line holding only `;`) ends a rule
   - Alternatives: Pipe `|` or clean indentation/newline alternatives
-  - Non-terminals: every symbol defined on a left-hand side, and every `<name>`
+  - Non-terminals: every symbol defined on a left-hand side, and every `<name>`; the bracketed names of the lectures (`[Ba] --> a | abCa` after absorption, `[A-X]` of the left-corner transformation) are non-terminals when they have rules, otherwise `a[i]` stays the terminals `[`, `i`, `]`
+  - An arrow inside a right-hand side is an error, not the terminals `-` and `>`: it means that the left-hand side of a rule was not recognised (`A B --> c`) or that two rules share a line; a terminal `->` has to be quoted
   - Terminals: all other symbols; a quoted `"…"` or `'…'` symbol is always a terminal (never ε, never a non-terminal)
   - Epsilon representations: `ε`, `ϵ`, `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
   - A standalone `e` (KIV/FJP notation for ε): the editor asks whether it means ε or the terminal e; until answered it is read as ε
-  - Compact textbook notation `S → aSb | ab`, `E' → +TE'`, `A → 0A1`, `A1 → A2A3`: when every left-hand side is a capital letter with optional digits and primes, words are split into the defined non-terminals (longest match) and single characters
+  - Course notation, where every left-hand side is a capital letter with optional digits and primes (or a `[bracketed]` name):
+    - Compact words `S → aSb | ab`, `E' → +TE'`, `A → 0A1`, `A1 → A2A3` are split into the defined non-terminals (longest match) and single characters when some word glues a non-terminal to other symbols
+    - Otherwise a word such as `bxc` or `id` may mean one terminal or several symbols. If no right-hand side separates its symbols by spaces (`A --> bxc | yc | bxzd | yzd`), the editor asks, and until then each word is one terminal; with spaces (`F → ( E ) | id`) a word is one terminal and a line under the editor says so. Either answer can be changed there.
+    - A capital letter without rules (`D`, `A2`) is a non-terminal that generates no word, with a warning; outside the course notation an undefined `ID` is a terminal with a warning
   - Rule numbers copied from slides are labels, not symbols: `S --> aAS    (1)`, `(1) S -> …`, `1. S -> …`; a warning appears when they differ from the analyser's numbering
   - Several rules on one line, separated by `;` (`S -> aAS | b; A -> a | bSA`) or by a space before the next `A ->` (`S -> aAS | b A -> a | bSA`)
   - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
@@ -77,7 +81,7 @@
   - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine), in **Oberon-07** (modules `In`, `Out`), in **C99** (stdio, a `switch` per non-terminal, exit status 0 for an accepted word) and in **Python 3**: one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side; all four print the same for the same input
   - Comments give the rules of every procedure above it and the rule of every branch (`(* 2: E' -> + T E' *)`, `/* … */`, `# …`); Wirth's original PL/0 has no comments, so for a compiler without them they have to be deleted
   - Without forward declarations a PL/0 or Oberon procedure can call only itself, enclosing procedures and earlier ones, so the procedures are nested along the calls as `expression ⊃ term ⊃ factor` in Wirth's compiler; when nesting cannot express the calls, PL/0 uses one dispatching procedure and Oberon procedure variables (as ORP.Mod). C (prototypes) and Python (names looked up at the call) need no nesting
-  - The **P-code** of the PL/0 program (a built-in PL/0 compiler with Wirth's code generation and the course mnemonics JMC/RET), runnable here, and a button that opens it with the input in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/) (`#code_b64=…&input=…`); its output equals the left parse of the LL(1) simulation
+  - The **P-code** of the PL/0 program (a built-in PL/0 compiler with Wirth's code generation and the course mnemonics JMC/RET), runnable here, and a button that opens it with the input in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/) (`#code_b64=…&input=…`; on home.zcu.cz the copy `../pl0/` next to the analyser, the same version); its output equals the left parse of the LL(1) simulation
 - **Word Generator**:
   - BFS enumeration of the words with the shortest derivations in $L(G)$
   - Random derivation with guaranteed termination (minimal derivation heights)
@@ -128,6 +132,7 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 | `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
 | `tab` | `overview`, `first-follow`, `transformations`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `rd`, `words`, `latex` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
+| `split` | `1` or `0`: whether words such as `bxc` in the course notation are the symbols `b x c` or one terminal, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
 | `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector` for this visit only (not remembered) |
 

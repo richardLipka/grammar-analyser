@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Grammar, formatGrammarForEditor } from '../../core/ast/grammar';
-import { parseGrammar } from '../../core/parser/grammarParser';
+import { ParseOptions, parseGrammar } from '../../core/parser/grammarParser';
 import { ComparisonResult, FormProperty, checkForm, compareLanguagesSteps } from '../../core/analyser/equivalence';
 import { explainWord } from '../../core/parser/derivationAttempt';
 import { JobControl } from '../../core/jobs/job';
@@ -27,19 +27,20 @@ interface EquivalenceViewProps {
   grammar: Grammar | null;
   text: string;
   onTextChange: (text: string) => void;
-  eIsEpsilon: boolean;
+  /** How the editor reads e and words such as bxc; the student's grammar is read the same way */
+  parseOptions: ParseOptions;
   lang: Language;
 }
 
 /** "Is my grammar the same?": a student's grammar against the original, and the form the transformation promises. */
-export const EquivalenceView: React.FC<EquivalenceViewProps> = ({ grammar, text, onTextChange, eIsEpsilon, lang }) => {
+export const EquivalenceView: React.FC<EquivalenceViewProps> = ({ grammar, text, onTextChange, parseOptions, lang }) => {
   const cz = lang === 'cz';
   const [properties, setProperties] = useState<FormProperty[]>([]);
   const [maxLength, setMaxLength] = useState(12);
   const [result, setResult] = useState<{ value: ComparisonResult; studentKey: string; originalKey: string } | null>(null);
   const runner = useSteppedJob();
 
-  const parsed = useMemo(() => (text.trim() ? parseGrammar(text, { eIsEpsilon }) : null), [text, eIsEpsilon]);
+  const parsed = useMemo(() => (text.trim() ? parseGrammar(text, parseOptions) : null), [text, parseOptions]);
   const student = parsed && parsed.errors.length === 0 ? parsed.grammar : undefined;
   const checks = useMemo(() => (student ? checkForm(student, properties) : []), [student, properties]);
   const keyOf = (g: Grammar) => `${g.startSymbol}\n${g.productions.map(p => `${p.lhs}\u0000${p.rhs.join('\u0001')}`).join('\n')}`;
