@@ -72,7 +72,8 @@ const PRESET_CATEGORY_LABELS: Record<PresetGrammar['category'], { en: string; cz
   Ambiguity: { en: 'Ambiguity', cz: 'Nejednoznačnost' },
   Languages: { en: 'Constructs of real languages', cz: 'Konstrukce reálných jazyků' },
   Transformations: { en: 'Transformations', cz: 'Úpravy gramatiky' },
-  Formats: { en: 'Input formats', cz: 'Formáty zápisu' }
+  Formats: { en: 'Input formats', cz: 'Formáty zápisu' },
+  Scoping: { en: 'Scoping & Declarations (Recursive Descent)', cz: 'Rozsahy platnosti a deklarace (rekurzivní sestup)' }
 };
 
 const CUSTOM_PRESET_ID = '__custom__';
@@ -1099,6 +1100,10 @@ export const App: React.FC = () => {
                     defaultInput={demoWord}
                     lang={lang}
                     onAttemptLL1={!isStale && canAnalyse ? () => applyWholeGrammar('ll1') : undefined}
+                    onLoadGrammar={(text, sample) => {
+                      handleEditGrammar(text);
+                      if (sample) setSampleInput(sample);
+                    }}
                   />
                 )}
 

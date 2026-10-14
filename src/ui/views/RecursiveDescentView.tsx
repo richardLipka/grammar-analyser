@@ -37,8 +37,10 @@ import {
   Plus,
   SlidersHorizontal,
   RotateCcw,
-  Settings2
+  Settings2,
+  Info
 } from 'lucide-react';
+import { RD_SAMPLE_GRAMMARS } from '../../core/presets/rdSampleGrammars';
 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
 export const PL0_INTERPRETER_URL = 'https://richardlipka.github.io/online-pl0-interpreter/';
@@ -83,6 +85,7 @@ interface RecursiveDescentViewProps {
   defaultInput?: string;
   lang: Language;
   onAttemptLL1?: () => void;
+  onLoadGrammar?: (grammarText: string, sampleInput?: string) => void;
 }
 
 /**
@@ -97,7 +100,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   llTable,
   defaultInput = '',
   lang,
-  onAttemptLL1
+  onAttemptLL1,
+  onLoadGrammar
 }) => {
   const cz = lang === 'cz';
   const [subTab, setSubTab] = useState<SubTab>('sim');
@@ -115,11 +119,15 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [idSymbolsInput, setIdSymbolsInput] = useState(DEFAULT_KEYWORD_CONFIG.idSymbols.join(', '));
   const [showKeywordEditor, setShowKeywordEditor] = useState(true);
 
+  const [showPureSymTab, setShowPureSymTab] = useState(false);
+
   // Declarative rule-action mapping table
   const [actionPreset, setActionPreset] = useState<'none' | 'auto' | 'custom'>('auto');
   const [ruleActions, setRuleActions] = useState<RuleActionDefinition[]>(() =>
     suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG)
   );
+
+  const isPureSyntaxMode = ruleActions.filter(a => a.actionType !== 'none').length === 0;
 
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
@@ -341,6 +349,35 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
             <span>{cz ? 'Tabulka symbolů a uživatelské akce' : 'Symbol table & custom commands'}</span>
           </button>
         </div>
+
+        {/* Sample Grammars Quick-Selector */}
+        {onLoadGrammar && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <BookOpen size={14} color="var(--color-primary)" />
+              {cz ? 'Ukázkové gramatiky pro rekurzivní sestup a scoping:' : 'Sample grammars for recursive descent & scoping:'}
+            </span>
+            <select
+              className="grammar-textarea"
+              style={{ minHeight: 'unset', height: '32px', padding: '4px 10px', fontSize: '12px', width: 'auto', flex: 1, maxWidth: '440px' }}
+              defaultValue=""
+              onChange={e => {
+                const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === e.target.value);
+                if (sample) {
+                  onLoadGrammar(sample.grammarText, sample.sampleInput);
+                  setInputText(sample.sampleInput);
+                }
+              }}
+            >
+              <option value="" disabled>{cz ? 'Vyberte ukázkovou gramatiku...' : 'Select a sample grammar...'}</option>
+              {RD_SAMPLE_GRAMMARS.map(s => (
+                <option key={s.id} value={s.id}>
+                  {cz ? s.nameCz : s.nameEn}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* SUBTAB 1: Visual Simulator */}
@@ -400,11 +437,13 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           {/* Declarative Symbol Table Actions Status Banner */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '4px 0 10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="badge badge-accent" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+              <span className={`badge ${isPureSyntaxMode ? 'badge-secondary' : 'badge-accent'}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                 <Database size={12} />
-                {cz
-                  ? `Deklarativní akce tabulky symbolů: ${ruleActions.filter(a => a.actionType !== 'none').length} aktivních pravidel`
-                  : `Declarative Symbol Table Actions: ${ruleActions.filter(a => a.actionType !== 'none').length} active rules`}
+                {isPureSyntaxMode
+                  ? (cz ? 'Čistý syntaktický režim: Tabulka symbolů není aktivní' : 'Pure syntax mode: Symbol table inactive')
+                  : (cz
+                    ? `Deklarativní akce tabulky symbolů: ${ruleActions.filter(a => a.actionType !== 'none').length} aktivních pravidel`
+                    : `Declarative Symbol Table Actions: ${ruleActions.filter(a => a.actionType !== 'none').length} active rules`)}
               </span>
             </div>
             <button
@@ -621,6 +660,29 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                   : 'Stack of stacks: The outer stack represents nested lexical scopes (nesting levels). Each scope contains its own stack of declared identifiers, types, and metadata. Lookups proceed from top to bottom (lexical shadowing).'}
               </p>
 
+              {/* Pure syntax mode notice if no declarations exist */}
+              {isPureSyntaxMode && (
+                <div className="report-box info" style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Info size={16} />
+                    <span style={{ fontSize: '12px' }}>
+                      {cz
+                        ? 'Čistý syntaktický režim: V této gramatice nebyly nalezeny žádné deklarace proměnných ani bloky. Rekurzivní sestup funguje plně bez tabulky symbolů.'
+                        : 'Pure syntactic mode: No variable declarations or block scopes were detected in this grammar. Recursive descent operates fully without a symbol table.'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowPureSymTab(s => !s)}
+                    style={{ fontSize: '11px', padding: '3px 8px' }}
+                  >
+                    {showPureSymTab ? (cz ? 'Skrýt prázdný zásobník' : 'Hide empty stack') : (cz ? 'Zobrazit prázdný zásobník' : 'Show empty stack')}
+                  </button>
+                </div>
+              )}
+
+              {(!isPureSyntaxMode || showPureSymTab) && (
               <div className="rd-symtab-container">
                 <div className="rd-scope-stack">
                   {currentStep.symbolTableSnapshot.scopeStack.map((scope, sIdx) => {
@@ -688,6 +750,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                   })}
                 </div>
               </div>
+              )}
             </div>
           )}
         </div>
@@ -936,6 +999,18 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Informative notice for pure syntax mode */}
+          {isPureSyntaxMode && (
+            <div className="report-box info" style={{ margin: '8px 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Info size={16} />
+              <span style={{ fontSize: '12px' }}>
+                {cz
+                  ? 'V této gramatice nebyla automaticky rozpoznána žádná klíčová slova pro deklarace či bloky. Rekurzivní sestup běží v čistě syntaktickém režimu. Můžete pravidlům přiřadit akce ručně v tabulce níže nebo upravit klíčová slova v konfigurátoru výše.'
+                  : 'No declaration or scope keywords were automatically recognized in this grammar. Recursive descent operates in pure syntactic mode. You can manually assign actions to rules in the table below or adjust keywords in the configurator above.'}
+              </span>
+            </div>
+          )}
 
           <div className="data-table-container">
             <table className="data-table">

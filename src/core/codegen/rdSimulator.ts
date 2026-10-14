@@ -25,6 +25,7 @@ export interface RDCallFrame {
   currentSymbol?: string;
   nodeId: string;
   depth: number;
+  openedScopeId?: string;
 }
 
 export interface RDSimulationStep {
@@ -230,16 +231,18 @@ export function simulateRecursiveDescent(
     });
   };
 
-  const executeRuleActions = (p: Production) => {
+  const executeRuleActions = (p: Production): string | undefined => {
     const actions = ruleActionMap.get(p.id);
-    if (!actions) return;
+    if (!actions) return undefined;
     const ctx = getContext();
+    let openedScopeId: string | undefined;
 
     for (const act of actions) {
       if (act.actionType === 'none') continue;
       try {
         if (act.actionType === 'enterScope') {
-          symTab.enterScope(act.scopeName || `scope_${p.lhs}`);
+          const sc = symTab.enterScope(act.scopeName || `scope_${p.lhs}`);
+          openedScopeId = sc.id;
         } else if (act.actionType === 'exitScope') {
           symTab.exitScope();
         } else if (act.actionType === 'addSymbol') {
@@ -252,7 +255,9 @@ export function simulateRecursiveDescent(
               symName = input[tokenPos] || 'x';
             }
           }
-          symTab.addSymbol(symName, act.symbolType || 'var', act.customData || {}, act.symbolKind || 'var', steps.length);
+          if (symName && symName !== END_MARKER) {
+            symTab.addSymbol(symName, act.symbolType || 'var', act.customData || {}, act.symbolKind || 'var', steps.length);
+          }
         } else if (act.actionType === 'markType') {
           let symName = act.symbolName || 'id';
           if (symName === 'id' || symName === '$id' || symName === 'ident') {
@@ -263,7 +268,9 @@ export function simulateRecursiveDescent(
               symName = input[tokenPos] || 'x';
             }
           }
-          symTab.markType(symName, act.symbolType || 'var');
+          if (symName && symName !== END_MARKER) {
+            symTab.markType(symName, act.symbolType || 'var');
+          }
         } else if (act.actionType === 'custom' && act.jsCode) {
           // Controlled execution of user snippet with ctx
           const fn = new Function('ctx', act.jsCode);
@@ -273,6 +280,7 @@ export function simulateRecursiveDescent(
         console.warn(`Error executing custom action for rule ${p.id}:`, err);
       }
     }
+    return openedScopeId;
   };
 
   // Stack of active frames
@@ -342,7 +350,10 @@ export function simulateRecursiveDescent(
     leftParse.push(matchingRule.id);
 
     // Execute semantic rule actions
-    executeRuleActions(matchingRule);
+    const openedScopeId = executeRuleActions(matchingRule);
+    if (openedScopeId) {
+      frame.openedScopeId = openedScopeId;
+    }
     actionConfig?.hooks?.onRule?.(matchingRule, getContext());
 
     // Populate parse tree children
@@ -381,6 +392,9 @@ export function simulateRecursiveDescent(
 
     // Epsilon rule returns immediately
     if (matchingRule.rhs.length === 0) {
+      if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
+        symTab.exitScope();
+      }
       actionConfig?.hooks?.onExit?.(nt, getContext());
       callStack.pop();
       recordStep(
@@ -407,6 +421,9 @@ export function simulateRecursiveDescent(
         // Non-terminal: recursive call
         const success = parseNonTerminal(X, childNode);
         if (!success) {
+          if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
+            symTab.exitScope();
+          }
           callStack.pop();
           return false;
         }
@@ -451,9 +468,28 @@ export function simulateRecursiveDescent(
             errorMsgCz,
             { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz }
           );
+          if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
+            symTab.exitScope();
+          }
           callStack.pop();
           return false;
         }
+      }
+    }
+
+    // If this frame entered a scope that hasn't been closed by an explicit closer rule,
+    // exit it cleanly upon returning from this non-terminal.
+    if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
+      const exited = symTab.exitScope();
+      if (exited) {
+        recordStep(
+          callStack,
+          nt,
+          frameId,
+          parentNode.id,
+          `Exited scope '${exited.name}' (level ${exited.level}) upon returning from ${nt}()`,
+          `Ukončen blok '${exited.name}' (úroveň ${exited.level}) při návratu z ${nt}()`
+        );
       }
     }
 

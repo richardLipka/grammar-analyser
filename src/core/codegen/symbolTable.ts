@@ -320,7 +320,12 @@ export function suggestSymbolActions(
     const lhsLower = p.lhs.toLowerCase();
 
     // 1. Scope openers (procedure, function, block, begin, {, etc.)
-    const hasOpener = cfg.scopeOpeners.some(k => rhsLower.includes(k) || lhsLower.includes(k));
+    // Matches if a terminal in RHS is an opener, or if the rule's LHS defines the block
+    const hasOpener = cfg.scopeOpeners.some(k => {
+      const inRhsTerminal = p.rhs.some(s => s.toLowerCase() === k && g.terminals.has(s));
+      const isLhs = lhsLower === k || lhsLower.startsWith(k + '_');
+      return inRhsTerminal || isLhs;
+    });
     if (hasOpener) {
       suggestions.push({
         ruleId: p.id,
