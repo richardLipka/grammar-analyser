@@ -1098,7 +1098,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                       className="rd-keyword-input"
                       value={idSymbolsInput}
                       onChange={e => setIdSymbolsInput(e.target.value)}
-                      placeholder="id, ident, identifier, name"
+                      placeholder="id, ident, identifier, name, variable, varname, symbol, sym"
                     />
                   </div>
                 </div>

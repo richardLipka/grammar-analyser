@@ -285,8 +285,59 @@ export interface DeclarationKeywordConfig {
   declKeywords: string[];
   /** Keywords representing data types (e.g. ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number']) */
   typeKeywords: string[];
-  /** Identifier terminal names in grammar (e.g. ['id', 'ident', 'identifier', 'name']) */
+  /** Identifier terminal names in grammar (e.g. ['id', 'ident', 'identifier', 'name', 'variable', 'varname', 'symbol']) */
   idSymbols: string[];
+}
+
+/**
+ * Common terminal names and patterns representing identifiers in formal grammars
+ * (e.g. 'id', 'ident', 'identifier', 'name', 'variable', 'varname', 'symbol', etc.)
+ */
+export const DEFAULT_ID_SYMBOLS: string[] = [
+  'id',
+  'ident',
+  'identifier',
+  'name',
+  'variable',
+  'varname',
+  'var_name',
+  'var_id',
+  'symbol',
+  'sym',
+  'id_name',
+  'ident_name',
+  'token_id',
+  'entry',
+  'item'
+];
+
+/**
+ * Regex pattern recognizing terminals that denote identifiers or variable names.
+ * Matches:
+ * - Direct names: id, ident, identifier, name, var, variable, symbol, sym
+ * - Suffix variants: id1, id2, ident_1, name_var, identifier_list
+ * - Prefix variants: var_id, proc_name, func_name, token_id, lexeme_id
+ */
+export const IDENTIFIER_TERMINAL_REGEX =
+  /^(id|ident|identifier|name|var|variable|varname|symbol|sym)([0-9_].*)?$|^.*(_id|_ident|_name|_sym)$/i;
+
+/**
+ * Checks whether a grammar terminal symbol represents an identifier token.
+ * Trims surrounding quotes or brackets if present, checks the configured list,
+ * and falls back to regex pattern matching for variations like 'proc_name', 'var_id', 'id2', etc.
+ */
+export function isIdentifierTerminal(symbol: string, customList?: string[]): boolean {
+  if (!symbol) return false;
+  // Clean surrounding quotes or angle brackets: "id" -> id, <name> -> name
+  const clean = symbol.replace(/^["'<]|["'>]$/g, '').trim().toLowerCase();
+  if (!clean) return false;
+
+  const targetList = customList && customList.length > 0 ? customList : DEFAULT_ID_SYMBOLS;
+  if (targetList.some(k => k.toLowerCase() === clean)) {
+    return true;
+  }
+
+  return IDENTIFIER_TERMINAL_REGEX.test(clean);
 }
 
 export const DEFAULT_KEYWORD_CONFIG: DeclarationKeywordConfig = {
@@ -294,7 +345,7 @@ export const DEFAULT_KEYWORD_CONFIG: DeclarationKeywordConfig = {
   scopeClosers: ['end', '}'],
   declKeywords: ['var', 'const', 'let', 'val'],
   typeKeywords: ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number'],
-  idSymbols: ['id', 'ident', 'identifier', 'name']
+  idSymbols: [...DEFAULT_ID_SYMBOLS]
 };
 
 /**
@@ -379,8 +430,11 @@ export function suggestSymbolActions(
     const declWord = cfg.declKeywords.find(k => rhsLower.includes(k));
     if (declWord) {
       const isConst = declWord === 'const';
-      // Find id symbol if present
-      const idTerm = p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) || 'id';
+      // Find id symbol if present using fuzzy & list detection
+      const idTerm =
+        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) ||
+        p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) ||
+        'id';
       // Find type if present in same rule
       const typeTerm = p.rhs.find(s => cfg.typeKeywords.includes(s.toLowerCase())) || (isConst ? 'const' : 'var');
 
@@ -395,10 +449,13 @@ export function suggestSymbolActions(
       continue;
     }
 
-    // 4. Typed declaration without var keyword (e.g. "int id;", "real x")
+    // 4. Typed declaration without var keyword (e.g. "int id;", "real name", "float ident")
     const matchedType = cfg.typeKeywords.find(k => rhsLower.includes(k));
     if (matchedType) {
-      const idTerm = p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) || 'id';
+      const idTerm =
+        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) ||
+        p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) ||
+        'id';
       suggestions.push({
         ruleId: p.id,
         actionType: 'addSymbol',

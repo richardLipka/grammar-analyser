@@ -9,7 +9,9 @@ import {
   DEFAULT_KEYWORD_CONFIG,
   buildScopeTree,
   SymbolTable,
-  DeclarationKeywordConfig
+  DeclarationKeywordConfig,
+  isIdentifierTerminal,
+  DEFAULT_ID_SYMBOLS
 } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS, RDSampleGrammar } from '../core/presets/rdSampleGrammars';
 
@@ -301,6 +303,81 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       // Exit scope
       table.exitScope();
       expect(table.lookup('x')?.entry.type).toBe('int'); // back to outer int
+    });
+
+    it('detects identifier terminals across variations (id, ident, identifier, name, varname, etc.)', () => {
+      // Direct words in DEFAULT_ID_SYMBOLS
+      expect(isIdentifierTerminal('id')).toBe(true);
+      expect(isIdentifierTerminal('ident')).toBe(true);
+      expect(isIdentifierTerminal('identifier')).toBe(true);
+      expect(isIdentifierTerminal('name')).toBe(true);
+      expect(isIdentifierTerminal('variable')).toBe(true);
+      expect(isIdentifierTerminal('varname')).toBe(true);
+      expect(isIdentifierTerminal('var_name')).toBe(true);
+      expect(isIdentifierTerminal('symbol')).toBe(true);
+      expect(isIdentifierTerminal('sym')).toBe(true);
+
+      // Quoted variations in grammar rules
+      expect(isIdentifierTerminal('"id"')).toBe(true);
+      expect(isIdentifierTerminal("'name'")).toBe(true);
+      expect(isIdentifierTerminal('<identifier>')).toBe(true);
+
+      // Suffix and prefix pattern heuristics (e.g. proc_name, var_id, id1)
+      expect(isIdentifierTerminal('var_id')).toBe(true);
+      expect(isIdentifierTerminal('proc_name')).toBe(true);
+      expect(isIdentifierTerminal('func_name')).toBe(true);
+      expect(isIdentifierTerminal('id1')).toBe(true);
+      expect(isIdentifierTerminal('ident_2')).toBe(true);
+
+      // Non-identifiers (keywords, operators, punctuation)
+      expect(isIdentifierTerminal('int')).toBe(false);
+      expect(isIdentifierTerminal('begin')).toBe(false);
+      expect(isIdentifierTerminal('+')).toBe(false);
+      expect(isIdentifierTerminal(';')).toBe(false);
+      expect(isIdentifierTerminal('{')).toBe(false);
+    });
+
+    it('correctly extracts declared symbols when grammar uses "identifier" or "name" instead of "id"', () => {
+      // 1. Grammar with "identifier"
+      const gIdentText = `Decl -> "let" "identifier" ";" .`;
+      const gIdent = parseGrammar(gIdentText).grammar!;
+      const actionsIdent = suggestSymbolActions(gIdent);
+
+      expect(actionsIdent.length).toBe(1);
+      expect(actionsIdent[0].actionType).toBe('addSymbol');
+      expect(actionsIdent[0].symbolName).toBe('identifier');
+
+      const simIdent = simulateRecursiveDescent(
+        ['let', 'identifier', ';'],
+        gIdent,
+        analyzeGrammar(gIdent),
+        { ruleActions: actionsIdent }
+      );
+      expect(simIdent.accepted).toBe(true);
+      const lastStepIdent = simIdent.steps[simIdent.steps.length - 1];
+      expect(lastStepIdent.symbolTableSnapshot.scopeStack[0].symbols[0].name).toBe('identifier');
+
+      // 2. Grammar with "name" and typed declaration
+      const gNameText = `Decl -> "float" "name" ";" .`;
+      const gName = parseGrammar(gNameText).grammar!;
+      const actionsName = suggestSymbolActions(gName);
+
+      expect(actionsName.length).toBe(1);
+      expect(actionsName[0].actionType).toBe('addSymbol');
+      expect(actionsName[0].symbolName).toBe('name');
+      expect(actionsName[0].symbolType).toBe('float');
+
+      const simName = simulateRecursiveDescent(
+        ['float', 'name', ';'],
+        gName,
+        analyzeGrammar(gName),
+        { ruleActions: actionsName }
+      );
+      expect(simName.accepted).toBe(true);
+      const lastStepName = simName.steps[simName.steps.length - 1];
+      const symEntry = lastStepName.symbolTableSnapshot.scopeStack[0].symbols[0];
+      expect(symEntry.name).toBe('name');
+      expect(symEntry.type).toBe('float');
     });
   });
 });

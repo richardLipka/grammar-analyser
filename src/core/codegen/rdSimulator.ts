@@ -15,7 +15,7 @@ import { Grammar, Production, END_MARKER } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { LLTable } from '../ll/llTable';
 import { DerivationNode } from '../generator/wordGenerator';
-import { SymbolTable, SymbolTableSnapshot, RuleActionDefinition } from './symbolTable';
+import { SymbolTable, SymbolTableSnapshot, RuleActionDefinition, isIdentifierTerminal } from './symbolTable';
 
 export interface RDCallFrame {
   id: string;
@@ -247,8 +247,8 @@ export function simulateRecursiveDescent(
           symTab.exitScope();
         } else if (act.actionType === 'addSymbol') {
           let symName = act.symbolName || 'id';
-          if (symName === 'id' || symName === '$id' || symName === 'ident') {
-            const idIdx = p.rhs.findIndex(s => ['id', 'ident', 'identifier', 'name'].includes(s.toLowerCase()));
+          if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
+            const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
             if (idIdx >= 0 && input[tokenPos + idIdx]) {
               symName = input[tokenPos + idIdx];
             } else {
@@ -260,8 +260,8 @@ export function simulateRecursiveDescent(
           }
         } else if (act.actionType === 'markType') {
           let symName = act.symbolName || 'id';
-          if (symName === 'id' || symName === '$id' || symName === 'ident') {
-            const idIdx = p.rhs.findIndex(s => ['id', 'ident', 'identifier', 'name'].includes(s.toLowerCase()));
+          if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
+            const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
             if (idIdx >= 0 && input[tokenPos + idIdx]) {
               symName = input[tokenPos + idIdx];
             } else {
