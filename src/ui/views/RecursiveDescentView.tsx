@@ -565,80 +565,83 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
             </button>
           </div>
 
-          {/* VCR Simulator Controls */}
-          {simulation.steps.length > 0 && (
-            <SimulatorControls
-              stepIdx={currentStepIdx}
-              total={simulation.steps.length}
-              isPlaying={isPlaying}
-              speed={playSpeed}
-              lang={lang}
-              onStep={idx => {
-                setIsPlaying(false);
-                setCurrentStepIdx(idx);
-              }}
-              onTogglePlay={() => {
-                if (!isPlaying && currentStepIdx >= simulation.steps.length - 1) setCurrentStepIdx(0);
-                setIsPlaying(p => !p);
-              }}
-              onSpeed={setPlaySpeed}
-            />
+          {/* TOP SECTION: Input Streamer, Position in Input, and Action Note */}
+          {currentStep && (
+            <>
+              {/* Input Top Ribbon */}
+              <div className="rd-input-top-ribbon">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flex: 1 }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginRight: '4px' }}>
+                    {cz ? 'Vstupní páska:' : 'Input stream:'}
+                  </span>
+                  {/* Consumed tokens */}
+                  {currentStep.consumedTokens.map((tok, i) => (
+                    <span key={`cons_${i}`} className="rd-token-consumed" title={cz ? 'Zpracovaný token' : 'Consumed token'}>
+                      {tok}
+                    </span>
+                  ))}
+                  {/* Current Lookahead */}
+                  <span className="rd-token-lookahead" title={cz ? 'Aktuální řídicí symbol (lookahead)' : 'Current lookahead symbol'}>
+                    <span>sym =</span>
+                    <code>{currentStep.currentLookahead}</code>
+                  </span>
+                  {/* Remaining tokens */}
+                  {currentStep.remainingTokens.slice(1).map((tok, i) => (
+                    <span key={`rem_${i}`} className="rd-token-remaining">
+                      {tok}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Input Position & Step Progress Badges */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {(() => {
+                    const totalTokens = currentStep.consumedTokens.length + currentStep.remainingTokens.length;
+                    const currentInputPos = Math.min(currentStep.consumedTokens.length + 1, totalTokens);
+                    return (
+                      <span
+                        className="badge badge-secondary"
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '11.5px', padding: '3px 8px' }}
+                        title={cz ? 'Aktuální index lookaheadu ve vstupní posloupnosti' : 'Current lookahead index in the input stream'}
+                      >
+                        {cz ? `Pozice: ${currentInputPos} / ${totalTokens}` : `Position: ${currentInputPos} / ${totalTokens}`}
+                      </span>
+                    );
+                  })()}
+                  <span className="badge badge-primary" style={{ fontSize: '11.5px', padding: '3px 8px' }}>
+                    {cz ? `Krok ${currentStep.step + 1} / ${simulation.steps.length}` : `Step ${currentStep.step + 1} / ${simulation.steps.length}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Step Note */}
+              <div
+                style={{
+                  padding: '8px 12px',
+                  marginBottom: '14px',
+                  backgroundColor: 'var(--color-bg-elevated)',
+                  borderLeft: '4px solid var(--color-primary)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '13px'
+                }}
+              >
+                <strong>{cz ? 'Krok' : 'Step'} {currentStep.step + 1}: </strong>
+                <span>{cz ? currentStep.actionDescriptionCz : currentStep.actionDescription}</span>
+              </div>
+            </>
           )}
 
-          {/* Input Streamer: Consumed, Active Lookahead, Remaining */}
+          {/* MAIN SYNCHRONOUS WORKSPACE: Stack (Left) | Tree (Middle) | Table (Right) */}
           {currentStep && (
-            <div className="rd-streamer">
-              <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginRight: '4px' }}>
-                {cz ? 'Vstupní páska:' : 'Input stream:'}
-              </span>
-              {/* Consumed tokens */}
-              {currentStep.consumedTokens.map((tok, i) => (
-                <span key={`cons_${i}`} className="rd-token-consumed" title={cz ? 'Zpracovaný token' : 'Consumed token'}>
-                  {tok}
-                </span>
-              ))}
-              {/* Current Lookahead */}
-              <span className="rd-token-lookahead" title={cz ? 'Aktuální řídicí symbol (lookahead)' : 'Current lookahead symbol'}>
-                <span>sym =</span>
-                <code>{currentStep.currentLookahead}</code>
-              </span>
-              {/* Remaining tokens */}
-              {currentStep.remainingTokens.slice(1).map((tok, i) => (
-                <span key={`rem_${i}`} className="rd-token-remaining">
-                  {tok}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Action Step Note */}
-          {currentStep && (
-            <div
-              style={{
-                padding: '8px 12px',
-                marginBottom: '12px',
-                backgroundColor: 'var(--color-bg-elevated)',
-                borderLeft: '4px solid var(--color-primary)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '13px'
-              }}
-            >
-              <strong>{cz ? 'Krok' : 'Step'} {currentStep.step + 1}: </strong>
-              <span>{cz ? currentStep.actionDescriptionCz : currentStep.actionDescription}</span>
-            </div>
-          )}
-
-          {/* Main Simulation Grid: Call Stack & Branch vs Parse Tree */}
-          {currentStep && (
-            <div className="rd-sim-grid">
-              {/* Left Column: Call Stack & Active Function Branch */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="rd-workspace-grid">
+              {/* LEFT COLUMN: Call Stack & Active Function / Branch */}
+              <div className="rd-col-left">
                 {/* Simulated Call Stack */}
                 <div className="rd-panel">
                   <div className="rd-panel-title">
                     <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Layers size={15} color="var(--color-primary)" />
-                      {cz ? 'Simulovaný zásobník volání (aktivační záznamy)' : 'Simulated call stack (activation records)'}
+                      {cz ? 'Zásobník volání (aktivační záznamy)' : 'Call stack (activation records)'}
                     </span>
                     <span className="badge badge-secondary" style={{ fontSize: '11px' }}>
                       {cz ? `Hloubka: ${currentStep.callStack.length}` : `Depth: ${currentStep.callStack.length}`}
@@ -726,174 +729,193 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                 </div>
               </div>
 
-              {/* Right Column: Parse Tree Visualizer */}
-              <div className="rd-panel" style={{ minHeight: '440px' }}>
-                <div className="rd-panel-title">
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Sparkles size={15} color="var(--color-primary)" />
-                    {cz ? 'Generovaný rozkladový strom (fialově: aktivní větev)' : 'Derivation parse tree (active branch in purple)'}
-                  </span>
+              {/* MIDDLE COLUMN: Derivation Parse Tree Visualizer */}
+              <div className="rd-col-middle">
+                <div className="rd-panel" style={{ height: '100%', minHeight: '520px' }}>
+                  <div className="rd-panel-title">
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Sparkles size={15} color="var(--color-primary)" />
+                      {cz ? 'Generovaný rozkladový strom (fialově: aktivní větev)' : 'Derivation parse tree (active branch in purple)'}
+                    </span>
+                  </div>
+                  <DerivationTreeVisualizer
+                    rootNode={currentStep.parseTree}
+                    height="500px"
+                    filename="rd_parse_tree"
+                    lang={lang}
+                  />
                 </div>
-                <DerivationTreeVisualizer
-                  rootNode={currentStep.parseTree}
-                  height="420px"
-                  filename="rd_parse_tree"
-                  lang={lang}
-                />
               </div>
-            </div>
-          )}
 
-          {/* Symbol Table Visualizer ("Stack of Stacks" & "Scope Tree") */}
-          {currentStep && (
-            <div className="rd-panel" style={{ marginTop: '16px' }}>
-              <div className="rd-panel-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Database size={16} color="var(--color-accent, #8b5cf6)" />
-                  {cz ? 'Tabulka symbolů & Lexikální rozsahy' : 'Symbol Table & Lexical Scopes'}
-                </span>
+              {/* RIGHT COLUMN: Symbol Table & Lexical Scopes ("Stack of Stacks" & "Scope Tree") */}
+              <div className="rd-col-right">
+                <div className="rd-panel" style={{ height: '100%', minHeight: '520px' }}>
+                  <div className="rd-panel-title" style={{ flexWrap: 'wrap', gap: '6px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Database size={15} color="var(--color-accent, #8b5cf6)" />
+                      {cz ? 'Tabulka symbolů & Rozsahy' : 'Symbol Table & Scopes'}
+                    </span>
 
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span className="badge badge-secondary" style={{ fontSize: '10.5px' }}>
+                        {cz ? `Aktivní: ${currentStep.symbolTableSnapshot.scopeStack.length}` : `Active: ${currentStep.symbolTableSnapshot.scopeStack.length}`}
+                      </span>
+                      <span className="badge badge-primary" style={{ fontSize: '10.5px' }}>
+                        {cz ? `Symbolů: ${totalPreservedSymbols}` : `Symbols: ${totalPreservedSymbols}`}
+                      </span>
+                    </div>
+                  </div>
+
                   {/* View Mode Toggle: Tree vs Active Stack vs All Scopes */}
-                  <div className="rd-scope-mode-toggle" role="group" aria-label={cz ? 'Režim zobrazení rozsahů' : 'Scope display mode'}>
-                    <button
-                      type="button"
-                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'tree' ? 'active' : ''}`}
-                      onClick={() => setScopeDisplayMode('tree')}
-                      title={cz ? 'Hierarchický strom zanoření lexikálních rozsahů' : 'Hierarchical tree of nested lexical scopes'}
-                    >
-                      <GitFork size={12} />
-                      {cz ? 'Strom rozsahů' : 'Scope Tree'}
-                    </button>
-                    <button
-                      type="button"
-                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'stack' ? 'active' : ''}`}
-                      onClick={() => setScopeDisplayMode('stack')}
-                      title={cz ? 'Dynamický zásobník právě aktivních rozsahů' : 'Runtime stack of currently active scopes'}
-                    >
-                      <Layers size={12} />
-                      {cz ? 'Aktivní zásobník' : 'Active Stack'}
-                    </button>
-                    <button
-                      type="button"
-                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'all' ? 'active' : ''}`}
-                      onClick={() => setScopeDisplayMode('all')}
-                      title={cz ? 'Chronologický přehled všech bloků' : 'Chronological list of all blocks'}
-                    >
-                      <Database size={12} />
-                      {cz ? 'Všechny bloky' : 'All Scopes'}
-                    </button>
+                  <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                    <div className="rd-scope-mode-toggle" role="group" aria-label={cz ? 'Režim zobrazení rozsahů' : 'Scope display mode'}>
+                      <button
+                        type="button"
+                        className={`rd-scope-mode-btn ${scopeDisplayMode === 'tree' ? 'active' : ''}`}
+                        onClick={() => setScopeDisplayMode('tree')}
+                        title={cz ? 'Hierarchický strom zanoření lexikálních rozsahů' : 'Hierarchical tree of nested lexical scopes'}
+                      >
+                        <GitFork size={12} />
+                        {cz ? 'Strom' : 'Tree'}
+                      </button>
+                      <button
+                        type="button"
+                        className={`rd-scope-mode-btn ${scopeDisplayMode === 'stack' ? 'active' : ''}`}
+                        onClick={() => setScopeDisplayMode('stack')}
+                        title={cz ? 'Dynamický zásobník právě aktivních rozsahů' : 'Runtime stack of currently active scopes'}
+                      >
+                        <Layers size={12} />
+                        {cz ? 'Zásobník' : 'Stack'}
+                      </button>
+                      <button
+                        type="button"
+                        className={`rd-scope-mode-btn ${scopeDisplayMode === 'all' ? 'active' : ''}`}
+                        onClick={() => setScopeDisplayMode('all')}
+                        title={cz ? 'Chronologický přehled všech bloků' : 'Chronological list of all blocks'}
+                      >
+                        <Database size={12} />
+                        {cz ? 'Vše' : 'All'}
+                      </button>
+                    </div>
                   </div>
 
-                  <span className="badge badge-secondary">
-                    {cz ? `Aktivní: ${currentStep.symbolTableSnapshot.scopeStack.length}` : `Active: ${currentStep.symbolTableSnapshot.scopeStack.length}`}
-                  </span>
-                  <span className="badge badge-primary">
-                    {cz ? `Celkem symbolů: ${totalPreservedSymbols}` : `Total symbols: ${totalPreservedSymbols}`}
-                  </span>
-                </div>
-              </div>
-
-              <p className="hint-text" style={{ margin: '0 0 10px' }}>
-                {cz
-                  ? 'Lexikální rozsah & Zásobník zásobníků: Globální a lokální bloky tvoří stromovou hierarchii. Během analýzy se bloky otevírají na aktivním zásobníku a po opuštění zůstávají trvale zachovány v tabulce pro inspekci.'
-                  : 'Lexical Scoping & Stack of Stacks: Global and local scopes form a tree hierarchy. Scopes are pushed onto the active stack during parsing and remain permanently preserved in the table after completion.'}
-              </p>
-
-              {/* Simulation Completion Notice & Preservation Banner */}
-              {isSimulationFinished && (
-                <div
-                  className="report-box success"
-                  style={{
-                    margin: '0 0 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '8px'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CheckCircle2 size={16} color="var(--color-success)" />
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                      {cz
-                        ? `Analýza dokončena. Celá tabulka symbolů zůstává zachována: ${totalPreservedSymbols} deklarovaných symbolů v ${currentStep.symbolTableSnapshot.allScopes.length} lexikálních blocích.`
-                        : `Parsing finished. Full symbol table remains preserved: ${totalPreservedSymbols} declared symbols across ${currentStep.symbolTableSnapshot.allScopes.length} lexical scopes.`}
-                    </span>
-                  </div>
-                  {scopeDisplayMode !== 'tree' && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => setScopeDisplayMode('tree')}
-                      style={{ fontSize: '11px', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  {/* Simulation Completion Notice & Preservation Banner */}
+                  {isSimulationFinished && (
+                    <div
+                      className="report-box success"
+                      style={{
+                        margin: '0 0 10px',
+                        padding: '6px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '6px'
+                      }}
                     >
-                      <GitFork size={12} /> {cz ? 'Zobrazit strom rozsahů' : 'Show scope tree'}
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Pure syntax mode notice if no declarations exist */}
-              {isPureSyntaxMode && (
-                <div className="report-box info" style={{ margin: '0 0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Info size={16} />
-                    <span style={{ fontSize: '12px' }}>
-                      {cz
-                        ? 'Čistý syntaktický režim: V této gramatice nebyly nalezeny žádné deklarace proměnných ani bloky. Rekurzivní sestup funguje plně bez tabulky symbolů.'
-                        : 'Pure syntactic mode: No variable declarations or block scopes were detected in this grammar. Recursive descent operates fully without a symbol table.'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowPureSymTab(s => !s)}
-                    style={{ fontSize: '11px', padding: '3px 8px' }}
-                  >
-                    {showPureSymTab ? (cz ? 'Skrýt prázdný zásobník' : 'Hide empty stack') : (cz ? 'Zobrazit prázdný zásobník' : 'Show empty stack')}
-                  </button>
-                </div>
-              )}
-
-              {(!isPureSyntaxMode || showPureSymTab) && (
-                <div className="rd-symtab-container">
-                  {/* TREE VIEW */}
-                  {scopeDisplayMode === 'tree' && (
-                    <div className="rd-tree-container">
-                      {scopeTree.map(rootNode => renderScopeTreeNode(rootNode))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <CheckCircle2 size={14} color="var(--color-success)" />
+                        <span style={{ fontSize: '11.5px', fontWeight: 600 }}>
+                          {cz
+                            ? `Dokončeno: ${totalPreservedSymbols} symbolů v ${currentStep.symbolTableSnapshot.allScopes.length} blocích.`
+                            : `Finished: ${totalPreservedSymbols} symbols across ${currentStep.symbolTableSnapshot.allScopes.length} scopes.`}
+                        </span>
+                      </div>
+                      {scopeDisplayMode !== 'tree' && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setScopeDisplayMode('tree')}
+                          style={{ fontSize: '10.5px', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          <GitFork size={11} /> {cz ? 'Strom' : 'Tree'}
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {/* ACTIVE STACK OF STACKS */}
-                  {scopeDisplayMode === 'stack' && (
-                    <div className="rd-scope-stack">
-                      {currentStep.symbolTableSnapshot.scopeStack.map((scope, sIdx) =>
-                        renderScopeCard(scope, sIdx === currentStep.symbolTableSnapshot.scopeStack.length - 1)
+                  {/* Pure syntax mode notice if no declarations exist */}
+                  {isPureSyntaxMode && (
+                    <div className="report-box info" style={{ margin: '0 0 10px', padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Info size={14} />
+                        <span style={{ fontSize: '11.5px' }}>
+                          {cz ? 'Čistý syntaktický režim.' : 'Pure syntactic mode.'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setShowPureSymTab(s => !s)}
+                        style={{ fontSize: '10.5px', padding: '2px 6px' }}
+                      >
+                        {showPureSymTab ? (cz ? 'Skrýt' : 'Hide') : (cz ? 'Zobrazit' : 'Show')}
+                      </button>
+                    </div>
+                  )}
+
+                  {(!isPureSyntaxMode || showPureSymTab) && (
+                    <div className="rd-symtab-container" style={{ flex: 1 }}>
+                      {/* TREE VIEW */}
+                      {scopeDisplayMode === 'tree' && (
+                        <div className="rd-tree-container">
+                          {scopeTree.map(rootNode => renderScopeTreeNode(rootNode))}
+                        </div>
                       )}
-                      {isSimulationFinished && currentStep.symbolTableSnapshot.scopeStack.length <= 1 && currentStep.symbolTableSnapshot.allScopes.length > 1 && (
-                        <div className="hint-text" style={{ fontStyle: 'italic', fontSize: '12px', padding: '8px', textAlign: 'center' }}>
-                          {cz
-                            ? 'Všechny vnořené bloky byly korektně opuštěny (aktivní zásobník se vrátil na globální úroveň). Přepněte na „Strom rozsahů“ pro zobrazení všech zachovaných lokálních bloků.'
-                            : 'All nested scopes have exited cleanly (active stack popped back to global). Switch to "Scope Tree" to inspect all preserved local scopes.'}
+
+                      {/* ACTIVE STACK OF STACKS */}
+                      {scopeDisplayMode === 'stack' && (
+                        <div className="rd-scope-stack">
+                          {currentStep.symbolTableSnapshot.scopeStack.map((scope, sIdx) =>
+                            renderScopeCard(scope, sIdx === currentStep.symbolTableSnapshot.scopeStack.length - 1)
+                          )}
+                          {isSimulationFinished && currentStep.symbolTableSnapshot.scopeStack.length <= 1 && currentStep.symbolTableSnapshot.allScopes.length > 1 && (
+                            <div className="hint-text" style={{ fontStyle: 'italic', fontSize: '11.5px', padding: '6px', textAlign: 'center' }}>
+                              {cz
+                                ? 'Vnořené bloky opuštěny. Přepněte na „Strom“ pro všechny zachované bloky.'
+                                : 'Nested scopes exited. Switch to "Tree" to inspect preserved scopes.'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ALL SCOPES (FLAT LIST) */}
+                      {scopeDisplayMode === 'all' && (
+                        <div className="rd-scope-stack">
+                          {currentStep.symbolTableSnapshot.allScopes.map(scope =>
+                            renderScopeCard(
+                              scope,
+                              scope.id === currentStep.symbolTableSnapshot.scopeStack[currentStep.symbolTableSnapshot.scopeStack.length - 1]?.id
+                            )
+                          )}
                         </div>
                       )}
                     </div>
                   )}
-
-                  {/* ALL SCOPES (FLAT LIST) */}
-                  {scopeDisplayMode === 'all' && (
-                    <div className="rd-scope-stack">
-                      {currentStep.symbolTableSnapshot.allScopes.map(scope =>
-                        renderScopeCard(
-                          scope,
-                          scope.id === currentStep.symbolTableSnapshot.scopeStack[currentStep.symbolTableSnapshot.scopeStack.length - 1]?.id
-                        )
-                      )}
-                    </div>
-                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          )}
+
+          {/* BOTTOM CONTROLS: VCR Simulator Controls below the main workspace */}
+          {simulation.steps.length > 0 && (
+            <div className="rd-controls-footer">
+              <SimulatorControls
+                stepIdx={currentStepIdx}
+                total={simulation.steps.length}
+                isPlaying={isPlaying}
+                speed={playSpeed}
+                lang={lang}
+                onStep={idx => {
+                  setIsPlaying(false);
+                  setCurrentStepIdx(idx);
+                }}
+                onTogglePlay={() => {
+                  if (!isPlaying && currentStepIdx >= simulation.steps.length - 1) setCurrentStepIdx(0);
+                  setIsPlaying(p => !p);
+                }}
+                onSpeed={setPlaySpeed}
+              />
             </div>
           )}
         </div>
