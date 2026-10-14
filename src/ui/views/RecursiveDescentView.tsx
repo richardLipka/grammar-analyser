@@ -157,6 +157,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [keywordInputs, setKeywordInputs] = useState(() => keywordInputsOf(DEFAULT_KEYWORD_CONFIG));
   const [showKeywordEditor, setShowKeywordEditor] = useState(true);
   const [showPureSymTab, setShowPureSymTab] = useState(false);
+  // A name missing in the symbol table stops the descent (semantic error), or is only reported
+  const [stopOnUndeclared, setStopOnUndeclared] = useState(true);
 
   // Rule actions: detected from the keywords, switched off, or edited by hand
   const [actionMode, setActionMode] = useState<'none' | 'auto' | 'custom'>('auto');
@@ -256,9 +258,10 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
     return simulateRecursiveDescent(tokenized.tokens, grammar, analysis, {
       ruleActions,
       keywords: keywordConfig,
-      lexemes: tokenized.lexemes
+      lexemes: tokenized.lexemes,
+      stopOnUndeclared
     });
-  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig]);
+  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig, stopOnUndeclared]);
 
   // Reset simulation step on new input
   useEffect(() => {
@@ -631,6 +634,71 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
     );
   };
 
+  /** Opens the help on what the symbol table can and cannot do */
+  const showHelp = () => {
+    setSubTab('symtab');
+    requestAnimationFrame(() => document.getElementById('rd-symtab-help')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  };
+
+  const helpCan = cz
+    ? [
+      'Jména a čísla ze vstupu čte jako terminál identifikátoru a čísla gramatiky (x → ident, 10 → number). Lexikální analýza je jednoduchá: slova oddělená mezerami, uvnitř slova nejdelší shoda; klíčová slova jsou terminály gramatiky, které vypadají jako jména.',
+      'Jméno deklaruje ve chvíli, kdy procedura pravidla přečte jeho identifikátor: proměnné a konstanty (i seznamy var x, y), procedury a funkce (v obklopujícím rozsahu), parametry.',
+      'Rozsahy: procedura nebo funkce má vlastní rozsah, blok { } nebo begin … end jen tehdy, když v něm mohou být deklarace. Ukáže vnoření, zastínění jména ve vnitřním rozsahu, zásobník otevřených rozsahů i uzavřené rozsahy (strom).',
+      'Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven a krok ukáže, kde bylo nalezeno. Nenalezené jméno je sémantická chyba, která zastaví analýzu, i když je slovo syntakticky správné (lze vypnout). Jméno deklarované v jednom rozsahu dvakrát se označí.',
+      'Typ jména je typové klíčové slovo přečtené naposled před jménem (int x, Type x).',
+      'Akce rozpozná podle klíčových slov a názvů terminálů; v tabulce níže je lze upravit (pozice v pravé straně, druh, typ, vlastní kód).'
+    ]
+    : [
+      'Names and numbers in the input are read as the identifier and number terminals of the grammar (x → ident, 10 → number). The lexical analysis is simple: words separated by spaces, longest match within a word; keywords are the terminals of the grammar that look like names.',
+      'A name is declared when the procedure of a rule reads its identifier: variables and constants (also lists var x, y), procedures and functions (in the enclosing scope), parameters.',
+      'Scopes: a procedure or function has its own scope, a block { } or begin … end only when declarations can occur in it. Nesting, shadowing in an inner scope, the stack of open scopes and the closed scopes (tree) are shown.',
+      'Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards, and the step shows where it was found. A name that is not found is a semantic error that stops the analysis even of a syntactically correct word (can be switched off). A name declared twice in one scope is marked.',
+      'The type of a name is the type keyword read last before it (int x, Type x).',
+      'The actions are detected from keywords and names of terminals; they can be edited in the table below (position in the right-hand side, kind, type, own code).'
+    ];
+  const helpCannot = cz
+    ? [
+      'Nepřekládá: pro analyzovaný program negeneruje kód, nepřiděluje adresy, úrovně a velikosti proměnných (to, k čemu tabulka v překladači PL/0 slouží u instrukcí LOD, STO, CAL) a program neprovádí.',
+      'Nekontroluje typy (přiřazení, výrazy, parametry), druhy jmen (volání proměnné, přiřazení do konstanty nebo procedury) ani počet a pořadí parametrů.',
+      'Jméno musí být deklarováno dřív, než se v textu použije: dopředné odkazy, kde je jazyk dovoluje, moduly a jmenné prostory, položky záznamů a struktur (a.b), přetěžování ani návěští nezná.',
+      'Typ zapsaný za jménem (x : integer v Pascalu) ani typy definované programem (typedef, type T = …) nerozpozná.',
+      'Rozpoznání akcí je heuristika: identifikátor je terminál s názvem jako id, ident, name, deklarace se poznají jen podle klíčových slov. U jiné gramatiky může být potřeba akce upravit ručně; ručně upravené akce platí jen pro tuto gramatiku.',
+      'Lexikální analýza nezná komentáře, řetězce ani znakové konstanty; víceznakový operátor je jedním symbolem, jen je-li terminálem gramatiky.',
+      'Programy v záložce Generovaný kód (PL/0, Oberon, C, Python, JavaScript) kontrolují jen syntaxi: čtou jeden znak za terminál a tabulku symbolů nemají.',
+      'Jen gramatiky LL(1); krokování má nejvýše 2 000 kroků. Vlastní kód v JavaScriptu běží v prohlížeči bez omezení – jen pro vlastní pokusy.'
+    ]
+    : [
+      'It does not compile: no code is generated for the analysed program, variables get no addresses, levels or sizes (what the table of a PL/0 compiler provides for the instructions LOD, STO, CAL), and the program is not run.',
+      'Types (assignments, expressions, parameters), kinds of names (calling a variable, assigning to a constant or a procedure) and the number and order of parameters are not checked.',
+      'A name must be declared before it is used in the text: forward references where a language allows them, modules and namespaces, fields of records and structures (a.b), overloading and labels are not supported.',
+      'A type written after the name (x : integer in Pascal) and types defined by the program (typedef, type T = …) are not recognised.',
+      'The detection of actions is a heuristic: an identifier is a terminal named like id, ident, name, and declarations are recognised only by keywords. Another grammar may need its actions edited by hand; edited actions belong to that grammar only.',
+      'The lexical analysis knows no comments, strings or character constants; a multi-character operator is one symbol only when it is a terminal of the grammar.',
+      'The programs on the tab Generated code (PL/0, Oberon, C, Python, JavaScript) check the syntax only: they read one character per terminal and have no symbol table.',
+      'LL(1) grammars only; the step simulator stops after 2,000 steps. Own JavaScript code runs in the browser without restrictions – for one\'s own experiments only.'
+    ];
+  const symbolTableHelp = (
+    <details className="rd-help" id="rd-symtab-help" open>
+      <summary>{cz ? 'Tabulka symbolů: co ukázka umí a co ne' : 'Symbol table: what this demonstration can and cannot do'}</summary>
+      <p className="rd-help-lead">
+        {cz
+          ? 'Jde o demonstrační nástroj, ne o překladač. Ukazuje, jak syntaktický analyzátor rekurzivním sestupem při čtení programu zakládá a používá tabulku symbolů: kdy vzniká a končí rozsah, kdy se jméno deklaruje a kde se hledá. Program se nepřekládá ani neprovádí a většina kontrol skutečného překladače chybí.'
+          : 'This is a demonstration tool, not a compiler. It shows how a recursive-descent parser builds and uses a symbol table while it reads a program: when a scope starts and ends, when a name is declared and where it is looked up. The program is neither compiled nor run, and most checks of a real compiler are missing.'}
+      </p>
+      <div className="rd-help-columns">
+        <div>
+          <h4>{cz ? 'Umí' : 'Can'}</h4>
+          <ul>{helpCan.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        </div>
+        <div>
+          <h4>{cz ? 'Neumí' : 'Cannot'}</h4>
+          <ul>{helpCannot.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        </div>
+      </div>
+    </details>
+  );
+
   const verdict = simulation.accepted
     ? (cz
       ? `Slovo přijato v ${simulation.steps.length} krocích. Levý rozklad: ${simulation.leftParse.join(' ')}`
@@ -743,7 +811,14 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               <span style={{ fontWeight: 600 }}>{verdict}</span>
             </div>
           )}
-          {undeclaredNames.length > 0 && (
+          {'semanticError' in simulation && simulation.semanticError && (
+            <p className="hint-text" style={{ margin: '-4px 0 10px' }}>
+              {cz
+                ? 'Gramatika slovo připouští, chybí ale deklarace jména. Překladač kontroluje kromě syntaxe i to, zda je použité jméno deklarováno; tato kontrola jde vypnout níže (pak se nedeklarovaná jména jen vypíšou).'
+                : 'The grammar allows the word, but a name is not declared. Besides the syntax, a compiler checks that every name used is declared; the check can be switched off below (the undeclared names are then only listed).'}
+            </p>
+          )}
+          {undeclaredNames.length > 0 && !stopOnUndeclared && (
             <div className="report-box warning" style={{ margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <AlertTriangle size={16} />
               <span>
@@ -774,6 +849,17 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               <span>{cz ? 'Akce a klíčová slova' : 'Actions & keywords'}</span>
             </button>
           </div>
+          {!isPureSyntaxMode && (
+            <div className="rd-mode-row">
+              <label className="rd-check">
+                <input type="checkbox" checked={stopOnUndeclared} onChange={e => setStopOnUndeclared(e.target.checked)} />
+                <span>{cz ? 'Nedeklarované jméno je chyba (zastaví analýzu i syntakticky správného slova)' : 'An undeclared name is an error (stops the analysis even of a syntactically correct word)'}</span>
+              </label>
+              <button type="button" className="link-button" onClick={showHelp}>
+                {cz ? 'Co tabulka symbolů umí a neumí' : 'What the symbol table can and cannot do'}
+              </button>
+            </div>
+          )}
 
           {/* TOP SECTION: Input Streamer, Position in Input, and Action Note */}
           {currentStep && (
@@ -986,6 +1072,13 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                       {cz ? 'Vše' : 'All'}
                     </button>
                   </div>
+
+                  <p className="hint-text" style={{ margin: '0 0 8px', fontSize: '11px' }}>
+                    {cz ? 'Ukázka tvorby tabulky při analýze, ne překladač: typy ani druhy jmen se nekontrolují. ' : 'A demonstration of building the table while parsing, not a compiler: types and kinds of names are not checked. '}
+                    <button type="button" className="link-button" style={{ fontSize: '11px' }} onClick={showHelp}>
+                      {cz ? 'Více' : 'More'}
+                    </button>
+                  </p>
 
                   {isSimulationFinished && !isPureSyntaxMode && (
                     <div className="report-box success" style={{ margin: '0 0 10px', padding: '6px 10px', fontSize: '11.5px' }}>
@@ -1211,6 +1304,13 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               ? 'Procedura pravidla může kromě syntaktické analýzy pracovat s tabulkou symbolů: po přečtení identifikátoru deklarovat jeho jméno (jméno je text ze vstupu, např. x pro terminál id), otevřít rozsah před některým symbolem pravé strany a zavřít ho po jiném. Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven. Akce se rozpoznají podle klíčových slov níže; v tabulce je lze upravit.'
               : 'Besides parsing, the procedure of a rule can work with the symbol table: declare the name of an identifier after reading it (the name is the text of the input, e.g. x for the terminal id), and open a scope before one symbol of the right-hand side and close it after another. Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards. The actions are detected from the keywords below and can be edited in the table.'}
           </p>
+
+          {symbolTableHelp}
+
+          <label className="rd-check" style={{ margin: '0 0 12px' }}>
+            <input type="checkbox" checked={stopOnUndeclared} onChange={e => setStopOnUndeclared(e.target.checked)} />
+            <span>{cz ? 'Nedeklarované jméno je sémantická chyba, která zastaví rekurzivní sestup' : 'An undeclared name is a semantic error that stops the recursive descent'}</span>
+          </label>
 
           {/* Editable Keyword Configuration Box */}
           <div className="rd-keywords-box">

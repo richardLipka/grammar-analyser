@@ -14,6 +14,11 @@
  * actions of a rule are tied to positions of its right-hand side: a name is declared
  * when its identifier has been read, a scope opens before and closes after given
  * symbols, and every other identifier read is looked up in the symbol table.
+ * A name that is not found is a semantic error: it stops the descent (as a
+ * compiler would), unless stopOnUndeclared is false.
+ *
+ * It is a demonstration of how a parser builds a symbol table, not a compiler:
+ * no types, kinds or numbers of parameters are checked, and no code is made.
  */
 
 import { Grammar, Production, END_MARKER } from '../ast/grammar';
@@ -104,6 +109,8 @@ export interface RDSimulationResult {
   undeclared: { name: string; step: number }[];
   /** The simulation stopped at the step limit */
   truncated?: boolean;
+  /** The word is rejected because of a name missing in the symbol table, not because of its syntax */
+  semanticError?: boolean;
 }
 
 export interface RDContext {
@@ -122,6 +129,11 @@ export interface CustomActionConfig {
   keywords?: Partial<DeclarationKeywordConfig>;
   /** The text of the input tokens (x for the token id); the tokens themselves when absent */
   lexemes?: string[];
+  /**
+   * A name used but missing in the symbol table stops the descent with a semantic error,
+   * although the word may be correct syntactically (default true); false only reports it
+   */
+  stopOnUndeclared?: boolean;
   /** Custom JavaScript callback hooks */
   hooks?: {
     onEnter?: (nt: string, ctx: RDContext) => void;
@@ -225,6 +237,8 @@ export function simulateRecursiveDescent(
   let isError = false;
   let errorMsg = '';
   let errorMsgCz = '';
+  let semanticError = false;
+  const stopOnUndeclared = actionConfig?.stopOnUndeclared ?? true;
 
   const getConsumed = () => input.slice(0, tokenPos);
   const getRemaining = () => input.slice(tokenPos);
@@ -520,6 +534,14 @@ export function simulateRecursiveDescent(
               undeclared.push({ name: lexeme, step: steps.length });
               noteEn += `; the name '${lexeme}' is not declared in any visible scope!`;
               noteCz += `; jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu!`;
+              if (stopOnUndeclared) {
+                isError = true;
+                semanticError = true;
+                errorMsg = `Semantic error: the name '${lexeme}' is not declared in any visible scope. The word is correct syntactically so far, but a compiler would reject the program.`;
+                errorMsgCz = `Sémantická chyba: jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu. Syntakticky je slovo zatím v pořádku, překladač by ale program odmítl.`;
+                childNode.mark = 'mismatch';
+                Object.assign(extra, { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz });
+              }
             }
           }
 
@@ -532,6 +554,10 @@ export function simulateRecursiveDescent(
             `Úspěšné srovnání terminálu '${lexeme !== X ? `${X}' (${lexeme})` : `${X}'`}, posun vstupu na '${shown(tokenPos)}'${noteCz}`,
             extra
           );
+          if (semanticError) {
+            callStack.pop();
+            return false;
+          }
         } else {
           isError = true;
           errorMsg = `Syntax error: expected terminal '${X}', but found '${shown(tokenPos)}'.`;
@@ -631,6 +657,7 @@ export function simulateRecursiveDescent(
     leftParse,
     lexemes,
     undeclared,
-    truncated: truncated && !isAccepted ? true : undefined
+    truncated: truncated && !isAccepted ? true : undefined,
+    semanticError: semanticError || undefined
   };
 }

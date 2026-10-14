@@ -15,7 +15,7 @@ import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 
 /** Runs a sample on a program with names; returns the result and the final scope tree as text */
-function run(sampleId: string, program?: string): { res: RDSimulationResult; tree: string; lookups: string[] } {
+function run(sampleId: string, program?: string, stopOnUndeclared = true): { res: RDSimulationResult; tree: string; lookups: string[] } {
   const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === sampleId)!;
   const g = parseGrammar(sample.grammarText).grammar!;
   const analysis = analyzeGrammar(g);
@@ -24,7 +24,8 @@ function run(sampleId: string, program?: string): { res: RDSimulationResult; tre
   expect(scanned.unknown).toEqual([]);
   const res = simulateRecursiveDescent(scanned.tokens, g, analysis, {
     ruleActions: suggestSymbolActions(g, DEFAULT_KEYWORD_CONFIG),
-    lexemes: scanned.lexemes
+    lexemes: scanned.lexemes,
+    stopOnUndeclared
   });
   const show = (n: ScopeTreeNode, depth: number): string[] => [
     `${'  '.repeat(depth)}${n.scope.name}: ${n.scope.symbols.map(s => `${s.name} ${s.kind}${s.type ? ` ${s.type}` : ''}${s.customData.redeclared ? ' (redeclared)' : ''}`).join(', ')}`,
@@ -122,8 +123,31 @@ describe('Recursive-descent symbol table on the sample grammars', () => {
     ].join('\n'));
   });
 
-  it('reports names that are not declared and names declared twice in one scope', () => {
-    const { res, tree, lookups } = run('rd_sample_pl0', 'var x , x ; y := 1 .');
+  it('a name missing in the symbol table stops the descent although the word is syntactically correct', () => {
+    const program = 'var x ; procedure p ; var a ; x := a ; begin x := 1 ; call p ; a := x end .';
+    const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_pl0')!;
+    const g = parseGrammar(sample.grammarText).grammar!;
+    const scanned = scanInput(program, g.terminals, tokenClasses(g.terminals));
+    // without the symbol table the word is accepted …
+    expect(simulateRecursiveDescent(scanned.tokens, g, analyzeGrammar(g), { lexemes: scanned.lexemes }).accepted).toBe(true);
+    // … with it, a (local to p) is not visible in the main program
+    const { res, lookups } = run('rd_sample_pl0', program);
+    expect(res.accepted).toBe(false);
+    expect(res.semanticError).toBe(true);
+    expect(res.errorMessage).toContain("Semantic error: the name 'a' is not declared");
+    expect(res.errorMessageCz).toContain("Sémantická chyba: jméno 'a' není deklarováno");
+    expect(lookups).toEqual(['x -> global', 'a -> procedure p', 'x -> global', 'p -> global', 'a -> undeclared']);
+    const last = res.steps[res.steps.length - 1];
+    expect(last.isError).toBe(true);
+    expect(last.consumedTokens.length).toBe(scanned.tokens.length - 4); // stopped right after reading a, before := x end .
+    // a syntax error still comes first when there is one
+    const syntax = run('rd_sample_pl0', 'var x ; x := := 1 .');
+    expect(syntax.res.semanticError).toBeUndefined();
+    expect(syntax.res.errorMessage).toContain('Syntax error');
+  });
+
+  it('only reports undeclared names when they do not stop the descent; marks names declared twice in one scope', () => {
+    const { res, tree, lookups } = run('rd_sample_pl0', 'var x , x ; y := 1 .', false);
     expect(res.accepted).toBe(true);
     expect(tree).toBe('global: x var, x var (redeclared)');
     expect(lookups).toEqual(['y -> undeclared']);

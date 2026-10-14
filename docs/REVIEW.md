@@ -809,3 +809,15 @@ Commits 51e6edd–a69aada (by another agent) added a step simulator of recursive
 *The tests* also had a probe for gcc that compiled to `-o NUL`, which on Windows creates a file `NUL.exe` in the working directory; it now compiles into a temporary directory.
 
 *Tests:* `rdScoping.test.ts` (exact symbol tables and lookups of all samples, PL/0 begin/end, a list of procedures, undeclared and redeclared names, the step limit, presets = samples), updated `rdSampleGrammars.test.ts` and `symbolTable.test.ts`, JavaScript in `rdLanguages.test.ts`. 409 tests pass.
+
+## 25. The symbol table: errors and its limits (2026-10-14)
+
+Owner's request: a name that is missing in the symbol table fails the recursive descent even when the word is correct syntactically, and the help says what the symbol table can and cannot do, stressing that it is a demonstration, not a compiler.
+
+**Semantic error.** When an identifier that is not being declared is read and the lookup finds it in no open scope, the simulator stops with "Semantic error: the name 'a' is not declared in any visible scope. The word is correct syntactically so far, but a compiler would reject the program." (`RDSimulationResult.semanticError`); the step is marked as an error and the leaf in the tree as a mismatch. The option `stopOnUndeclared` (default true; a switch in the tab, on the simulator and on the actions sub-tab) turns it back into a report: the word is accepted and the undeclared names are listed. A syntax error found earlier stays a syntax error. Redeclaration in one scope is only marked (Wirth's PL/0 does not check it either). Only the simulator does this; the generated programs check the syntax only.
+
+**Help.** The sub-tab "Symbol table actions" starts with a section "Symbol table: what this demonstration can and cannot do" (Czech and English), opened also from the simulator ("What the symbol table can and cannot do", "More" in the table panel). It says first that this is a demonstration tool, not a compiler, then lists:
+- *can:* names and numbers read as the identifier and number terminals; declarations when the identifier is read (variables, constants, lists, procedures and functions in the enclosing scope, parameters); procedure scopes and blocks with declarations, nesting, shadowing, closed scopes; lookups of every other identifier, with the semantic error; the type read last; detection by keywords, editable actions;
+- *cannot:* no compilation (no code, addresses, levels, sizes; nothing runs); no checks of types, kinds of names or parameters; declaration before use only (no forward references, modules, record fields, overloading, labels); no types after the name or defined by the program; heuristic detection; no comments or strings in the scanner; the generated programs check only syntax; LL(1) only, 2,000 steps; own JavaScript runs unrestricted.
+
+*Tests* (`rdScoping.test.ts`): a PL/0 program accepted without the table is rejected with it (a local of p used in the main program), stopping right after reading the name; a syntax error stays a syntax error; with the switch off the word is accepted and the name listed.
