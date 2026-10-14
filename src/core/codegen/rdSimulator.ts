@@ -15,7 +15,13 @@ import { Grammar, Production, END_MARKER } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { LLTable } from '../ll/llTable';
 import { DerivationNode } from '../generator/wordGenerator';
-import { SymbolTable, SymbolTableSnapshot, RuleActionDefinition, isIdentifierTerminal } from './symbolTable';
+import {
+  SymbolTable,
+  SymbolTableSnapshot,
+  RuleActionDefinition,
+  isIdentifierTerminal,
+  isNonIdentifierLiteral
+} from './symbolTable';
 
 export interface RDCallFrame {
   id: string;
@@ -250,12 +256,20 @@ export function simulateRecursiveDescent(
           if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
             const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
             if (idIdx >= 0 && input[tokenPos + idIdx]) {
-              symName = input[tokenPos + idIdx];
+              const candidate = input[tokenPos + idIdx];
+              if (!isNonIdentifierLiteral(candidate)) {
+                symName = candidate;
+              }
             } else {
-              symName = input[tokenPos] || 'x';
+              const candidate = input[tokenPos];
+              if (candidate && !isNonIdentifierLiteral(candidate) && isIdentifierTerminal(candidate)) {
+                symName = candidate;
+              } else {
+                symName = 'id';
+              }
             }
           }
-          if (symName && symName !== END_MARKER) {
+          if (symName && symName !== END_MARKER && !isNonIdentifierLiteral(symName)) {
             symTab.addSymbol(symName, act.symbolType || 'var', act.customData || {}, act.symbolKind || 'var', steps.length);
           }
         } else if (act.actionType === 'markType') {
@@ -263,12 +277,20 @@ export function simulateRecursiveDescent(
           if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
             const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
             if (idIdx >= 0 && input[tokenPos + idIdx]) {
-              symName = input[tokenPos + idIdx];
+              const candidate = input[tokenPos + idIdx];
+              if (!isNonIdentifierLiteral(candidate)) {
+                symName = candidate;
+              }
             } else {
-              symName = input[tokenPos] || 'x';
+              const candidate = input[tokenPos];
+              if (candidate && !isNonIdentifierLiteral(candidate) && isIdentifierTerminal(candidate)) {
+                symName = candidate;
+              } else {
+                symName = 'id';
+              }
             }
           }
-          if (symName && symName !== END_MARKER) {
+          if (symName && symName !== END_MARKER && !isNonIdentifierLiteral(symName)) {
             symTab.markType(symName, act.symbolType || 'var');
           }
         } else if (act.actionType === 'custom' && act.jsCode) {

@@ -290,8 +290,8 @@ export interface DeclarationKeywordConfig {
 }
 
 /**
- * Common terminal names and patterns representing identifiers in formal grammars
- * (e.g. 'id', 'ident', 'identifier', 'name', 'variable', 'varname', 'symbol', etc.)
+ * Common terminal names and patterns representing identifiers in typical programming languages
+ * (e.g. 'id', 'ident', 'identifier', 'name', 'variable', 'varname')
  */
 export const DEFAULT_ID_SYMBOLS: string[] = [
   'id',
@@ -302,35 +302,85 @@ export const DEFAULT_ID_SYMBOLS: string[] = [
   'varname',
   'var_name',
   'var_id',
-  'symbol',
-  'sym',
   'id_name',
-  'ident_name',
-  'token_id',
-  'entry',
-  'item'
+  'ident_name'
 ];
 
 /**
- * Regex pattern recognizing terminals that denote identifiers or variable names.
+ * Literal tokens, numeric values, operators and keywords in typical programming languages
+ * that must NEVER be treated as identifier symbols (e.g. 'num', numbers, literals).
+ */
+export const NON_IDENTIFIER_LITERALS = new Set([
+  'num',
+  'number',
+  'digit',
+  'digits',
+  'int_lit',
+  'float_lit',
+  'integer_literal',
+  'float_literal',
+  'literal',
+  'val',
+  'value',
+  'const_val',
+  'numeric',
+  'str',
+  'string_lit',
+  'char_lit',
+  'text',
+  'true',
+  'false',
+  'bool_lit',
+  'null',
+  'nil',
+  'undefined',
+  'eof',
+  'epsilon',
+  'eps',
+  '$'
+]);
+
+/**
+ * Checks whether a token represents a non-identifier literal (e.g. 'num', numbers, string/boolean constants).
+ */
+export function isNonIdentifierLiteral(symbol: string): boolean {
+  if (!symbol) return true;
+  const clean = symbol.replace(/^["'<]|["'>]$/g, '').trim().toLowerCase();
+  if (!clean) return true;
+  if (NON_IDENTIFIER_LITERALS.has(clean)) return true;
+  // Match integer or floating point numbers (e.g. 10, 42, 3.14)
+  if (/^\d+(\.\d+)?$/.test(clean)) return true;
+  // Match numeric literal variants (e.g. num1, digit_0, num_lit)
+  if (/^(num|digit|digits|int_lit|float_lit)[0-9_]*$/i.test(clean)) return true;
+  return false;
+}
+
+/**
+ * Regex pattern recognizing terminals that denote identifiers or variable names in typical languages.
  * Matches:
- * - Direct names: id, ident, identifier, name, var, variable, symbol, sym
+ * - Direct names: id, ident, identifier, name, varname, variable
  * - Suffix variants: id1, id2, ident_1, name_var, identifier_list
- * - Prefix variants: var_id, proc_name, func_name, token_id, lexeme_id
+ * - Prefix variants: var_id, proc_name, func_name, var_name
  */
 export const IDENTIFIER_TERMINAL_REGEX =
-  /^(id|ident|identifier|name|var|variable|varname|symbol|sym)([0-9_].*)?$|^.*(_id|_ident|_name|_sym)$/i;
+  /^(id|ident|identifier|name|varname|variable)([0-9_].*)?$|^.*(_id|_ident|_name|_var)$/i;
 
 /**
  * Checks whether a grammar terminal symbol represents an identifier token.
  * Trims surrounding quotes or brackets if present, checks the configured list,
- * and falls back to regex pattern matching for variations like 'proc_name', 'var_id', 'id2', etc.
+ * strictly excludes numeric and literal keywords (like 'num'), and falls back
+ * to regex pattern matching for variations like 'proc_name', 'var_id', 'id2', etc.
  */
 export function isIdentifierTerminal(symbol: string, customList?: string[]): boolean {
   if (!symbol) return false;
   // Clean surrounding quotes or angle brackets: "id" -> id, <name> -> name
   const clean = symbol.replace(/^["'<]|["'>]$/g, '').trim().toLowerCase();
   if (!clean) return false;
+
+  // Strictly exclude non-identifier literals such as 'num', digits, booleans, string literals
+  if (isNonIdentifierLiteral(clean)) {
+    return false;
+  }
 
   const targetList = customList && customList.length > 0 ? customList : DEFAULT_ID_SYMBOLS;
   if (targetList.some(k => k.toLowerCase() === clean)) {
@@ -430,11 +480,8 @@ export function suggestSymbolActions(
     const declWord = cfg.declKeywords.find(k => rhsLower.includes(k));
     if (declWord) {
       const isConst = declWord === 'const';
-      // Find id symbol if present using fuzzy & list detection
-      const idTerm =
-        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) ||
-        p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) ||
-        'id';
+      // Find id symbol if present using fuzzy & list detection (strictly excluding literals like num)
+      const idTerm = p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) || 'id';
       // Find type if present in same rule
       const typeTerm = p.rhs.find(s => cfg.typeKeywords.includes(s.toLowerCase())) || (isConst ? 'const' : 'var');
 
@@ -452,10 +499,9 @@ export function suggestSymbolActions(
     // 4. Typed declaration without var keyword (e.g. "int id;", "real name", "float ident")
     const matchedType = cfg.typeKeywords.find(k => rhsLower.includes(k));
     if (matchedType) {
+      // Find id symbol, strictly excluding the type itself, literals like num, and punctuation
       const idTerm =
-        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) ||
-        p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) ||
-        'id';
+        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols) && s.toLowerCase() !== matchedType) || 'id';
       suggestions.push({
         ruleId: p.id,
         actionType: 'addSymbol',

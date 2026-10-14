@@ -11,6 +11,7 @@ import {
   SymbolTable,
   DeclarationKeywordConfig,
   isIdentifierTerminal,
+  isNonIdentifierLiteral,
   DEFAULT_ID_SYMBOLS
 } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS, RDSampleGrammar } from '../core/presets/rdSampleGrammars';
@@ -314,8 +315,7 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       expect(isIdentifierTerminal('variable')).toBe(true);
       expect(isIdentifierTerminal('varname')).toBe(true);
       expect(isIdentifierTerminal('var_name')).toBe(true);
-      expect(isIdentifierTerminal('symbol')).toBe(true);
-      expect(isIdentifierTerminal('sym')).toBe(true);
+      expect(isIdentifierTerminal('var_id')).toBe(true);
 
       // Quoted variations in grammar rules
       expect(isIdentifierTerminal('"id"')).toBe(true);
@@ -329,12 +329,55 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       expect(isIdentifierTerminal('id1')).toBe(true);
       expect(isIdentifierTerminal('ident_2')).toBe(true);
 
+      // CRITICAL: Literals like 'num', numbers, and keywords must NEVER be identifier symbols
+      expect(isIdentifierTerminal('num')).toBe(false);
+      expect(isIdentifierTerminal('number')).toBe(false);
+      expect(isIdentifierTerminal('digit')).toBe(false);
+      expect(isIdentifierTerminal('digits')).toBe(false);
+      expect(isIdentifierTerminal('int_lit')).toBe(false);
+      expect(isIdentifierTerminal('10')).toBe(false);
+      expect(isIdentifierTerminal('42')).toBe(false);
+      expect(isIdentifierTerminal('3.14')).toBe(false);
+      expect(isNonIdentifierLiteral('num')).toBe(true);
+      expect(isNonIdentifierLiteral('100')).toBe(true);
+
       // Non-identifiers (keywords, operators, punctuation)
       expect(isIdentifierTerminal('int')).toBe(false);
       expect(isIdentifierTerminal('begin')).toBe(false);
       expect(isIdentifierTerminal('+')).toBe(false);
       expect(isIdentifierTerminal(';')).toBe(false);
       expect(isIdentifierTerminal('{')).toBe(false);
+    });
+
+    it('ensures rules with "num" choose "id" and never declare "num" in symbol table', () => {
+      // Rule with both an identifier and a number literal: "const" "id" "=" "num" ";"
+      const gConstText = `Decl -> "const" "id" "=" "num" ";" .\nStmt -> "id" "=" "num" ";" .`;
+      const gConst = parseGrammar(gConstText).grammar!;
+      const actions = suggestSymbolActions(gConst);
+
+      // "const" rule should declare 'id', NEVER 'num'
+      const constAction = actions.find(a => a.ruleId === gConst.productions[0].id);
+      expect(constAction).toBeDefined();
+      expect(constAction?.actionType).toBe('addSymbol');
+      expect(constAction?.symbolName).toBe('id');
+      expect(constAction?.symbolName).not.toBe('num');
+
+      // Stmt rule has no declaration keyword -> should have NO addSymbol action
+      const stmtAction = actions.find(a => a.ruleId === gConst.productions[1].id);
+      expect(stmtAction).toBeUndefined();
+
+      // Run simulator: symbol table should have 'x', never 'num' or '42'
+      const sim = simulateRecursiveDescent(
+        ['const', 'x', '=', '42', ';'],
+        gConst,
+        analyzeGrammar(gConst),
+        { ruleActions: actions }
+      );
+      const lastStep = sim.steps[sim.steps.length - 1];
+      const allNames = lastStep.symbolTableSnapshot.scopeStack[0].symbols.map(s => s.name);
+      expect(allNames).toContain('x');
+      expect(allNames).not.toContain('num');
+      expect(allNames).not.toContain('42');
     });
 
     it('correctly extracts declared symbols when grammar uses "identifier" or "name" instead of "id"', () => {
