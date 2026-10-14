@@ -151,7 +151,25 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
 - **Interactive Bottom-Up Simulator**:
   - Dual stack display: State stack $[0, 2, 5]$ and Symbol stack $[\$, E, +]$.
   - Trace log showing every shift, reduction, and final acceptance.
-  - Visual tree reconstruction: leaf creation on shift, subtree reduction on reduce.
+
+### 5.3 Recursive Descent & Symbol Table Engine
+- **Multi-Target Code Generation**:
+  - Compiles LL(1) grammars to JavaScript (ES6), PL/0, Oberon-07, C99, and Python 3.
+  - In-browser execution of generated JavaScript parsers.
+- **Interactive Visual Simulator**:
+  - Synchronous 3-column architecture:
+    - **Top**: Input tape streamer, active lookahead (`sym`), position tracker, and step action notes.
+    - **Left**: Simulated activation call stack and active function/branch tracker (`if (sym ∈ {...})`).
+    - **Middle**: Derivation parse tree with active branch highlights.
+    - **Right**: Symbol table ("Stack of Stacks") and lexical scope tree.
+    - **Bottom**: VCR playback controls (step forward/back, play/pause, speed control).
+- **Symbol Table & Lexical Scopes ("Stack of Stacks")**:
+  - Educational model tracking nested scopes, identifier declarations, types, and shadowing.
+  - Inspection views: Scope Tree (hierarchical tree), Active Stack (current activation stack), and All Scopes.
+  - Retention on completion: Symbol table remains preserved after simulation finishes.
+  - Declarative Rule-Action Table: Zero-code heuristic keyword detection (`var`, `let`, `procedure`, `int`, etc.) with customizable action mapping (Enter Scope, Exit Scope, Add Symbol, Mark Type).
+  - Identifier discrimination: Automatic identification of terminals like `id`, `identifier`, `name` while excluding literals (`num`) and punctuation.
+  - Fallback: Transparent pure-syntactic simulation when no declarations are present.
 
 ---
 
