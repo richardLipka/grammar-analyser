@@ -62,9 +62,10 @@ function allTransformations(g: Grammar): { name: string; result: Grammar }[] {
 }
 
 describe('check my transformation on the implemented transformations', () => {
-  it('every transformation of every preset keeps the language', () => {
+  it('every transformation of every preset keeps the language', async () => {
     let checked = 0;
     for (const preset of PRESET_GRAMMARS) {
+      await new Promise(resolve => setTimeout(resolve, 0));
       const original = parse(preset.grammarText);
       // "Start from the original" gives the same language too
       expect(compareLanguages(original, throughText(original, original), 6).kind, preset.id).toBe('same-up-to');
@@ -98,10 +99,11 @@ describe('check my transformation on modified grammars', () => {
     return out;
   }
 
-  it('every difference is confirmed, and each grammar explains the word its own way', () => {
+  it('every difference is confirmed, and each grammar explains the word its own way', async () => {
     let differences = 0;
     let same = 0;
     for (const preset of PRESET_GRAMMARS) {
+      await new Promise(resolve => setTimeout(resolve, 0));
       const original = parse(preset.grammarText);
       for (const { name, text } of modifications(original)) {
         const res = parseGrammar(text);

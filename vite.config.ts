@@ -11,7 +11,9 @@ export default defineConfig({
   },
   test: {
     // Several suites check hundreds of random grammars or large automata;
-    // the CI runners are slower than a desktop, so the default 5 s is too tight
-    testTimeout: 60000
+    // the CI runners are slower than a desktop, so generous timeouts prevent worker RPC timeouts
+    testTimeout: 180000,
+    hookTimeout: 180000,
+    teardownTimeout: 180000
   }
 });
