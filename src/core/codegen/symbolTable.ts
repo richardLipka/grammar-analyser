@@ -48,6 +48,34 @@ export interface SymbolTableSnapshot {
   lastActionMessage?: string;
 }
 
+/**
+ * Tree node representing a scope and all its nested lexical child scopes.
+ */
+export interface ScopeTreeNode {
+  scope: Scope;
+  children: ScopeTreeNode[];
+}
+
+/**
+ * Transforms a flat list of scopes with parentId references into a hierarchical tree.
+ */
+export function buildScopeTree(scopes: Scope[]): ScopeTreeNode[] {
+  const nodeMap = new Map<string, ScopeTreeNode>();
+  for (const s of scopes) {
+    nodeMap.set(s.id, { scope: s, children: [] });
+  }
+  const roots: ScopeTreeNode[] = [];
+  for (const s of scopes) {
+    const node = nodeMap.get(s.id)!;
+    if (s.parentId && nodeMap.has(s.parentId)) {
+      nodeMap.get(s.parentId)!.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
+}
+
 export class SymbolTable {
   private scopeStack: Scope[] = [];
   private allScopesList: Scope[] = [];

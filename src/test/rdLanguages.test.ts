@@ -28,8 +28,19 @@ const works = (cmd: string, args: string[]) => {
     return false;
   }
 };
+const canCompileC = () => {
+  try {
+    const res = spawnSync('gcc', ['-x', 'c', '-', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null'], {
+      input: 'int main(void){return 0;}',
+      encoding: 'utf8'
+    });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+};
 const python = ['python3', 'python'].find(cmd => works(cmd, ['--version']));
-const gcc = works('gcc', ['--version']);
+const gcc = canCompileC();
 
 /** The LL(1) grammars: the presets that are LL(1), and random ones. */
 function grammars(): { label: string; g: Grammar; sample?: string[] }[] {

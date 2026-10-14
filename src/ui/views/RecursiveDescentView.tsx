@@ -15,7 +15,10 @@ import {
   RuleActionDefinition,
   suggestSymbolActions,
   DeclarationKeywordConfig,
-  DEFAULT_KEYWORD_CONFIG
+  DEFAULT_KEYWORD_CONFIG,
+  buildScopeTree,
+  ScopeTreeNode,
+  Scope
 } from '../../core/codegen/symbolTable';
 import { Language } from '../../i18n/translations';
 import {
@@ -38,7 +41,9 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Settings2,
-  Info
+  Info,
+  GitFork,
+  FolderTree
 } from 'lucide-react';
 import { RD_SAMPLE_GRAMMARS } from '../../core/presets/rdSampleGrammars';
 
@@ -216,6 +221,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(600);
+  const [scopeDisplayMode, setScopeDisplayMode] = useState<'tree' | 'stack' | 'all'>('tree');
 
   // Simulation execution with custom action hooks
   const simulation = useMemo(() => {
@@ -237,6 +243,108 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   useAutoPlay(isPlaying, currentStepIdx, simulation.steps.length, playSpeed, setCurrentStepIdx, () => setIsPlaying(false));
 
   const currentStep = simulation.steps[currentStepIdx] ?? simulation.steps[simulation.steps.length - 1];
+  const isSimulationFinished = simulation.steps.length > 0 && currentStepIdx >= simulation.steps.length - 1;
+
+  const totalPreservedSymbols = useMemo(() => {
+    if (!currentStep?.symbolTableSnapshot?.allScopes) return 0;
+    return currentStep.symbolTableSnapshot.allScopes.reduce((sum, s) => sum + s.symbols.length, 0);
+  }, [currentStep]);
+
+  const scopeTree = useMemo(() => {
+    if (!currentStep?.symbolTableSnapshot?.allScopes) return [];
+    return buildScopeTree(currentStep.symbolTableSnapshot.allScopes);
+  }, [currentStep]);
+
+  const renderScopeCard = (scope: Scope, isTopStack: boolean = false) => {
+    const isClosed = !scope.isOpen;
+    return (
+      <div
+        key={scope.id}
+        className={`rd-scope-card ${isTopStack ? 'active-top' : ''} ${isClosed ? 'rd-scope-closed' : ''}`}
+      >
+        <div className="rd-scope-header">
+          <span className="rd-scope-name">
+            {scope.parentId ? <GitFork size={13} color="var(--color-primary)" /> : <Database size={13} color="var(--color-accent, #8b5cf6)" />}
+            <span>{scope.name}</span>
+            {isTopStack && (
+              <span className="badge badge-accent" style={{ fontSize: '10px' }}>
+                {cz ? 'aktuální vrchol' : 'top of stack'}
+              </span>
+            )}
+            {scope.isOpen ? (
+              <span className="badge badge-primary" style={{ fontSize: '10px' }}>
+                {cz ? 'otevřený blok' : 'open scope'}
+              </span>
+            ) : (
+              <span className="badge badge-secondary" style={{ fontSize: '10px' }}>
+                {cz ? 'uzavřený / zachovaný' : 'closed / preserved'}
+              </span>
+            )}
+          </span>
+          <span className="rd-scope-badge">
+            {cz ? `Úroveň ${scope.level}` : `Level ${scope.level}`} · {scope.symbols.length} {cz ? 'položek' : 'symbols'}
+          </span>
+        </div>
+
+        {scope.symbols.length === 0 ? (
+          <div className="hint-text" style={{ fontStyle: 'italic', fontSize: '11px', padding: '4px' }}>
+            {cz ? '(žádné symboly deklarované v tomto bloku)' : '(no symbols declared in this scope)'}
+          </div>
+        ) : (
+          <table className="rd-symbol-table">
+            <thead>
+              <tr>
+                <th>{cz ? 'Název symbolu' : 'Symbol name'}</th>
+                <th>{cz ? 'Typ' : 'Type'}</th>
+                <th>{cz ? 'Druh' : 'Kind'}</th>
+                <th>{cz ? 'Vlastní data' : 'Custom data'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scope.symbols.map((sym, symIdx) => {
+                const isLatest = currentStep?.symbolTableSnapshot.lastModifiedSymbol?.name === sym.name;
+                return (
+                  <tr key={`${sym.name}_${symIdx}`} className={isLatest ? 'rd-symbol-new' : ''}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                      {sym.name}
+                    </td>
+                    <td>
+                      <span className="rd-type-tag">{sym.type}</span>
+                    </td>
+                    <td>
+                      <span className="rd-kind-tag">{sym.kind}</span>
+                    </td>
+                    <td>
+                      {Object.entries(sym.customData).map(([k, v]) => (
+                        <span key={k} className="rd-meta-pill">
+                          {k}: {String(v)}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    );
+  };
+
+  const renderScopeTreeNode = (node: ScopeTreeNode): React.ReactNode => {
+    const isTopStack =
+      currentStep?.symbolTableSnapshot.scopeStack[currentStep.symbolTableSnapshot.scopeStack.length - 1]?.id === node.scope.id;
+    return (
+      <div key={node.scope.id} className="rd-tree-node">
+        {renderScopeCard(node.scope, isTopStack)}
+        {node.children.length > 0 && (
+          <div className="rd-tree-children">
+            {node.children.map(child => renderScopeTreeNode(child))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Run generated JS in browser
   const runGeneratedJs = () => {
@@ -636,29 +744,95 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
             </div>
           )}
 
-          {/* Symbol Table Visualizer ("Stack of Stacks") */}
+          {/* Symbol Table Visualizer ("Stack of Stacks" & "Scope Tree") */}
           {currentStep && (
             <div className="rd-panel" style={{ marginTop: '16px' }}>
-              <div className="rd-panel-title">
+              <div className="rd-panel-title" style={{ flexWrap: 'wrap', gap: '8px' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Database size={16} color="var(--color-accent, #8b5cf6)" />
-                  {cz ? 'Tabulka symbolů: Zásobník lexikálních rozsahů (Stack of Stacks)' : 'Symbol Table: Lexical scope stack (Stack of Stacks)'}
+                  {cz ? 'Tabulka symbolů & Lexikální rozsahy' : 'Symbol Table & Lexical Scopes'}
                 </span>
-                <div style={{ display: 'flex', gap: '6px' }}>
+
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* View Mode Toggle: Tree vs Active Stack vs All Scopes */}
+                  <div className="rd-scope-mode-toggle" role="group" aria-label={cz ? 'Režim zobrazení rozsahů' : 'Scope display mode'}>
+                    <button
+                      type="button"
+                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'tree' ? 'active' : ''}`}
+                      onClick={() => setScopeDisplayMode('tree')}
+                      title={cz ? 'Hierarchický strom zanoření lexikálních rozsahů' : 'Hierarchical tree of nested lexical scopes'}
+                    >
+                      <GitFork size={12} />
+                      {cz ? 'Strom rozsahů' : 'Scope Tree'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'stack' ? 'active' : ''}`}
+                      onClick={() => setScopeDisplayMode('stack')}
+                      title={cz ? 'Dynamický zásobník právě aktivních rozsahů' : 'Runtime stack of currently active scopes'}
+                    >
+                      <Layers size={12} />
+                      {cz ? 'Aktivní zásobník' : 'Active Stack'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rd-scope-mode-btn ${scopeDisplayMode === 'all' ? 'active' : ''}`}
+                      onClick={() => setScopeDisplayMode('all')}
+                      title={cz ? 'Chronologický přehled všech bloků' : 'Chronological list of all blocks'}
+                    >
+                      <Database size={12} />
+                      {cz ? 'Všechny bloky' : 'All Scopes'}
+                    </button>
+                  </div>
+
                   <span className="badge badge-secondary">
-                    {cz ? `Aktivní bloky: ${currentStep.symbolTableSnapshot.scopeStack.length}` : `Active scopes: ${currentStep.symbolTableSnapshot.scopeStack.length}`}
+                    {cz ? `Aktivní: ${currentStep.symbolTableSnapshot.scopeStack.length}` : `Active: ${currentStep.symbolTableSnapshot.scopeStack.length}`}
                   </span>
                   <span className="badge badge-primary">
-                    {cz ? `Symboly: ${currentStep.symbolTableSnapshot.totalActiveSymbols}` : `Symbols: ${currentStep.symbolTableSnapshot.totalActiveSymbols}`}
+                    {cz ? `Celkem symbolů: ${totalPreservedSymbols}` : `Total symbols: ${totalPreservedSymbols}`}
                   </span>
                 </div>
               </div>
 
               <p className="hint-text" style={{ margin: '0 0 10px' }}>
                 {cz
-                  ? 'Zásobník zásobníků: Vnější zásobník představuje vnořené bloky (úrovně zanoření). Každý blok má svůj vnitřní zásobník deklarovaných identifikátorů, jejich typů a uživatelských metadat. Při vyhledávání se postupuje od vrcholu k bazi (lexikální překrývání).'
-                  : 'Stack of stacks: The outer stack represents nested lexical scopes (nesting levels). Each scope contains its own stack of declared identifiers, types, and metadata. Lookups proceed from top to bottom (lexical shadowing).'}
+                  ? 'Lexikální rozsah & Zásobník zásobníků: Globální a lokální bloky tvoří stromovou hierarchii. Během analýzy se bloky otevírají na aktivním zásobníku a po opuštění zůstávají trvale zachovány v tabulce pro inspekci.'
+                  : 'Lexical Scoping & Stack of Stacks: Global and local scopes form a tree hierarchy. Scopes are pushed onto the active stack during parsing and remain permanently preserved in the table after completion.'}
               </p>
+
+              {/* Simulation Completion Notice & Preservation Banner */}
+              {isSimulationFinished && (
+                <div
+                  className="report-box success"
+                  style={{
+                    margin: '0 0 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle2 size={16} color="var(--color-success)" />
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                      {cz
+                        ? `Analýza dokončena. Celá tabulka symbolů zůstává zachována: ${totalPreservedSymbols} deklarovaných symbolů v ${currentStep.symbolTableSnapshot.allScopes.length} lexikálních blocích.`
+                        : `Parsing finished. Full symbol table remains preserved: ${totalPreservedSymbols} declared symbols across ${currentStep.symbolTableSnapshot.allScopes.length} lexical scopes.`}
+                    </span>
+                  </div>
+                  {scopeDisplayMode !== 'tree' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => setScopeDisplayMode('tree')}
+                      style={{ fontSize: '11px', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <GitFork size={12} /> {cz ? 'Zobrazit strom rozsahů' : 'Show scope tree'}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Pure syntax mode notice if no declarations exist */}
               {isPureSyntaxMode && (
@@ -683,73 +857,42 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               )}
 
               {(!isPureSyntaxMode || showPureSymTab) && (
-              <div className="rd-symtab-container">
-                <div className="rd-scope-stack">
-                  {currentStep.symbolTableSnapshot.scopeStack.map((scope, sIdx) => {
-                    const isTop = sIdx === currentStep.symbolTableSnapshot.scopeStack.length - 1;
-                    return (
-                      <div key={scope.id} className={`rd-scope-card ${isTop ? 'active-top' : ''}`}>
-                        <div className="rd-scope-header">
-                          <span className="rd-scope-name">
-                            <Database size={13} color={isTop ? 'var(--color-accent, #8b5cf6)' : 'var(--color-text-secondary)'} />
-                            <span>{scope.name}</span>
-                            {isTop && (
-                              <span className="badge badge-accent" style={{ fontSize: '10px' }}>
-                                {cz ? 'aktuální blok' : 'current scope'}
-                              </span>
-                            )}
-                          </span>
-                          <span className="rd-scope-badge">
-                            {cz ? `Úroveň ${scope.level}` : `Level ${scope.level}`} · {scope.symbols.length} {cz ? 'položek' : 'symbols'}
-                          </span>
-                        </div>
+                <div className="rd-symtab-container">
+                  {/* TREE VIEW */}
+                  {scopeDisplayMode === 'tree' && (
+                    <div className="rd-tree-container">
+                      {scopeTree.map(rootNode => renderScopeTreeNode(rootNode))}
+                    </div>
+                  )}
 
-                        {scope.symbols.length === 0 ? (
-                          <div className="hint-text" style={{ fontStyle: 'italic', fontSize: '11px', padding: '4px' }}>
-                            {cz ? '(žádné symboly deklarované v tomto bloku)' : '(no symbols declared in this scope)'}
-                          </div>
-                        ) : (
-                          <table className="rd-symbol-table">
-                            <thead>
-                              <tr>
-                                <th>{cz ? 'Název symbolu' : 'Symbol name'}</th>
-                                <th>{cz ? 'Typ' : 'Type'}</th>
-                                <th>{cz ? 'Druh' : 'Kind'}</th>
-                                <th>{cz ? 'Vlastní data' : 'Custom data'}</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {scope.symbols.map((sym, symIdx) => {
-                                const isLatest = currentStep.symbolTableSnapshot.lastModifiedSymbol?.name === sym.name;
-                                return (
-                                  <tr key={`${sym.name}_${symIdx}`} className={isLatest ? 'rd-symbol-new' : ''}>
-                                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                                      {sym.name}
-                                    </td>
-                                    <td>
-                                      <span className="rd-type-tag">{sym.type}</span>
-                                    </td>
-                                    <td>
-                                      <span className="rd-kind-tag">{sym.kind}</span>
-                                    </td>
-                                    <td>
-                                      {Object.entries(sym.customData).map(([k, v]) => (
-                                        <span key={k} className="rd-meta-pill">
-                                          {k}: {String(v)}
-                                        </span>
-                                      ))}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {/* ACTIVE STACK OF STACKS */}
+                  {scopeDisplayMode === 'stack' && (
+                    <div className="rd-scope-stack">
+                      {currentStep.symbolTableSnapshot.scopeStack.map((scope, sIdx) =>
+                        renderScopeCard(scope, sIdx === currentStep.symbolTableSnapshot.scopeStack.length - 1)
+                      )}
+                      {isSimulationFinished && currentStep.symbolTableSnapshot.scopeStack.length <= 1 && currentStep.symbolTableSnapshot.allScopes.length > 1 && (
+                        <div className="hint-text" style={{ fontStyle: 'italic', fontSize: '12px', padding: '8px', textAlign: 'center' }}>
+                          {cz
+                            ? 'Všechny vnořené bloky byly korektně opuštěny (aktivní zásobník se vrátil na globální úroveň). Přepněte na „Strom rozsahů“ pro zobrazení všech zachovaných lokálních bloků.'
+                            : 'All nested scopes have exited cleanly (active stack popped back to global). Switch to "Scope Tree" to inspect all preserved local scopes.'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ALL SCOPES (FLAT LIST) */}
+                  {scopeDisplayMode === 'all' && (
+                    <div className="rd-scope-stack">
+                      {currentStep.symbolTableSnapshot.allScopes.map(scope =>
+                        renderScopeCard(
+                          scope,
+                          scope.id === currentStep.symbolTableSnapshot.scopeStack[currentStep.symbolTableSnapshot.scopeStack.length - 1]?.id
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
               )}
             </div>
           )}

@@ -3,7 +3,7 @@ import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLLTable } from '../core/ll/llTable';
 import { simulateRecursiveDescent } from '../core/codegen/rdSimulator';
-import { suggestSymbolActions, DEFAULT_KEYWORD_CONFIG } from '../core/codegen/symbolTable';
+import { suggestSymbolActions, DEFAULT_KEYWORD_CONFIG, buildScopeTree } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
 
 describe('Recursive Descent Scoping & Pure Syntax Execution', () => {
@@ -222,4 +222,54 @@ describe('Recursive Descent Scoping & Pure Syntax Execution', () => {
       expect(bs.branchChoice!.lookahead).toBeDefined();
     }
   });
+
+  it('builds a hierarchical scope tree and retains all scopes/symbols upon program completion', () => {
+    const cSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_c_blocks')!;
+    const parsed = parseGrammar(cSample.grammarText);
+    const grammar = parsed.grammar!;
+    const analysis = analyzeGrammar(grammar);
+    const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
+
+    // Nested C program with outer and inner blocks
+    const tokens = [
+      '{', 'int', 'id', ';',
+      '{', 'float', 'id', ';', '}',
+      '{', 'char', 'id', ';', '}',
+      '}'
+    ];
+
+    const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
+    expect(res.accepted).toBe(true);
+
+    const finalStep = res.steps[res.steps.length - 1];
+    // Active stack popped back to global (length 1)
+    expect(finalStep.symbolTableSnapshot.scopeStack.length).toBe(1);
+
+    // But allScopes retains every scope created!
+    // global + outer block + first inner block + second inner block = 4 scopes
+    expect(finalStep.symbolTableSnapshot.allScopes.length).toBe(4);
+
+    // Build the hierarchical tree
+    const tree = buildScopeTree(finalStep.symbolTableSnapshot.allScopes);
+    expect(tree.length).toBe(1); // One global root
+    expect(tree[0].scope.name).toBe('global');
+    expect(tree[0].children.length).toBe(1); // Outer block is child of global
+
+    const outerBlockNode = tree[0].children[0];
+    expect(outerBlockNode.scope.name).toBe('scope_Block');
+    expect(outerBlockNode.scope.symbols.some(s => s.type === 'int')).toBe(true);
+    expect(outerBlockNode.children.length).toBe(2); // Two nested sibling blocks
+
+    const inner1 = outerBlockNode.children[0];
+    const inner2 = outerBlockNode.children[1];
+    expect(inner1.scope.symbols.some(s => s.type === 'float')).toBe(true);
+    expect(inner2.scope.symbols.some(s => s.type === 'char')).toBe(true);
+
+    // Verify all scopes in final state are marked isOpen === false except root global
+    expect(tree[0].scope.isOpen).toBe(true);
+    expect(outerBlockNode.scope.isOpen).toBe(false);
+    expect(inner1.scope.isOpen).toBe(false);
+    expect(inner2.scope.isOpen).toBe(false);
+  });
 });
+

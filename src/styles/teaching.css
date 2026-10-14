@@ -2540,4 +2540,68 @@
   border-color: var(--color-primary);
 }
 
+/* Scope Tree View & Closed Scope Presentation */
+.rd-scope-closed {
+  opacity: 0.92;
+  border-style: dashed;
+}
+
+.rd-tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.rd-tree-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rd-tree-children {
+  position: relative;
+  margin-left: 18px;
+  padding-left: 14px;
+  border-left: 2px dashed var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.rd-scope-mode-toggle {
+  display: inline-flex;
+  gap: 3px;
+  background-color: var(--color-bg-base);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.rd-scope-mode-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.rd-scope-mode-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.rd-scope-mode-btn.active {
+  color: var(--color-primary);
+  background-color: var(--color-primary-subtle);
+}
+
 
