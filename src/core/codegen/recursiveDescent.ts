@@ -48,10 +48,11 @@ const PL0_KEYWORDS = new Set(['const', 'var', 'procedure', 'call', 'begin', 'end
 const C_KEYWORDS = new Set(['auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extern', 'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register', 'restrict', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while', 'bool', 'true', 'false', 'printf', 'getchar', 'putchar', 'EOF', 'NULL', 'stdin', 'stdout', 'exit']);
 const PYTHON_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield', 'match', 'case', 'type', 'print', 'sys', 'len', 'input', 'int', 'str']);
 const OBERON_KEYWORDS = new Set(['ARRAY', 'BEGIN', 'BY', 'CASE', 'CONST', 'DIV', 'DO', 'ELSE', 'ELSIF', 'END', 'FALSE', 'FOR', 'IF', 'IMPORT', 'IN', 'IS', 'MOD', 'MODULE', 'NIL', 'OF', 'OR', 'POINTER', 'PROCEDURE', 'RECORD', 'REPEAT', 'RETURN', 'THEN', 'TO', 'TRUE', 'TYPE', 'UNTIL', 'VAR', 'WHILE']);
+const JS_KEYWORDS = new Set(['break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch', 'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'let', 'static', 'enum', 'await', 'async', 'null', 'true', 'false']);
 /** Names used by the generated programs themselves; avoided regardless of case (some PL/0 compilers ignore it) */
 const RESERVED_NAMES = new Set(['sym', 'ok', 'want', 'num', 'dig', 'rule', 'mine', 'which', 'next', 'error', 'expect', 'writenum', 'parse', 'tend', 'parser', 'in', 'out', 'main', 'data', 'pos']);
-/** A keyword (or a name the program uses) of one of the four languages */
-const isKeyword = (x: string) => PL0_KEYWORDS.has(x.toLowerCase()) || OBERON_KEYWORDS.has(x.toUpperCase()) || C_KEYWORDS.has(x) || PYTHON_KEYWORDS.has(x);
+/** A keyword (or a name the program uses) of one of the target languages */
+const isKeyword = (x: string) => PL0_KEYWORDS.has(x.toLowerCase()) || OBERON_KEYWORDS.has(x.toUpperCase()) || C_KEYWORDS.has(x) || PYTHON_KEYWORDS.has(x) || JS_KEYWORDS.has(x);
 const clashes = (names: Set<string>, x: string) => names.has(x) || RESERVED_NAMES.has(x.toLowerCase());
 
 /** Characters for the terminals: their own when single printable ASCII, otherwise substitutes. */
@@ -110,6 +111,7 @@ export interface GeneratedParser {
   oberon: string;
   c: string;
   python: string;
+  js: string;
 }
 
 /** Calls of each non-terminal (the non-terminals of its right-hand sides, in order). */
@@ -186,7 +188,8 @@ export function generateRecursiveDescent(g: Grammar, analysis: GrammarAnalysis):
     pl0: generatePl0(g, reach, nest, nested, tokens, procNames, rules, predict, constOf),
     oberon: generateOberon(g, reach, nest, nested, tokens, procNames, rules, predict),
     c: generateC(g, reach, tokens, procNames, rules, predict, constOf),
-    python: generatePython(g, reach, tokens, procNames, rules, predict, constOf)
+    python: generatePython(g, reach, tokens, procNames, rules, predict, constOf),
+    js: generateJavaScript(g, reach, tokens, procNames, rules, predict, constOf)
   };
 }
 
@@ -600,5 +603,135 @@ function generatePython(
   out.push('if ok:');
   out.push("    print('\\nOK', end='')");
   out.push('print()');
+  return out.join('\n') + '\n';
+}
+
+function jsChar(code: number): string {
+  if (code === 39) return "'\\''";
+  if (code === 92) return "'\\\\'";
+  return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : `String.fromCharCode(${code})`;
+}
+
+function generateJavaScript(
+  g: Grammar,
+  nts: string[],
+  tokens: TokenCode[],
+  names: Map<string, string>,
+  rules: (A: string) => Production[],
+  predict: (p: Production) => string[],
+  constOf: (la: string) => string
+): string {
+  const out: string[] = [];
+  out.push('// Recursive descent, generated from an LL(1) grammar in JavaScript (ES6+).');
+  out.push('// Every terminal is one input character; the input ends with $.');
+  out.push('// Output: the left parse (rule numbers), then OK, or ERR and the symbol');
+  out.push('// where the error was found.');
+  out.push('');
+  out.push('// The terminals and their characters');
+  for (const t of tokens) out.push(`const ${t.name} = ${jsChar(t.code)}; // ${t.terminal}`);
+  out.push("const tend = '$';");
+  out.push('');
+  out.push('/**');
+  out.push(' * Recursive descent parser function.');
+  out.push(' * @param {string} input - Input text (tokens separated by whitespace, ending with $)');
+  out.push(' * @param {Object} [hooks] - Optional semantic hooks:');
+  out.push(' *   - onEnter(nonTerminal: string): void');
+  out.push(' *   - onRule(ruleId: number, lhs: string, rhs: string[]): void');
+  out.push(' *   - onMatch(terminal: string, char: string): void');
+  out.push(' *   - onExit(nonTerminal: string): void');
+  out.push(' *   - symTab: SymbolTable instance');
+  out.push(' * @returns {{ ok: boolean, leftParse: number[], output: string }}');
+  out.push(' */');
+  out.push('export function parse(input = \'\', hooks = {}) {');
+  out.push('  const data = String(input);');
+  out.push('  let pos = 0;');
+  out.push('  let sym = tend; // the current input symbol');
+  out.push('  let ok = true;   // no error found yet');
+  out.push('  const leftParse = [];');
+  out.push('  const log = [];');
+  out.push('');
+  out.push('  function next() {');
+  out.push('    while (pos < data.length && data.charCodeAt(pos) <= 32) {');
+  out.push('      pos++;');
+  out.push('    }');
+  out.push('    if (pos < data.length) {');
+  out.push('      sym = data[pos++];');
+  out.push('    } else {');
+  out.push('      sym = tend;');
+  out.push('    }');
+  out.push('  }');
+  out.push('');
+  out.push('  function error() {');
+  out.push('    if (ok) {');
+  out.push('      ok = false;');
+  out.push('      log.push(`ERR ${sym}`);');
+  out.push('    }');
+  out.push('  }');
+  out.push('');
+  out.push('  function expect(want, terminalName) {');
+  out.push('    if (ok) {');
+  out.push('      if (sym === want) {');
+  out.push('        if (hooks.onMatch) hooks.onMatch(terminalName || want, sym);');
+  out.push('        next();');
+  out.push('      } else {');
+  out.push('        error();');
+  out.push('      }');
+  out.push('    }');
+  out.push('  }');
+
+  for (const A of nts) {
+    out.push('');
+    for (const p of rules(A)) out.push(`  // ${ruleText(p)}`);
+    out.push(`  function ${names.get(A)}() {`);
+    out.push('    if (!ok) return;');
+    out.push(`    if (hooks.onEnter) hooks.onEnter(${JSON.stringify(A)});`);
+    let first = true;
+    for (const p of rules(A)) {
+      const las = predict(p).map(constOf);
+      if (las.length === 0) continue;
+      const cond = las.length === 1 ? `sym === ${las[0]}` : `[${las.join(', ')}].includes(sym)`;
+      out.push(`    ${first ? 'if' : 'else if'} (${cond}) { // ${ruleText(p)}`);
+      first = false;
+      out.push(`      leftParse.push(${p.id});`);
+      out.push(`      if (hooks.onRule) hooks.onRule(${p.id}, ${JSON.stringify(p.lhs)}, ${JSON.stringify(p.rhs)});`);
+      for (const X of p.rhs) {
+        if (g.nonTerminals.has(X)) {
+          out.push(`      ${names.get(X)}();`);
+        } else {
+          out.push(`      expect(${constOf(X)}, ${JSON.stringify(X)});`);
+        }
+      }
+      out.push('    }');
+    }
+    if (first) {
+      out.push('    error();');
+    } else {
+      out.push('    else {');
+      out.push('      error();');
+      out.push('    }');
+    }
+    out.push(`    if (hooks.onExit) hooks.onExit(${JSON.stringify(A)});`);
+    out.push('  }');
+  }
+
+  out.push('');
+  out.push('  next();');
+  out.push(`  ${names.get(g.startSymbol)}();`);
+  out.push('  if (ok && sym !== tend) error();');
+  out.push('  const parseStr = leftParse.length > 0 ? `${leftParse.join(" ")} ` : "";');
+  out.push('  const output = `${parseStr}\\n${ok ? "OK" : log.join("\\n")}`;');
+  out.push('  return { ok, leftParse, output };');
+  out.push('}');
+  out.push('');
+  out.push('// Standalone CLI execution via Node.js: node parser.js < input.txt');
+  out.push('if (typeof process !== "undefined" && process.argv && process.argv[1]?.endsWith("parser.js")) {');
+  out.push('  (async () => {');
+  out.push('    const fs = typeof require !== "undefined" ? require("fs") : (await import("fs")).default;');
+  out.push('    const input = fs.readFileSync(0, "utf-8");');
+  out.push('    const res = parse(input);');
+  out.push('    process.stdout.write(res.output + "\\n");');
+  out.push('    process.exit(res.ok ? 0 : 1);');
+  out.push('  })();');
+  out.push('}');
   return out.join('\n') + '\n';
 }

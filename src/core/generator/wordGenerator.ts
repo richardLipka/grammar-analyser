@@ -19,7 +19,7 @@ export interface DerivationNode {
    * the word has another symbol or ends ('mismatch'), or a symbol after it
    * that was not derived any more ('pending').
    */
-  mark?: 'mismatch' | 'pending';
+  mark?: 'mismatch' | 'pending' | 'current';
   children?: DerivationNode[];
 }
 
