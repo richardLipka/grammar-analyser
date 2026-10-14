@@ -128,8 +128,6 @@ function rulePrecedence(decl: PrecedenceDeclarations, p: Production, g: Grammar)
   return prec ? { ...prec, via } : undefined;
 }
 
-const ASSOC_NAME = { left: '%left', right: '%right', nonassoc: '%nonassoc', precedence: '%precedence' };
-
 /** Decides a shift/reduce cell by precedence (null = cannot be decided). */
 function resolveByPrecedence(
   decl: PrecedenceDeclarations,

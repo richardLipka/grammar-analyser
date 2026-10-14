@@ -2,7 +2,7 @@
  * LR(0) and LR(1) Item definitions and core operations
  */
 
-import { Production, EPSILON, END_MARKER } from '../ast/grammar';
+import { Production } from '../ast/grammar';
 
 export interface LR0Item {
   production: Production;

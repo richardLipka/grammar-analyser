@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Copy, Check, Download } from 'lucide-react';
+import { FileText, Check, Download } from 'lucide-react';
 import { Language } from '../../i18n/translations';
 
 export interface LatexExportButtonProps {

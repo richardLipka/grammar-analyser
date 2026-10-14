@@ -3,7 +3,6 @@ import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import {
   reduceGrammar,
-  removeEpsilonRules,
   removeUnitRules,
   removeLeftRecursion,
   leftFactorGrammar,
@@ -18,7 +17,7 @@ import {
   buildLR1Automaton,
   buildLALR1Automaton
 } from '../core/lr/lrAutomaton';
-import { groupLR1Items, formatGroupedLR1Item } from '../core/lr/lrItem';
+import { groupLR1Items } from '../core/lr/lrItem';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { generateShortestWords } from '../core/generator/wordGenerator';

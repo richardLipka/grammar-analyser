@@ -4,7 +4,7 @@
  * transformation (checked with an Earley recognizer on all short words).
  */
 import { describe, it, expect } from 'vitest';
-import { Grammar, Production, formatGrammarForEditor, END_MARKER } from '../core/ast/grammar';
+import { Grammar, formatGrammarForEditor, END_MARKER } from '../core/ast/grammar';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar, computeNullable, computeLeftRecursion } from '../core/analyser/grammarAnalyser';
 import { buildLLTable } from '../core/ll/llTable';

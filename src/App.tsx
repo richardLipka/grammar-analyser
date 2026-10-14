@@ -292,6 +292,19 @@ export const App: React.FC = () => {
     }
   };
 
+  /** A sample grammar of the recursive-descent tab is a new grammar too: the preset it equals, or a new history. */
+  const loadSampleGrammar = (text: string, sampleWord: string, title: { en: string; cz: string }) => {
+    const preset = PRESET_GRAMMARS.find(p => p.grammarText === text);
+    if (preset) {
+      handleSelectPreset(preset.id);
+      return;
+    }
+    cancelTyping();
+    history.reset({ text, kind: 'preset', titleEn: title.en, titleCz: title.cz });
+    setSampleInput(sampleWord);
+    showText(text);
+  };
+
   /** Keeps the grammar and forgets how it was reached (undo/redo and the protocol of transformations). */
   const clearHistory = () => {
     cancelTyping();
@@ -1100,10 +1113,7 @@ export const App: React.FC = () => {
                     defaultInput={demoWord}
                     lang={lang}
                     onAttemptLL1={!isStale && canAnalyse ? () => applyWholeGrammar('ll1') : undefined}
-                    onLoadGrammar={(text, sample) => {
-                      handleEditGrammar(text);
-                      if (sample) setSampleInput(sample);
-                    }}
+                    onLoadGrammar={loadSampleGrammar}
                   />
                 )}
 

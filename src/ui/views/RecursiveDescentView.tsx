@@ -10,7 +10,7 @@ import { parseGrammar } from '../../core/parser/grammarParser';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
-import { simulateRecursiveDescent, RDSimulationStep } from '../../core/codegen/rdSimulator';
+import { simulateRecursiveDescent, RDSimulationResult } from '../../core/codegen/rdSimulator';
 import {
   RuleActionDefinition,
   suggestSymbolActions,
@@ -119,7 +119,8 @@ interface RecursiveDescentViewProps {
   defaultInput?: string;
   lang: Language;
   onAttemptLL1?: () => void;
-  onLoadGrammar?: (grammarText: string, sampleInput?: string) => void;
+  /** Loads a sample grammar as a new grammar (with its word of terminals and its name) */
+  onLoadGrammar?: (grammarText: string, sampleInput: string, title: { en: string; cz: string }) => void;
 }
 
 /**
@@ -157,8 +158,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [keywordInputs, setKeywordInputs] = useState(() => keywordInputsOf(DEFAULT_KEYWORD_CONFIG));
   const [showKeywordEditor, setShowKeywordEditor] = useState(true);
   const [showPureSymTab, setShowPureSymTab] = useState(false);
-  // A name missing in the symbol table stops the descent (semantic error), or is only reported
-  const [stopOnUndeclared, setStopOnUndeclared] = useState(true);
+  // A name missing in the symbol table or declared twice in one scope stops the descent (semantic error), or is only reported
+  const [stopOnSemanticErrors, setStopOnSemanticErrors] = useState(true);
 
   // Rule actions: detected from the keywords, switched off, or edited by hand
   const [actionMode, setActionMode] = useState<'none' | 'auto' | 'custom'>('auto');
@@ -253,15 +254,16 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
 
   const simulation = useMemo(() => {
     if (!llTable.isLL1 || tokenized.unknown.length > 0) {
-      return { accepted: false, steps: [] as RDSimulationStep[], leftParse: [] as number[], lexemes: [] as string[], undeclared: [] as { name: string; step: number }[], errorMessage: undefined as string | undefined, errorMessageCz: undefined as string | undefined };
+      const none: RDSimulationResult = { accepted: false, steps: [], leftParse: [], lexemes: [], undeclared: [], redeclared: [], unnamedIdentifiers: 0 };
+      return none;
     }
     return simulateRecursiveDescent(tokenized.tokens, grammar, analysis, {
       ruleActions,
       keywords: keywordConfig,
       lexemes: tokenized.lexemes,
-      stopOnUndeclared
+      stopOnSemanticErrors
     });
-  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig, stopOnUndeclared]);
+  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig, stopOnSemanticErrors]);
 
   // Reset simulation step on new input
   useEffect(() => {
@@ -274,6 +276,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const currentStep = simulation.steps[currentStepIdx] ?? simulation.steps[simulation.steps.length - 1];
   const isSimulationFinished = simulation.steps.length > 0 && currentStepIdx >= simulation.steps.length - 1;
   const undeclaredNames = [...new Set(simulation.undeclared.map(u => u.name))];
+  const redeclaredNames = [...new Set(simulation.redeclared.map(r => `${r.name} (${r.scopeName})`))];
 
   const totalPreservedSymbols = useMemo(() => {
     if (!currentStep?.symbolTableSnapshot?.allScopes) return 0;
@@ -645,7 +648,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       'Jména a čísla ze vstupu čte jako terminál identifikátoru a čísla gramatiky (x → ident, 10 → number). Lexikální analýza je jednoduchá: slova oddělená mezerami, uvnitř slova nejdelší shoda; klíčová slova jsou terminály gramatiky, které vypadají jako jména.',
       'Jméno deklaruje ve chvíli, kdy procedura pravidla přečte jeho identifikátor: proměnné a konstanty (i seznamy var x, y), procedury a funkce (v obklopujícím rozsahu), parametry.',
       'Rozsahy: procedura nebo funkce má vlastní rozsah, blok { } nebo begin … end jen tehdy, když v něm mohou být deklarace. Ukáže vnoření, zastínění jména ve vnitřním rozsahu, zásobník otevřených rozsahů i uzavřené rozsahy (strom).',
-      'Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven a krok ukáže, kde bylo nalezeno. Nenalezené jméno je sémantická chyba, která zastaví analýzu, i když je slovo syntakticky správné (lze vypnout). Jméno deklarované v jednom rozsahu dvakrát se označí.',
+      'Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven a krok ukáže, kde bylo nalezeno. Nenalezené jméno je sémantická chyba, která zastaví analýzu, i když je slovo syntakticky správné; stejně tak jméno deklarované v jednom rozsahu podruhé (obě kontroly lze vypnout, pak se jen ohlásí). Kontrolují se jen skutečná jména: terminál id napsaný místo jména nic nepojmenovává.',
       'Typ jména je typové klíčové slovo přečtené naposled před jménem (int x, Type x).',
       'Akce rozpozná podle klíčových slov a názvů terminálů; v tabulce níže je lze upravit (pozice v pravé straně, druh, typ, vlastní kód).'
     ]
@@ -653,7 +656,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       'Names and numbers in the input are read as the identifier and number terminals of the grammar (x → ident, 10 → number). The lexical analysis is simple: words separated by spaces, longest match within a word; keywords are the terminals of the grammar that look like names.',
       'A name is declared when the procedure of a rule reads its identifier: variables and constants (also lists var x, y), procedures and functions (in the enclosing scope), parameters.',
       'Scopes: a procedure or function has its own scope, a block { } or begin … end only when declarations can occur in it. Nesting, shadowing in an inner scope, the stack of open scopes and the closed scopes (tree) are shown.',
-      'Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards, and the step shows where it was found. A name that is not found is a semantic error that stops the analysis even of a syntactically correct word (can be switched off). A name declared twice in one scope is marked.',
+      'Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards, and the step shows where it was found. A name that is not found is a semantic error that stops the analysis even of a syntactically correct word, and so is a name declared a second time in one scope (both checks can be switched off; they are then only reported). Only real names are checked: the terminal id written instead of a name names nothing.',
       'The type of a name is the type keyword read last before it (int x, Type x).',
       'The actions are detected from keywords and names of terminals; they can be edited in the table below (position in the right-hand side, kind, type, own code).'
     ];
@@ -765,7 +768,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               onChange={e => {
                 const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === e.target.value);
                 if (sample) {
-                  onLoadGrammar(sample.grammarText, sample.sampleInput);
+                  onLoadGrammar(sample.grammarText, sample.sampleInput, { en: sample.nameEn, cz: sample.nameCz });
                   setInputText(sample.namedInput);
                 }
               }}
@@ -811,20 +814,41 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               <span style={{ fontWeight: 600 }}>{verdict}</span>
             </div>
           )}
-          {'semanticError' in simulation && simulation.semanticError && (
+          {simulation.semanticError && (
             <p className="hint-text" style={{ margin: '-4px 0 10px' }}>
               {cz
-                ? 'Gramatika slovo připouští, chybí ale deklarace jména. Překladač kontroluje kromě syntaxe i to, zda je použité jméno deklarováno; tato kontrola jde vypnout níže (pak se nedeklarovaná jména jen vypíšou).'
-                : 'The grammar allows the word, but a name is not declared. Besides the syntax, a compiler checks that every name used is declared; the check can be switched off below (the undeclared names are then only listed).'}
+                ? 'Gramatika slovo připouští, nesedí ale tabulka symbolů. Překladač kontroluje kromě syntaxe i to, zda je každé použité jméno deklarováno a zda není v jednom rozsahu deklarováno dvakrát; tyto kontroly jde vypnout níže (pak se chybná jména jen vypíšou).'
+                : 'The grammar allows the word, but the symbol table does not agree. Besides the syntax, a compiler checks that every name used is declared and that no name is declared twice in one scope; these checks can be switched off below (the names are then only listed).'}
             </p>
           )}
-          {undeclaredNames.length > 0 && !stopOnUndeclared && (
-            <div className="report-box warning" style={{ margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertTriangle size={16} />
+          {simulation.unnamedIdentifiers > 0 && (
+            <div className="report-box info" style={{ margin: '0 0 10px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <Info size={16} />
               <span>
                 {cz
-                  ? `Tato jména nejsou v místě použití deklarována v žádném viditelném rozsahu: ${undeclaredNames.join(', ')}`
-                  : `These names are not declared in any scope visible where they are used: ${undeclaredNames.join(', ')}`}
+                  ? `Vstup obsahuje místo jmen terminál ${classes.identifier ?? 'identifikátoru'} (${simulation.unnamedIdentifiers}×). Pro tabulku symbolů pište skutečná jména (např. x, y, p) – čtou se jako ${classes.identifier ?? 'identifikátor'}. Terminál ${classes.identifier ?? ''} sám nic nepojmenovává, proto se u něj deklarace ani použití nekontrolují.`
+                  : `The input has the terminal ${classes.identifier ?? 'identifier'} instead of names (${simulation.unnamedIdentifiers}×). For the symbol table write real names (e.g. x, y, p) – they are read as ${classes.identifier ?? 'the identifier'}. The terminal ${classes.identifier ?? ''} itself names nothing, so its declarations and uses are not checked.`}
+              </span>
+            </div>
+          )}
+          {!stopOnSemanticErrors && (undeclaredNames.length > 0 || redeclaredNames.length > 0) && (
+            <div className="report-box warning" style={{ margin: '0 0 10px', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <AlertTriangle size={16} />
+              <span>
+                {undeclaredNames.length > 0 && (
+                  <span style={{ display: 'block' }}>
+                    {cz
+                      ? `Tato jména nejsou v místě použití deklarována v žádném viditelném rozsahu: ${undeclaredNames.join(', ')}`
+                      : `These names are not declared in any scope visible where they are used: ${undeclaredNames.join(', ')}`}
+                  </span>
+                )}
+                {redeclaredNames.length > 0 && (
+                  <span style={{ display: 'block' }}>
+                    {cz
+                      ? `Tato jména jsou v jednom rozsahu deklarována dvakrát: ${redeclaredNames.join(', ')}`
+                      : `These names are declared twice in one scope: ${redeclaredNames.join(', ')}`}
+                  </span>
+                )}
               </span>
             </div>
           )}
@@ -852,8 +876,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           {!isPureSyntaxMode && (
             <div className="rd-mode-row">
               <label className="rd-check">
-                <input type="checkbox" checked={stopOnUndeclared} onChange={e => setStopOnUndeclared(e.target.checked)} />
-                <span>{cz ? 'Nedeklarované jméno je chyba (zastaví analýzu i syntakticky správného slova)' : 'An undeclared name is an error (stops the analysis even of a syntactically correct word)'}</span>
+                <input type="checkbox" checked={stopOnSemanticErrors} onChange={e => setStopOnSemanticErrors(e.target.checked)} />
+                <span>{cz ? 'Sémantické chyby (nedeklarované jméno, jméno deklarované v rozsahu dvakrát) zastaví analýzu i syntakticky správného slova' : 'Semantic errors (an undeclared name, a name declared twice in a scope) stop the analysis even of a syntactically correct word'}</span>
               </label>
               <button type="button" className="link-button" onClick={showHelp}>
                 {cz ? 'Co tabulka symbolů umí a neumí' : 'What the symbol table can and cannot do'}
@@ -1308,8 +1332,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           {symbolTableHelp}
 
           <label className="rd-check" style={{ margin: '0 0 12px' }}>
-            <input type="checkbox" checked={stopOnUndeclared} onChange={e => setStopOnUndeclared(e.target.checked)} />
-            <span>{cz ? 'Nedeklarované jméno je sémantická chyba, která zastaví rekurzivní sestup' : 'An undeclared name is a semantic error that stops the recursive descent'}</span>
+            <input type="checkbox" checked={stopOnSemanticErrors} onChange={e => setStopOnSemanticErrors(e.target.checked)} />
+            <span>{cz ? 'Nedeklarované jméno a jméno deklarované v jednom rozsahu dvakrát jsou sémantické chyby, které zastaví rekurzivní sestup' : 'An undeclared name and a name declared twice in one scope are semantic errors that stop the recursive descent'}</span>
           </label>
 
           {/* Editable Keyword Configuration Box */}

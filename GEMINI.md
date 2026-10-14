@@ -1,5 +1,10 @@
 # GrammarAnalyser - Project Constitution & Engineering Guide
 
+> **Binding decisions.** `docs/REVIEW.md` records the owner's decisions and the correctness reviews
+> (sections 1–26); `README.md` describes the features as implemented. Where this guide and
+> `docs/REVIEW.md` differ, `docs/REVIEW.md` is right. Do not "fix" behaviour that a section there
+> describes as deliberate, and run `npm test` (all suites) before committing.
+
 ## 1. Project Overview & Vision
 `GrammarAnalyser` (package / repo: `grammar-analyser`) is an interactive, browser-based, client-side educational platform designed for teaching and learning formal languages, grammars, and compiler construction at university level.
 
@@ -22,30 +27,25 @@ The application is modularized into strictly decoupled functional components:
 ```
 src/
 ├── core/
-│   ├── ast/                # Grammar data models, AST nodes, symbol types
-│   ├── parser/             # Multi-syntax grammar parsers (BNF, EBNF, Yacc, ANTLR, arrows)
-│   ├── analyser/           # Nullable, Endable, FIRST(k), FOLLOW(k), Lookaheads
-│   ├── processor/          # Equivalent grammar transformations (CNF, GNF, Left Recursion, etc.)
-│   ├── generator/          # Word generation, leftmost/rightmost derivation traces
-│   ├── ll/
-│   │   ├── table.ts        # LL(1) and LL(2) table generation & conflict detection
-│   │   └── parser.ts       # LL top-down stack simulator & parse tree builder
-│   ├── lr/
-│   │   ├── item.ts         # LR(0) and LR(1) item representations & core hashing
-│   │   ├── automaton.ts    # Canonical collections (LR0, SLR1, LALR1, LR1) & graph
-│   │   ├── table.ts        # ACTION & GOTO parsing tables & conflict detector
-│   │   └── parser.ts       # LR bottom-up shift-reduce simulator & parse tree builder
-│   ├── export/             # LaTeX, Markdown, JSON exporters for university problem sets
-│   └── presets/            # Curated textbook grammars (Dragon Book, Hopcroft, dangling else, etc.)
-├── i18n/                   # Bilingual terminology dictionaries (English & Czech)
+│   ├── ast/                # Grammar data model, formatting for the editor
+│   ├── parser/             # Grammar parser (arrow/BNF, Yacc, ANTLR), input tokenizer and scanner, membership, CYK, derivation attempts
+│   ├── analyser/           # Nullable, endable, FIRST(k), FOLLOW(k), director sets, ambiguity, language equivalence
+│   ├── processor/          # Equivalent transformations (reduction, ε, unit rules, left recursion, factoring, CNF, GNF, LL(1) attempt)
+│   ├── generator/          # Word generation, example words, derivation trees
+│   ├── jobs/               # Long computations as resumable generator jobs
+│   ├── ll/                 # llTable.ts (LL(1), LL(2) tables), llParser.ts (LL simulator)
+│   ├── lr/                 # lrItem, lrAutomaton (LR(0), LALR(1) by propagation, LR(1)), lrTable, lrParser, lrConstruction, lrExplain
+│   ├── codegen/            # Recursive descent: generators (PL/0, Oberon, C, Python, JS), PL/0 compiler, P-code VM, step simulator, symbol table
+│   ├── export/             # LaTeX export
+│   └── presets/            # Built-in example grammars (presetGrammars.ts, rdSampleGrammars.ts)
+├── i18n/                   # Czech and English texts (keys must exist in both)
 ├── ui/
-│   ├── components/         # Reusable UI widgets (SplitPane, Tabs, Badges, Tables, LatexModal)
-│   ├── editor/             # Grammar input editor with syntax detection & presets
-│   ├── visualizer/         # Interactive SVG Graph visualizer (LR Automaton) and Derivation Tree visualizer
-│   ├── simulator/          # Step-by-step playback controls (VCR: play/pause/step)
-│   └── views/              # Tab views (Overview, Transformations, LL, LR, Graph, Words, Export)
-├── styles/                 # Modern Vanilla CSS design system (tokens, themes, animations)
-└── main.tsx                # Application bootstrapping & state orchestrator
+│   ├── components/         # Shared widgets (simulator controls, symbols, LaTeX button, explanations)
+│   ├── visualizer/         # SVG automaton graph and derivation tree
+│   ├── views/              # One view per tab
+│   └── urlState.ts, useGrammarHistory.ts, useSteppedJob.ts
+├── styles/                 # CSS with theme variables (light default, dark, projector)
+└── App.tsx, main.tsx       # Application state and bootstrapping
 ```
 
 ---
@@ -67,15 +67,16 @@ The grammar parser must handle diverse standard notations seamlessly:
      ```
 3. **Rule Terminators**:
    - Dot `.`, semicolon `;`, or trailing newline.
-4. **Terminals vs Non-Terminals**:
+4. **Terminals vs Non-Terminals** (see `docs/REVIEW.md` §1–3, §23):
    - Quoted strings: `"term"`, `'term'`, `"+"`, `";"` are strictly terminals.
-   - Angle-bracketed identifiers: `<Expression>`, `<term>` are strictly non-terminals.
-   - Casing conventions when unquoted:
-     - Uppercase/Capitalized (e.g. `E`, `Expr`, `Term`) = Non-terminals.
-     - Lowercase/Symbols (e.g. `id`, `num`, `+`, `*`) = Terminals.
-   - Explicit terminal/non-terminal declaration directives if specified (e.g. `%token id num`).
+   - Angle-bracketed identifiers: `<Expression>`, `<term>` are strictly non-terminals; so are the lecture names `[Ba]`, `[A-X]` that have rules.
+   - Unquoted: a symbol is a non-terminal **because it is on a left-hand side**, not because of its case. An undefined capitalised word (`ID`) is a terminal with a warning.
+   - Lecture notation (every left-hand side a capital with digits/primes): `aSb` is split into `a S b` when a word glues a non-terminal; a word like `bxc` without one stays whole and the editor asks; an undefined single capital (`D`) is a non-terminal without rules.
+   - An unquoted arrow inside a right-hand side is an error.
+   - Yacc/ANTLR declarations (`%token id num`, lexer rules) are honoured.
 5. **Epsilon (Empty String)**:
-   - Recognized literals: `epsilon`, `eps`, `EPS`, `ε`, `λ`, `""`, `''`, `#`.
+   - Recognized literals: `epsilon`, `eps`, `EPS`, `ε`, `ϵ`, `λ`, `lambda`, `%empty`, `""`, `''`, and `#` as a whole alternative.
+   - A standalone `e` (KIV notation) is ambiguous: the editor asks whether it means ε.
 6. **Comments**:
    - Single-line: `// ...` or `# ...`
    - Multi-line: `/* ... */`
@@ -140,8 +141,9 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
 - **Automaton Variants**:
   1. **LR(0)**: Canonical collection, standard shift/reduce table.
   2. **SLR(1)**: Reductions constrained by $FOLLOW_1(A)$.
-  3. **LALR(1)**: Efficient state merging of LR(1) states sharing identical LR(0) cores.
+  3. **LALR(1)**: Built by the Dragon Book propagation of lookaheads on the LR(0) automaton (not by merging LR(1) states); the merges of LR(1) states are shown separately.
   4. **LR(1)**: Full canonical LR(1) automaton.
+- **Tables**: the lecture layout is the default (states named by their entry symbol, E₁; f = P/R i/A, g over T then N); the Dragon Book ACTION/GOTO layout is a switch. LR(0) is strict (S'→S• conflicts with shifts).
 - **Conflict Analysis**:
   - Highlights Shift/Reduce (S/R) and Reduce/Reduce (R/R) conflicts.
   - Computes grammar classification badge (LR(0) / SLR(1) / LALR(1) / LR(1) / Non-LR).
@@ -152,29 +154,20 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
   - Dual stack display: State stack $[0, 2, 5]$ and Symbol stack $[\$, E, +]$.
   - Trace log showing every shift, reduction, and final acceptance.
 
-### 5.3 Recursive Descent & Symbol Table Engine
-- **Multi-Target Code Generation**:
-  - Compiles LL(1) grammars to JavaScript (ES6), PL/0, Oberon-07, C99, and Python 3.
-  - In-browser execution of generated JavaScript parsers.
-- **Interactive Visual Simulator**:
-  - Synchronous 3-column architecture:
-    - **Top**: Input tape streamer, active lookahead (`sym`), position tracker, and step action notes.
-    - **Left**: Simulated activation call stack and active function/branch tracker (`if (sym ∈ {...})`).
-    - **Middle**: Derivation parse tree with active branch highlights.
-    - **Right**: Symbol table ("Stack of Stacks") and lexical scope tree.
-    - **Bottom**: VCR playback controls (step forward/back, play/pause, speed control).
-- **Symbol Table & Lexical Scopes ("Stack of Stacks")**:
-  - Educational model tracking nested scopes, identifier declarations, types, and shadowing.
-  - Inspection views: Scope Tree (hierarchical tree), Active Stack (current activation stack), and All Scopes.
-  - Retention on completion: Symbol table remains preserved after simulation finishes.
-  - Declarative Rule-Action Table: Zero-code heuristic keyword detection (`var`, `let`, `procedure`, `int`, etc.) with customizable action mapping (Enter Scope, Exit Scope, Add Symbol, Mark Type).
-  - Identifier discrimination: Automatic identification of terminals like `id`, `identifier`, `name` while excluding literals (`num`) and punctuation.
-  - Fallback: Transparent pure-syntactic simulation when no declarations are present.
+### 5.3 Recursive Descent & Symbol Table (see `docs/REVIEW.md` §24–26)
+- **Code generation** for LL(1) grammars: PL/0 (compiled by our PL/0 compiler, run on the P-code VM, link to the course interpreter), Oberon-07, C99, Python 3, JavaScript. All print the same output (left parse, then OK or ERR); `rdLanguages.test.ts` checks it. The generated programs check the syntax only.
+- **Step simulator**: input with the current symbol, call stack, the procedure being executed with its `if (sym ∈ {…})` branches, parse tree, symbol table, playback controls. The columns follow the card width (container queries).
+- **Symbol table – a demonstration of building the table, not a compiler** (the tab has a help section listing what it can and cannot do; keep it in sync with the code):
+  - The scanner (`scanInput`) reads names and numbers as the identifier and number terminals and keeps their text; samples come with programs with names (`namedInput`).
+  - Rule actions have positions in the right-hand side (`position`, `closeAfter`): a name is declared after its identifier is read; a scope opens before and closes after given symbols; every other identifier is looked up.
+  - Semantic errors stop the descent (switchable): a name not declared in any open scope, a name declared twice in one scope. The terminal itself (`id` written instead of a name) is not checked.
+  - Detection (`suggestSymbolActions`): procedure/function keywords declare the name in the enclosing scope and open its own scope (not over a trailing self-call); declaration keywords and their list/definition non-terminals; typed declarations with the type read last (`$type`); `{ }`/`begin end` are scopes only when declarations can occur inside. `number` is not a type keyword.
+  - Not implemented: types, kinds of names and parameters are not checked; no forward references, records, modules; no code, addresses or levels.
 
 ---
 
 ## 6. University Teaching, Exporters & Bilingual Design
-- **Bilingual Interface**: Seamless switching between English and Czech academic terminology (e.g. *Bezkontextová gramatika*, *Počáteční symbol*, *Nenulovatelný*, *Chomského normální forma*, *První a Následovník*).
+- **Bilingual Interface**: Czech (default) and English with the terminology of the KIV/FJP lectures (e.g. *bezkontextová gramatika*, *počáteční symbol*, *FIRST a FOLLOW*, *množina řídicích symbolů*, *rozkladová tabulka*, *kolize FIRST-FIRST*, *nenormovaný symbol*, *Chomského normální forma*). Every text exists in both languages.
 - **LaTeX Export**: One-click generation of compile-ready LaTeX tables (`tabular`, `array`, and TikZ / forest tree environments) for problem sets and exams.
 - **Step-by-Step Mathematical Proofs**: Every transformation details the sets computed (e.g., $N_\varepsilon$, unit pairs), rules removed, and rules inserted.
 - **Curated Textbook Presets**:

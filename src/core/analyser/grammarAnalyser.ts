@@ -9,7 +9,7 @@
  * - Lookahead / Predict / Director sets for productions
  */
 
-import { Grammar, Production, EPSILON, END_MARKER } from '../ast/grammar';
+import { Grammar, EPSILON, END_MARKER } from '../ast/grammar';
 import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 
 export interface GrammarAnalysis {

@@ -15,7 +15,7 @@ import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 
 /** Runs a sample on a program with names; returns the result and the final scope tree as text */
-function run(sampleId: string, program?: string, stopOnUndeclared = true): { res: RDSimulationResult; tree: string; lookups: string[] } {
+function run(sampleId: string, program?: string, stopOnSemanticErrors = true): { res: RDSimulationResult; tree: string; lookups: string[] } {
   const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === sampleId)!;
   const g = parseGrammar(sample.grammarText).grammar!;
   const analysis = analyzeGrammar(g);
@@ -25,7 +25,7 @@ function run(sampleId: string, program?: string, stopOnUndeclared = true): { res
   const res = simulateRecursiveDescent(scanned.tokens, g, analysis, {
     ruleActions: suggestSymbolActions(g, DEFAULT_KEYWORD_CONFIG),
     lexemes: scanned.lexemes,
-    stopOnUndeclared
+    stopOnSemanticErrors
   });
   const show = (n: ScopeTreeNode, depth: number): string[] => [
     `${'  '.repeat(depth)}${n.scope.name}: ${n.scope.symbols.map(s => `${s.name} ${s.kind}${s.type ? ` ${s.type}` : ''}${s.customData.redeclared ? ' (redeclared)' : ''}`).join(', ')}`,
@@ -146,12 +146,45 @@ describe('Recursive-descent symbol table on the sample grammars', () => {
     expect(syntax.res.errorMessage).toContain('Syntax error');
   });
 
-  it('only reports undeclared names when they do not stop the descent; marks names declared twice in one scope', () => {
+  it('a name declared twice in one scope stops the descent; in another scope it is shadowing', () => {
+    const { res, tree } = run('rd_sample_pl0', 'var x , y ; procedure x ; ; call x .');
+    expect(res.accepted).toBe(false);
+    expect(res.semanticError).toBe(true);
+    expect(res.errorMessage).toContain("Semantic error: the name 'x' is already declared in scope 'global' (level 0)");
+    expect(res.errorMessageCz).toContain("Sémantická chyba: jméno 'x' je v rozsahu 'global' (úroveň 0) už deklarováno");
+    // the second x is in the table, marked, and the descent stops right after reading it
+    expect(tree).toBe('global: x var, y var, x procedure (redeclared)');
+    expect(res.redeclared).toEqual([{ name: 'x', scopeName: 'global', step: expect.any(Number) }]);
+    const last = res.steps[res.steps.length - 1];
+    expect(last.isError).toBe(true);
+    expect(last.remainingTokens.slice(0, 2)).toEqual([';', ';']);
+    // the same name in an inner scope is fine
+    expect(run('rd_sample_pl0', 'var x ; procedure p ; var x ; x := 1 ; call p .').res.accepted).toBe(true);
+    expect(run('rd_sample_c_blocks', '{ int x ; char x ; }').res.semanticError).toBe(true);
+    expect(run('rd_sample_c_blocks', '{ int x ; { char x ; } }').res.accepted).toBe(true);
+  });
+
+  it('does not check the terminal written instead of a name (a word of terminals)', () => {
+    // the word of the grammar: ident ident … names nothing, so no semantic error
+    const { res, tree } = run('rd_sample_pl0', 'var ident , ident ; ident := 1 .');
+    expect(res.accepted).toBe(true);
+    expect(res.unnamedIdentifiers).toBe(3);
+    expect(res.redeclared).toEqual([]);
+    expect(res.undeclared).toEqual([]);
+    expect(tree).toBe('global: ident var, ident var (redeclared)');
+    // real names next to it are checked
+    expect(run('rd_sample_pl0', 'var ident ; y := 1 .').res.semanticError).toBe(true);
+    // every sample's own word of terminals passes with the symbol table on
+    for (const sample of RD_SAMPLE_GRAMMARS) expect(run(sample.id, sample.sampleInput).res.accepted, sample.id).toBe(true);
+  });
+
+  it('only reports undeclared names and names declared twice when they do not stop the descent', () => {
     const { res, tree, lookups } = run('rd_sample_pl0', 'var x , x ; y := 1 .', false);
     expect(res.accepted).toBe(true);
     expect(tree).toBe('global: x var, x var (redeclared)');
     expect(lookups).toEqual(['y -> undeclared']);
     expect(res.undeclared).toEqual([{ name: 'y', step: expect.any(Number) }]);
+    expect(res.redeclared).toEqual([{ name: 'x', scopeName: 'global', step: expect.any(Number) }]);
     expect(res.steps[res.steps.length - 1].actionDescription).toContain('Not declared: y');
   });
 

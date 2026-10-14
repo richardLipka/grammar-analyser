@@ -12,10 +12,9 @@ import {
   DeclarationKeywordConfig,
   isIdentifierTerminal,
   isNonIdentifierLiteral,
-  DEFAULT_ID_SYMBOLS,
   tokenClasses
 } from '../core/codegen/symbolTable';
-import { RD_SAMPLE_GRAMMARS, RDSampleGrammar } from '../core/presets/rdSampleGrammars';
+import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
 
 describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
   // Test 1: Global properties of all sample grammars

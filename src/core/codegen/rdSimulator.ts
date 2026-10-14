@@ -14,8 +14,10 @@
  * actions of a rule are tied to positions of its right-hand side: a name is declared
  * when its identifier has been read, a scope opens before and closes after given
  * symbols, and every other identifier read is looked up in the symbol table.
- * A name that is not found is a semantic error: it stops the descent (as a
- * compiler would), unless stopOnUndeclared is false.
+ * A name that is not found, and a name declared twice in one scope, are semantic
+ * errors: they stop the descent (as a compiler would), unless stopOnSemanticErrors
+ * is false. Only real names are checked: the terminal id written in the input
+ * instead of a name (a word of the grammar) names nothing.
  *
  * It is a demonstration of how a parser builds a symbol table, not a compiler:
  * no types, kinds or numbers of parameters are checked, and no code is made.
@@ -107,9 +109,13 @@ export interface RDSimulationResult {
   lexemes: string[];
   /** Names used but not declared in any visible scope (with the step) */
   undeclared: { name: string; step: number }[];
+  /** Names declared again in a scope that already has them (with the step) */
+  redeclared: { name: string; scopeName: string; step: number }[];
+  /** Identifiers written as the terminal itself (id instead of x): not checked, as they name nothing */
+  unnamedIdentifiers: number;
   /** The simulation stopped at the step limit */
   truncated?: boolean;
-  /** The word is rejected because of a name missing in the symbol table, not because of its syntax */
+  /** The word is rejected because of the symbol table (a name missing or declared twice), not because of its syntax */
   semanticError?: boolean;
 }
 
@@ -130,10 +136,11 @@ export interface CustomActionConfig {
   /** The text of the input tokens (x for the token id); the tokens themselves when absent */
   lexemes?: string[];
   /**
-   * A name used but missing in the symbol table stops the descent with a semantic error,
-   * although the word may be correct syntactically (default true); false only reports it
+   * A name used but missing in the symbol table, or declared twice in one scope, stops the
+   * descent with a semantic error although the word may be correct syntactically (default
+   * true); false only reports them
    */
-  stopOnUndeclared?: boolean;
+  stopOnSemanticErrors?: boolean;
   /** Custom JavaScript callback hooks */
   hooks?: {
     onEnter?: (nt: string, ctx: RDContext) => void;
@@ -187,6 +194,8 @@ export function simulateRecursiveDescent(
   const lexemes = input.map((tok, i) => (i < inputTokens.length ? actionConfig?.lexemes?.[i] ?? tok : tok));
   const leftParse: number[] = [];
   const undeclared: { name: string; step: number }[] = [];
+  const redeclared: { name: string; scopeName: string; step: number }[] = [];
+  let unnamedIdentifiers = 0;
   const symTab = new SymbolTable('global');
   const keywords = normalizeKeywordConfig(actionConfig?.keywords);
 
@@ -198,7 +207,9 @@ export function simulateRecursiveDescent(
       errorMessageCz: 'Gramatika nemá počáteční symbol.',
       leftParse: [],
       lexemes,
-      undeclared
+      undeclared,
+      redeclared,
+      unnamedIdentifiers
     };
   }
 
@@ -238,7 +249,7 @@ export function simulateRecursiveDescent(
   let errorMsg = '';
   let errorMsgCz = '';
   let semanticError = false;
-  const stopOnUndeclared = actionConfig?.stopOnUndeclared ?? true;
+  const stopOnSemanticErrors = actionConfig?.stopOnSemanticErrors ?? true;
 
   const getConsumed = () => input.slice(0, tokenPos);
   const getRemaining = () => input.slice(tokenPos);
@@ -504,17 +515,38 @@ export function simulateRecursiveDescent(
           let noteEn = '';
           let noteCz = '';
           const extra: Partial<RDSimulationStep> = { matchedToken: matched };
+          // A semantic error: the word may be fine syntactically, but a compiler would reject the program
+          const semanticFail = (en: string, cz: string) => {
+            if (!stopOnSemanticErrors || semanticError) return;
+            isError = true;
+            semanticError = true;
+            errorMsg = `Semantic error: ${en}. The word is correct syntactically so far, but a compiler would reject the program.`;
+            errorMsgCz = `Sémantická chyba: ${cz}. Syntakticky je slovo zatím v pořádku, překladač by ale program odmítl.`;
+            childNode.mark = 'mismatch';
+            Object.assign(extra, { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz });
+          };
           if (isTypeKeyword(X)) lastType = lexeme;
+          // id written instead of a name (a word of terminals): it is entered and looked up, but not checked
+          const unnamed = lexeme === X;
           const declarations = at('addSymbol', i);
+          if (tableActive && unnamed && (declarations.length > 0 || isIdentifier(X))) unnamedIdentifiers++;
           for (const act of declarations) {
             const kind = act.symbolKind || 'var';
             const type = resolveType(act.symbolType);
-            const redeclared = !!symTab.lookupLocal(lexeme);
+            const twice = !!symTab.lookupLocal(lexeme);
+            // a name declared twice is still entered (marked), so that the table shows both
             const entry = symTab.addSymbol(lexeme, type, act.customData || {}, kind, steps.length);
             lastDeclared = lexeme;
             extra.declared = entry;
-            noteEn += `; declare ${kind} '${lexeme}'${type ? ` : ${type}` : ''} in scope '${entry.scopeName}' (level ${entry.scopeLevel})${redeclared ? ' – already declared in this scope!' : ''}`;
-            noteCz += `; deklarace: ${KIND_CZ[kind]} '${lexeme}'${type ? ` : ${type}` : ''} v rozsahu '${entry.scopeName}' (úroveň ${entry.scopeLevel})${redeclared ? ' – v tomto rozsahu už je deklarováno!' : ''}`;
+            noteEn += `; declare ${kind} '${lexeme}'${type ? ` : ${type}` : ''} in scope '${entry.scopeName}' (level ${entry.scopeLevel})${twice ? ' – already declared in this scope!' : ''}`;
+            noteCz += `; deklarace: ${KIND_CZ[kind]} '${lexeme}'${type ? ` : ${type}` : ''} v rozsahu '${entry.scopeName}' (úroveň ${entry.scopeLevel})${twice ? ' – v tomto rozsahu už je deklarováno!' : ''}`;
+            if (twice && !unnamed) {
+              redeclared.push({ name: lexeme, scopeName: entry.scopeName, step: steps.length });
+              semanticFail(
+                `the name '${lexeme}' is already declared in scope '${entry.scopeName}' (level ${entry.scopeLevel})`,
+                `jméno '${lexeme}' je v rozsahu '${entry.scopeName}' (úroveň ${entry.scopeLevel}) už deklarováno`
+              );
+            }
           }
           for (const act of at('markType', i)) {
             const type = resolveType(act.symbolType);
@@ -529,19 +561,19 @@ export function simulateRecursiveDescent(
               extra.lookup = { name: lexeme, scopeId: found.scope.id, scopeName: found.scope.name, level: found.scope.level, kind: found.entry.kind };
               noteEn += `; the name '${lexeme}' is found: the ${found.entry.kind} of scope '${found.scope.name}' (level ${found.scope.level})`;
               noteCz += `; jméno '${lexeme}' nalezeno: ${KIND_CZ[found.entry.kind]} z rozsahu '${found.scope.name}' (úroveň ${found.scope.level})`;
+            } else if (unnamed) {
+              extra.lookup = { name: lexeme };
+              noteEn += `; '${lexeme}' is the terminal, not a name: it is not checked`;
+              noteCz += `; '${lexeme}' je terminál, ne jméno: nekontroluje se`;
             } else {
               extra.lookup = { name: lexeme };
               undeclared.push({ name: lexeme, step: steps.length });
               noteEn += `; the name '${lexeme}' is not declared in any visible scope!`;
               noteCz += `; jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu!`;
-              if (stopOnUndeclared) {
-                isError = true;
-                semanticError = true;
-                errorMsg = `Semantic error: the name '${lexeme}' is not declared in any visible scope. The word is correct syntactically so far, but a compiler would reject the program.`;
-                errorMsgCz = `Sémantická chyba: jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu. Syntakticky je slovo zatím v pořádku, překladač by ale program odmítl.`;
-                childNode.mark = 'mismatch';
-                Object.assign(extra, { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz });
-              }
+              semanticFail(
+                `the name '${lexeme}' is not declared in any visible scope`,
+                `jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu`
+              );
             }
           }
 
@@ -657,6 +689,8 @@ export function simulateRecursiveDescent(
     leftParse,
     lexemes,
     undeclared,
+    redeclared,
+    unnamedIdentifiers,
     truncated: truncated && !isAccepted ? true : undefined,
     semanticError: semanticError || undefined
   };
