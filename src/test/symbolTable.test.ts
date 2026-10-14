@@ -81,4 +81,34 @@ describe('SymbolTable ("Stack of Stacks")', () => {
     const declVar = suggestions.find(s => s.actionType === 'addSymbol');
     expect(declVar).toBeDefined();
   });
+
+  it('respects user-edited keywords for declaration and scope detection', () => {
+    const g = parseGrammar(`
+      Prog -> "module" id Declarations Body
+      Declarations -> "dim" myVar "as" "float" ";"
+      Body -> "subroutine" id "do" Stmt EndBody
+      EndBody -> "finish"
+      Stmt -> myVar "=" "0"
+    `).grammar!;
+
+    // With default keywords, "module", "dim", "subroutine", "finish" might not match
+    // Now with custom edited keywords:
+    const customSuggestions = suggestSymbolActions(g, {
+      scopeOpeners: ['module', 'subroutine', 'do'],
+      scopeClosers: ['finish'],
+      declKeywords: ['dim'],
+      typeKeywords: ['float'],
+      idSymbols: ['myVar', 'id']
+    });
+
+    const openSub = customSuggestions.find(s => s.actionType === 'enterScope' && s.ruleId === 3);
+    expect(openSub).toBeDefined();
+
+    const closeSub = customSuggestions.find(s => s.actionType === 'exitScope');
+    expect(closeSub).toBeDefined();
+
+    const addVar = customSuggestions.find(s => s.actionType === 'addSymbol' && s.ruleId === 2);
+    expect(addVar).toBeDefined();
+    expect(addVar?.symbolName).toBe('myVar');
+  });
 });

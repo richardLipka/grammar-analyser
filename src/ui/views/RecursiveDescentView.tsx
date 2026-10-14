@@ -10,7 +10,13 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { simulateRecursiveDescent, CustomActionConfig } from '../../core/codegen/rdSimulator';
-import { SymbolTable, RuleActionDefinition, suggestSymbolActions } from '../../core/codegen/symbolTable';
+import {
+  SymbolTable,
+  RuleActionDefinition,
+  suggestSymbolActions,
+  DeclarationKeywordConfig,
+  DEFAULT_KEYWORD_CONFIG
+} from '../../core/codegen/symbolTable';
 import { Language } from '../../i18n/translations';
 import {
   Code2,
@@ -28,7 +34,10 @@ import {
   Cpu,
   ArrowRight,
   BookOpen,
-  Plus
+  Plus,
+  SlidersHorizontal,
+  RotateCcw,
+  Settings2
 } from 'lucide-react';
 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
@@ -97,20 +106,73 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [jsRunOutput, setJsRunOutput] = useState<string | null>(null);
 
-  // Symbol table action rules configuration
+  // Editable keywords for automated declaration & scope detection
+  const [keywordConfig, setKeywordConfig] = useState<DeclarationKeywordConfig>(DEFAULT_KEYWORD_CONFIG);
+  const [scopeOpenersInput, setScopeOpenersInput] = useState(DEFAULT_KEYWORD_CONFIG.scopeOpeners.join(', '));
+  const [scopeClosersInput, setScopeClosersInput] = useState(DEFAULT_KEYWORD_CONFIG.scopeClosers.join(', '));
+  const [declKeywordsInput, setDeclKeywordsInput] = useState(DEFAULT_KEYWORD_CONFIG.declKeywords.join(', '));
+  const [typeKeywordsInput, setTypeKeywordsInput] = useState(DEFAULT_KEYWORD_CONFIG.typeKeywords.join(', '));
+  const [idSymbolsInput, setIdSymbolsInput] = useState(DEFAULT_KEYWORD_CONFIG.idSymbols.join(', '));
+  const [showKeywordEditor, setShowKeywordEditor] = useState(true);
+
+  // Declarative rule-action mapping table
   const [actionPreset, setActionPreset] = useState<'none' | 'auto' | 'custom'>('auto');
-  const [ruleActions, setRuleActions] = useState<RuleActionDefinition[]>(() => suggestSymbolActions(grammar));
+  const [ruleActions, setRuleActions] = useState<RuleActionDefinition[]>(() =>
+    suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG)
+  );
 
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
-  // Update suggested actions when grammar changes
+  // Re-generate rule actions whenever grammar or auto preset is applied
   useEffect(() => {
     if (actionPreset === 'auto') {
-      setRuleActions(suggestSymbolActions(grammar));
+      setRuleActions(suggestSymbolActions(grammar, keywordConfig));
     } else if (actionPreset === 'none') {
       setRuleActions([]);
     }
   }, [grammar, actionPreset]);
+
+  // Apply user-edited keywords and re-scan productions
+  const applyKeywordChanges = () => {
+    const parseList = (str: string) => str.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const updatedCfg: DeclarationKeywordConfig = {
+      scopeOpeners: parseList(scopeOpenersInput),
+      scopeClosers: parseList(scopeClosersInput),
+      declKeywords: parseList(declKeywordsInput),
+      typeKeywords: parseList(typeKeywordsInput),
+      idSymbols: parseList(idSymbolsInput)
+    };
+    setKeywordConfig(updatedCfg);
+    setRuleActions(suggestSymbolActions(grammar, updatedCfg));
+    setActionPreset('auto');
+  };
+
+  // Reset keywords back to defaults
+  const resetKeywordsToDefault = () => {
+    setScopeOpenersInput(DEFAULT_KEYWORD_CONFIG.scopeOpeners.join(', '));
+    setScopeClosersInput(DEFAULT_KEYWORD_CONFIG.scopeClosers.join(', '));
+    setDeclKeywordsInput(DEFAULT_KEYWORD_CONFIG.declKeywords.join(', '));
+    setTypeKeywordsInput(DEFAULT_KEYWORD_CONFIG.typeKeywords.join(', '));
+    setIdSymbolsInput(DEFAULT_KEYWORD_CONFIG.idSymbols.join(', '));
+    setKeywordConfig(DEFAULT_KEYWORD_CONFIG);
+    setRuleActions(suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG));
+    setActionPreset('auto');
+  };
+
+  // Directly update or add a declarative action for a rule
+  const updateRuleAction = (ruleId: number, patch: Partial<RuleActionDefinition>) => {
+    setActionPreset('custom');
+    setRuleActions(curr => {
+      const existingIdx = curr.findIndex(a => a.ruleId === ruleId);
+      if (existingIdx >= 0) {
+        const next = [...curr];
+        next[existingIdx] = { ...next[existingIdx], ...patch };
+        return next;
+      } else {
+        return [...curr, { ruleId, actionType: patch.actionType || 'none', ...patch }];
+      }
+    });
+  };
 
   // Code generator
   type Generated =
@@ -334,6 +396,27 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               </span>
             </div>
           )}
+
+          {/* Declarative Symbol Table Actions Status Banner */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '4px 0 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="badge badge-accent" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <Database size={12} />
+                {cz
+                  ? `Deklarativní akce tabulky symbolů: ${ruleActions.filter(a => a.actionType !== 'none').length} aktivních pravidel`
+                  : `Declarative Symbol Table Actions: ${ruleActions.filter(a => a.actionType !== 'none').length} active rules`}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '3px 8px', fontSize: '11.5px', gap: '4px' }}
+              onClick={() => setSubTab('symtab')}
+            >
+              <Settings2 size={12} />
+              <span>{cz ? 'Upravit pravidla a klíčová slova' : 'Edit rules & keywords'}</span>
+            </button>
+          </div>
 
           {/* VCR Simulator Controls */}
           {simulation.steps.length > 0 && (
@@ -704,119 +787,174 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
         </div>
       )}
 
-      {/* SUBTAB 3: Symbol Table & Custom Commands Guide */}
+      {/* SUBTAB 3: Declarative Rule-Action Table & Stack-of-Stacks Automation */}
       {subTab === 'symtab' && (
         <div className="card">
           <div className="card-title">
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <BookOpen size={18} color="var(--color-primary)" />
-              {cz ? 'Tabulka symbolů a uživatelské příkazy: Analýza a automatizace' : 'Symbol table & custom commands: Analysis and automation'}
+              {cz
+                ? 'Deklarativní tabulka akcí pravidel (Automatizace zásobníku zásobníků)'
+                : 'Declarative Rule-Action Table (Stack of Stacks Automation)'}
             </span>
           </div>
 
           <div className="notice-box info" style={{ marginBottom: '16px' }}>
             <div className="notice-title">
               <Sparkles size={16} />
-              <span>{cz ? 'Doporučený přístup pro provádění uživatelských příkazů' : 'Recommended approach for executing custom commands'}</span>
+              <span>
+                {cz
+                  ? 'Přístup 3: Deklarativní přiřazení sémantických akcí k pravidlům gramatiky'
+                  : 'Approach 3: Declarative Semantic Action Mapping for Grammar Rules'}
+              </span>
             </div>
             <p style={{ margin: '6px 0', fontSize: '13px', lineHeight: 1.55 }}>
               {cz
-                ? 'V teorii překladačů existují tři hlavní přístupy k sémantickým akcím při syntaktické analýze:'
-                : 'In compiler construction theory, three primary paradigms exist for semantic actions during syntax analysis:'}
+                ? 'Každému pravidlu gramatiky můžete přiřadit deklarativní akci: Vstup do bloku (Enter Scope), Konec bloku (Exit Scope), Deklarace symbolu (Add Symbol) nebo Označení typu (Mark Type). Tyto akce automaticky řídí tabulku symbolů ("zásobník zásobníků") při běhu rekurzivního sestupu.'
+                : 'Assign declarative actions to each grammar rule: Enter Scope, Exit Scope, Add Symbol, or Mark Type. These actions automatically drive the Symbol Table ("stack of stacks") during recursive descent execution.'}
             </p>
-            <ul style={{ margin: '4px 0 8px 20px', fontSize: '12.5px', lineHeight: 1.6 }}>
-              <li>
-                <strong>{cz ? '1. Vložené sémantické akce přímo v gramatice (Translation Schemes / Yacc / ANTLR style):' : '1. Inlined semantic actions in grammar rules (Translation Schemes / Yacc / ANTLR style):'}</strong>{' '}
-                {cz
-                  ? 'Zápis ve stylu A -> B { symTab.addSymbol($2); } C. Výhodou je přímé provázání s pravidlem, nevýhodou je narušení čisté bezkontextové gramatiky pro LL(1) kontrolu a horší přenositelnost mezi cílovými jazyky.'
-                  : 'Syntax like A -> B { symTab.addSymbol($2); } C. Directly tied to productions, but pollutes the pure CFG for LL(1) analysis and hinders cross-language portability.'}
-              </li>
-              <li>
-                <strong>{cz ? '2. Oddělené sémantické háčky (Event-driven Visitor / Listener Hooks):' : '2. Decoupled Semantic Hooks (Event-driven Visitor / Listener Hooks):'}</strong>{' '}
-                {cz
-                  ? 'Generovaný kód volá obslužné metody onEnter, onRule, onMatch, onExit. Gramatika zůstává 100% čistá a sémantický analyzátor je nezávislý modul.'
-                  : 'Generated parser invokes callback hooks onEnter, onRule, onMatch, onExit. Grammar remains 100% pure CFG and semantics is cleanly decoupled.'}
-              </li>
-              <li>
-                <strong>{cz ? '3. Deklarativní pravidlová tabulka akcí (Doporučený přístup pro výuku a automatizaci):' : '3. Declarative Rule-Action Mapping (Recommended for Education & Automation):'}</strong>{' '}
-                {cz
-                  ? 'Uživatel nebo automatický analyzátor namapuje na pravidla gramatiky deklarativní akce (Vstup do bloku, Opuštění bloku, Přidání symbolu, Označení typu). Nevyžaduje ruční programování a umožňuje 100% vizualizaci.'
-                  : 'The user or an automatic analyzer maps high-level actions (Enter Scope, Exit Scope, Add Symbol, Mark Type) to productions. Maximizes automation without boilerplate.'}
-              </li>
-            </ul>
           </div>
 
-          {/* Action Automation Configuration */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 700 }}>{cz ? 'Režim automatizace akcí:' : 'Action automation mode:'}</span>
-              <div className="construction-modes" role="group">
-                <button
-                  type="button"
-                  className={`btn ${actionPreset === 'auto' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setActionPreset('auto')}
-                >
-                  <Sparkles size={13} />
-                  <span>{cz ? 'Auto-detekce deklarací' : 'Auto-detect declarations'}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${actionPreset === 'none' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setActionPreset('none')}
-                >
-                  <span>{cz ? 'Vypnuto (čistá syntaxe)' : 'Disabled (pure syntax)'}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`btn ${actionPreset === 'custom' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setActionPreset('custom')}
-                >
-                  <span>{cz ? 'Uživatelské akce' : 'Custom actions'}</span>
-                </button>
-              </div>
-            </div>
-
-            {actionPreset === 'custom' && (
+          {/* Editable Keyword Configuration Box */}
+          <div className="rd-keywords-box">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <SlidersHorizontal size={15} color="var(--color-primary)" />
+                {cz ? 'Klíčová slova pro automatickou detekci deklarací a rozsahů' : 'Keywords for automated declaration & scope detection'}
+              </span>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => {
-                  const firstRule = grammar.productions[0];
-                  if (!firstRule) return;
-                  setRuleActions(curr => [
-                    ...curr,
-                    {
-                      ruleId: firstRule.id,
-                      actionType: 'addSymbol',
-                      symbolName: 'x',
-                      symbolType: 'int',
-                      description: 'Custom symbol declaration'
-                    }
-                  ]);
-                }}
+                style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
+                onClick={() => setShowKeywordEditor(s => !s)}
               >
-                <Plus size={13} />
-                <span>{cz ? 'Přidat pravidlovou akci' : 'Add rule action'}</span>
+                {showKeywordEditor ? (cz ? 'Skrýt nastavení' : 'Hide settings') : (cz ? 'Zobrazit nastavení' : 'Show settings')}
               </button>
+            </div>
+
+            {showKeywordEditor && (
+              <>
+                <p className="hint-text" style={{ margin: '6px 0 0', fontSize: '12px' }}>
+                  {cz
+                    ? 'Zadejte klíčová slova oddělená čárkami. Analyzátor podle nich prohledá pravidla gramatiky a automaticky vygeneruje odpovídající akce pro tabulku symbolů.'
+                    : 'Enter comma-separated keywords. The analyzer will inspect productions using these keywords to automatically generate symbol table actions.'}
+                </p>
+
+                <div className="rd-keywords-grid">
+                  <div className="rd-keyword-field">
+                    <label className="rd-keyword-label">{cz ? '1. Otevření bloku / rozsahu (scope openers):' : '1. Scope openers (new block):'}</label>
+                    <input
+                      type="text"
+                      className="rd-keyword-input"
+                      value={scopeOpenersInput}
+                      onChange={e => setScopeOpenersInput(e.target.value)}
+                      placeholder="procedure, function, begin, {, proc, block"
+                    />
+                  </div>
+
+                  <div className="rd-keyword-field">
+                    <label className="rd-keyword-label">{cz ? '2. Uzavření bloku / rozsahu (scope closers):' : '2. Scope closers (end of block):'}</label>
+                    <input
+                      type="text"
+                      className="rd-keyword-input"
+                      value={scopeClosersInput}
+                      onChange={e => setScopeClosersInput(e.target.value)}
+                      placeholder="end, }"
+                    />
+                  </div>
+
+                  <div className="rd-keyword-field">
+                    <label className="rd-keyword-label">{cz ? '3. Klíčová slova deklarace (var, const):' : '3. Declaration keywords:'}</label>
+                    <input
+                      type="text"
+                      className="rd-keyword-input"
+                      value={declKeywordsInput}
+                      onChange={e => setDeclKeywordsInput(e.target.value)}
+                      placeholder="var, const, let, val"
+                    />
+                  </div>
+
+                  <div className="rd-keyword-field">
+                    <label className="rd-keyword-label">{cz ? '4. Klíčová slova datových typů:' : '4. Data type keywords:'}</label>
+                    <input
+                      type="text"
+                      className="rd-keyword-input"
+                      value={typeKeywordsInput}
+                      onChange={e => setTypeKeywordsInput(e.target.value)}
+                      placeholder="int, real, bool, char, string, float"
+                    />
+                  </div>
+
+                  <div className="rd-keyword-field">
+                    <label className="rd-keyword-label">{cz ? '5. Terminály identifikátorů v gramatice:' : '5. Identifier symbols in grammar:'}</label>
+                    <input
+                      type="text"
+                      className="rd-keyword-input"
+                      value={idSymbolsInput}
+                      onChange={e => setIdSymbolsInput(e.target.value)}
+                      placeholder="id, ident, identifier, name"
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-primary" onClick={applyKeywordChanges}>
+                    <Sparkles size={13} />
+                    <span>{cz ? 'Spustit auto-detekci podle těchto klíčových slov' : 'Re-scan & auto-generate actions'}</span>
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={resetKeywordsToDefault}>
+                    <RotateCcw size={13} />
+                    <span>{cz ? 'Obnovit výchozí klíčová slova' : 'Reset to default keywords'}</span>
+                  </button>
+                </div>
+              </>
             )}
           </div>
 
-          {/* Rule Actions Table */}
+          {/* Declarative Rule Actions Table */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700 }}>
+              {cz ? 'Pravidlová tabulka akcí tabulky symbolů:' : 'Declarative rule-action mapping table:'}
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                type="button"
+                className={`btn ${actionPreset === 'none' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '3px 8px', fontSize: '11px' }}
+                onClick={() => setActionPreset('none')}
+              >
+                {cz ? 'Vypnout všechny akce' : 'Disable all actions'}
+              </button>
+              <button
+                type="button"
+                className={`btn ${actionPreset === 'auto' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '3px 8px', fontSize: '11px' }}
+                onClick={applyKeywordChanges}
+              >
+                <Sparkles size={11} />
+                <span>{cz ? 'Auto-detekovat z pravidel' : 'Auto-detect from rules'}</span>
+              </button>
+            </div>
+          </div>
+
           <div className="data-table-container">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '60px' }}>{cz ? 'Pravidlo' : 'Rule'}</th>
-                  <th>{cz ? 'Produkce gramatiky' : 'Grammar production'}</th>
-                  <th style={{ width: '180px' }}>{cz ? 'Typ akce' : 'Action type'}</th>
-                  <th>{cz ? 'Parametry / Popis' : 'Parameters / Description'}</th>
-                  {actionPreset === 'custom' && <th style={{ width: '80px' }}>{cz ? 'Smazat' : 'Delete'}</th>}
+                  <th style={{ width: '50px' }}>{cz ? 'Pravidlo' : 'Rule'}</th>
+                  <th style={{ width: '220px' }}>{cz ? 'Produkce gramatiky' : 'Grammar production'}</th>
+                  <th style={{ width: '170px' }}>{cz ? 'Přiřazená akce' : 'Assigned action'}</th>
+                  <th>{cz ? 'Parametry akce (rozsah, symbol, typ)' : 'Action parameters (scope, symbol, type)'}</th>
+                  <th style={{ width: '180px' }}>{cz ? 'Efekt v simulaci' : 'Effect in simulation'}</th>
                 </tr>
               </thead>
               <tbody>
                 {grammar.productions.map(p => {
-                  const acts = ruleActions.filter(a => a.ruleId === p.id);
-                  if (acts.length === 0 && actionPreset !== 'custom') return null;
+                  const act = ruleActions.find(a => a.ruleId === p.id) || {
+                    ruleId: p.id,
+                    actionType: 'none'
+                  };
+
                   return (
                     <tr key={p.id}>
                       <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>#{p.id}</td>
@@ -824,41 +962,156 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                         <span className="sym-nt">{p.lhs}</span> → {p.rhs.join(' ') || 'ε'}
                       </td>
                       <td>
-                        {acts.length === 0 ? (
-                          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>{cz ? 'bez akce' : 'none'}</span>
-                        ) : (
-                          acts.map((act, i) => (
-                            <span
-                              key={i}
-                              className={`badge ${act.actionType === 'enterScope' ? 'badge-accent' : act.actionType === 'exitScope' ? 'badge-warning' : 'badge-primary'}`}
-                              style={{ marginRight: '4px' }}
+                        <select
+                          className="rd-action-select"
+                          value={act.actionType}
+                          onChange={e =>
+                            updateRuleAction(p.id, {
+                              actionType: e.target.value as RuleActionDefinition['actionType'],
+                              scopeName: act.scopeName || `scope_${p.lhs}`,
+                              symbolName: act.symbolName || 'id',
+                              symbolType: act.symbolType || 'var'
+                            })
+                          }
+                          aria-label={`Action for rule ${p.id}`}
+                        >
+                          <option value="none">{cz ? '– žádná akce –' : '– none –'}</option>
+                          <option value="enterScope">{cz ? 'Vstup do bloku (Enter Scope)' : 'Enter Scope'}</option>
+                          <option value="exitScope">{cz ? 'Konec bloku (Exit Scope)' : 'Exit Scope'}</option>
+                          <option value="addSymbol">{cz ? 'Deklarace symbolu (Add Symbol)' : 'Add Symbol'}</option>
+                          <option value="markType">{cz ? 'Označení typu (Mark Type)' : 'Mark Type'}</option>
+                          <option value="custom">{cz ? 'Vlastní skript (Custom JS)' : 'Custom JS'}</option>
+                        </select>
+                      </td>
+                      <td>
+                        {act.actionType === 'none' && (
+                          <span style={{ color: 'var(--color-text-muted)', fontSize: '11px', fontStyle: 'italic' }}>
+                            {cz ? '(pravidlo neprovádí žádnou sémantickou akci)' : '(rule has no semantic action)'}
+                          </span>
+                        )}
+
+                        {act.actionType === 'enterScope' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>{cz ? 'Název bloku:' : 'Scope name:'}</span>
+                            <input
+                              type="text"
+                              className="rd-param-input"
+                              style={{ width: '130px' }}
+                              value={act.scopeName || `scope_${p.lhs}`}
+                              onChange={e => updateRuleAction(p.id, { scopeName: e.target.value })}
+                              placeholder={`scope_${p.lhs}`}
+                            />
+                          </div>
+                        )}
+
+                        {act.actionType === 'exitScope' && (
+                          <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                            {cz ? 'Ukončí aktuální vnitřní blok a vrátí se do nadřazeného rozsahu' : 'Pops current scope and returns to parent'}
+                          </span>
+                        )}
+
+                        {act.actionType === 'addSymbol' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{cz ? 'Název:' : 'Name:'}</span>
+                            <input
+                              type="text"
+                              className="rd-param-input"
+                              style={{ width: '55px' }}
+                              value={act.symbolName || 'id'}
+                              onChange={e => updateRuleAction(p.id, { symbolName: e.target.value })}
+                              placeholder="id"
+                              title={cz ? 'Název symbolu nebo "id" pro hodnotu ze vstupu' : 'Symbol name or "id" for input token'}
+                            />
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{cz ? 'Typ:' : 'Type:'}</span>
+                            <input
+                              type="text"
+                              className="rd-param-input"
+                              style={{ width: '60px' }}
+                              value={act.symbolType || 'var'}
+                              onChange={e => updateRuleAction(p.id, { symbolType: e.target.value })}
+                              placeholder="var"
+                            />
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{cz ? 'Druh:' : 'Kind:'}</span>
+                            <select
+                              className="rd-param-input"
+                              style={{ padding: '2px 4px' }}
+                              value={act.symbolKind || 'var'}
+                              onChange={e => updateRuleAction(p.id, { symbolKind: e.target.value as any })}
                             >
-                              {act.actionType}
-                            </span>
-                          ))
+                              <option value="var">var</option>
+                              <option value="const">const</option>
+                              <option value="procedure">procedure</option>
+                              <option value="function">function</option>
+                              <option value="type">type</option>
+                              <option value="custom">custom</option>
+                            </select>
+                          </div>
+                        )}
+
+                        {act.actionType === 'markType' && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{cz ? 'Symbol:' : 'Symbol:'}</span>
+                            <input
+                              type="text"
+                              className="rd-param-input"
+                              style={{ width: '55px' }}
+                              value={act.symbolName || 'id'}
+                              onChange={e => updateRuleAction(p.id, { symbolName: e.target.value })}
+                              placeholder="id"
+                            />
+                            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>{cz ? 'Nový typ:' : 'New type:'}</span>
+                            <input
+                              type="text"
+                              className="rd-param-input"
+                              style={{ width: '60px' }}
+                              value={act.symbolType || 'int'}
+                              onChange={e => updateRuleAction(p.id, { symbolType: e.target.value })}
+                              placeholder="int"
+                            />
+                          </div>
+                        )}
+
+                        {act.actionType === 'custom' && (
+                          <input
+                            type="text"
+                            className="rd-param-input"
+                            style={{ width: '220px' }}
+                            value={act.jsCode || ''}
+                            onChange={e => updateRuleAction(p.id, { jsCode: e.target.value })}
+                            placeholder="ctx.symTab.addSymbol('x', 'int')"
+                          />
                         )}
                       </td>
                       <td>
-                        {acts.map((act, i) => (
-                          <div key={i} style={{ fontSize: '12px' }}>
-                            {act.description || (act.actionType === 'addSymbol' ? `Add symbol '${act.symbolName}' [${act.symbolType}]` : `Scope action`)}
-                          </div>
-                        ))}
+                        {act.actionType === 'none' && (
+                          <span className="badge badge-secondary" style={{ fontSize: '10.5px' }}>–</span>
+                        )}
+                        {act.actionType === 'enterScope' && (
+                          <span className="badge badge-accent" style={{ fontSize: '10.5px' }}>
+                            enterScope("{act.scopeName || `scope_${p.lhs}`}")
+                          </span>
+                        )}
+                        {act.actionType === 'exitScope' && (
+                          <span className="badge badge-warning" style={{ fontSize: '10.5px' }}>
+                            exitScope()
+                          </span>
+                        )}
+                        {act.actionType === 'addSymbol' && (
+                          <span className="badge badge-primary" style={{ fontSize: '10.5px' }}>
+                            addSymbol("{act.symbolName || 'id'}", "{act.symbolType || 'var'}")
+                          </span>
+                        )}
+                        {act.actionType === 'markType' && (
+                          <span className="badge badge-info" style={{ fontSize: '10.5px' }}>
+                            markType("{act.symbolName || 'id'}", "{act.symbolType || 'int'}")
+                          </span>
+                        )}
+                        {act.actionType === 'custom' && (
+                          <span className="badge badge-primary" style={{ fontSize: '10.5px' }}>
+                            eval(jsCode)
+                          </span>
+                        )}
                       </td>
-                      {actionPreset === 'custom' && (
-                        <td>
-                          {acts.length > 0 && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ padding: '2px 6px', fontSize: '10.5px' }}
-                              onClick={() => setRuleActions(curr => curr.filter(a => a.ruleId !== p.id))}
-                            >
-                              {cz ? 'Odebrat' : 'Remove'}
-                            </button>
-                          )}
-                        </td>
-                      )}
                     </tr>
                   );
                 })}
@@ -870,3 +1123,4 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
     </div>
   );
 };
+

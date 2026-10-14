@@ -236,14 +236,34 @@ export function simulateRecursiveDescent(
     const ctx = getContext();
 
     for (const act of actions) {
+      if (act.actionType === 'none') continue;
       try {
         if (act.actionType === 'enterScope') {
           symTab.enterScope(act.scopeName || `scope_${p.lhs}`);
         } else if (act.actionType === 'exitScope') {
           symTab.exitScope();
         } else if (act.actionType === 'addSymbol') {
-          const symName = act.symbolName === 'id' ? (input[tokenPos] || 'ident') : (act.symbolName || 'x');
-          symTab.addSymbol(symName, act.symbolType || 'var', {}, act.symbolKind || 'var', steps.length);
+          let symName = act.symbolName || 'id';
+          if (symName === 'id' || symName === '$id' || symName === 'ident') {
+            const idIdx = p.rhs.findIndex(s => ['id', 'ident', 'identifier', 'name'].includes(s.toLowerCase()));
+            if (idIdx >= 0 && input[tokenPos + idIdx]) {
+              symName = input[tokenPos + idIdx];
+            } else {
+              symName = input[tokenPos] || 'x';
+            }
+          }
+          symTab.addSymbol(symName, act.symbolType || 'var', act.customData || {}, act.symbolKind || 'var', steps.length);
+        } else if (act.actionType === 'markType') {
+          let symName = act.symbolName || 'id';
+          if (symName === 'id' || symName === '$id' || symName === 'ident') {
+            const idIdx = p.rhs.findIndex(s => ['id', 'ident', 'identifier', 'name'].includes(s.toLowerCase()));
+            if (idIdx >= 0 && input[tokenPos + idIdx]) {
+              symName = input[tokenPos + idIdx];
+            } else {
+              symName = input[tokenPos] || 'x';
+            }
+          }
+          symTab.markType(symName, act.symbolType || 'var');
         } else if (act.actionType === 'custom' && act.jsCode) {
           // Controlled execution of user snippet with ctx
           const fn = new Function('ctx', act.jsCode);

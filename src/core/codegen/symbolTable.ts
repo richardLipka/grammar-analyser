@@ -246,20 +246,46 @@ export class SymbolTable {
 }
 
 /**
- * Definition of a custom action hook attached to a grammar rule or symbol.
+ * Configuration of editable keywords used for automated declaration and scope detection.
+ */
+export interface DeclarationKeywordConfig {
+  /** Keywords indicating a new scope/block opens (e.g. ['procedure', 'function', 'begin', '{', 'proc', 'block']) */
+  scopeOpeners: string[];
+  /** Keywords indicating a scope/block closes (e.g. ['end', '}']) */
+  scopeClosers: string[];
+  /** Keywords introducing variable/const declarations (e.g. ['var', 'const', 'let', 'val']) */
+  declKeywords: string[];
+  /** Keywords representing data types (e.g. ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number']) */
+  typeKeywords: string[];
+  /** Identifier terminal names in grammar (e.g. ['id', 'ident', 'identifier', 'name']) */
+  idSymbols: string[];
+}
+
+export const DEFAULT_KEYWORD_CONFIG: DeclarationKeywordConfig = {
+  scopeOpeners: ['procedure', 'function', 'begin', '{', 'proc', 'block'],
+  scopeClosers: ['end', '}'],
+  declKeywords: ['var', 'const', 'let', 'val'],
+  typeKeywords: ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number'],
+  idSymbols: ['id', 'ident', 'identifier', 'name']
+};
+
+/**
+ * Definition of a declarative action hook attached to a grammar rule.
  */
 export interface RuleActionDefinition {
   ruleId: number;
-  /** Trigger type: 'enterScope', 'exitScope', 'addSymbol', 'custom' */
-  actionType: 'enterScope' | 'exitScope' | 'addSymbol' | 'custom';
-  /** Scope name or template (e.g. 'block', 'procedure') */
+  /** Action type: 'none' | 'enterScope' | 'exitScope' | 'addSymbol' | 'markType' | 'custom' */
+  actionType: 'none' | 'enterScope' | 'exitScope' | 'addSymbol' | 'markType' | 'custom';
+  /** Scope name or template (e.g. 'scope_Proc', 'block_1') */
   scopeName?: string;
-  /** Symbol name to add or template (e.g. '$1', 'id') */
+  /** Symbol name to add or lookup (e.g. 'id', '$id', 'x') */
   symbolName?: string;
   /** Symbol type (e.g. 'int', 'var', 'procedure') */
   symbolType?: string;
   /** Symbol kind */
   symbolKind?: SymbolKind;
+  /** Arbitrary custom data */
+  customData?: Record<string, unknown>;
   /** Custom JavaScript code snippet executed in context */
   jsCode?: string;
   /** User-friendly description shown in the UI */
@@ -267,68 +293,86 @@ export interface RuleActionDefinition {
 }
 
 /**
- * Automated analysis of a grammar to detect declarations and suggest symbol table action hooks.
- * Inspects production right-hand sides for common compiler construction patterns:
+ * Automated analysis of a grammar to detect declarations and generate declarative rule actions.
+ * Inspects production right-hand sides for configured keywords:
  * - Block/scope openers: { ... }, begin ... end, procedure ... ;
  * - Declarations: var ..., const ..., int id, etc.
+ *
+ * @param g - The grammar
+ * @param config - User-editable keyword configuration
  */
-export function suggestSymbolActions(g: Grammar): RuleActionDefinition[] {
+export function suggestSymbolActions(
+  g: Grammar,
+  config?: Partial<DeclarationKeywordConfig>
+): RuleActionDefinition[] {
+  const cfg: DeclarationKeywordConfig = {
+    scopeOpeners: (config?.scopeOpeners ?? DEFAULT_KEYWORD_CONFIG.scopeOpeners).map(s => s.trim().toLowerCase()).filter(Boolean),
+    scopeClosers: (config?.scopeClosers ?? DEFAULT_KEYWORD_CONFIG.scopeClosers).map(s => s.trim().toLowerCase()).filter(Boolean),
+    declKeywords: (config?.declKeywords ?? DEFAULT_KEYWORD_CONFIG.declKeywords).map(s => s.trim().toLowerCase()).filter(Boolean),
+    typeKeywords: (config?.typeKeywords ?? DEFAULT_KEYWORD_CONFIG.typeKeywords).map(s => s.trim().toLowerCase()).filter(Boolean),
+    idSymbols: (config?.idSymbols ?? DEFAULT_KEYWORD_CONFIG.idSymbols).map(s => s.trim().toLowerCase()).filter(Boolean)
+  };
+
   const suggestions: RuleActionDefinition[] = [];
 
   for (const p of g.productions) {
     const rhsLower = p.rhs.map(s => s.toLowerCase());
+    const lhsLower = p.lhs.toLowerCase();
 
-    // 1. Scope openers (procedure, function, block, begin, {)
-    if (
-      rhsLower.includes('procedure') ||
-      rhsLower.includes('function') ||
-      rhsLower.includes('begin') ||
-      rhsLower.includes('{') ||
-      p.lhs.toLowerCase().includes('proc') ||
-      p.lhs.toLowerCase().includes('block')
-    ) {
+    // 1. Scope openers (procedure, function, block, begin, {, etc.)
+    const hasOpener = cfg.scopeOpeners.some(k => rhsLower.includes(k) || lhsLower.includes(k));
+    if (hasOpener) {
       suggestions.push({
         ruleId: p.id,
         actionType: 'enterScope',
         scopeName: `scope_${p.lhs}`,
         description: `Enter scope for '${p.lhs}'`
       });
+      continue;
     }
 
-    // 2. Scope closers (end, })
-    if (rhsLower.includes('end') || rhsLower.includes('}')) {
+    // 2. Scope closers (end, }, etc.)
+    const hasCloser = cfg.scopeClosers.some(k => rhsLower.includes(k));
+    if (hasCloser) {
       suggestions.push({
         ruleId: p.id,
         actionType: 'exitScope',
         description: `Exit scope on '${p.rhs.join(' ')}'`
       });
+      continue;
     }
 
-    // 3. Declarations (var, const, int, float, string)
-    if (rhsLower.includes('var') || rhsLower.includes('const') || rhsLower.includes('let')) {
-      const isConst = rhsLower.includes('const');
+    // 3. Declarations (var, const, let, val)
+    const declWord = cfg.declKeywords.find(k => rhsLower.includes(k));
+    if (declWord) {
+      const isConst = declWord === 'const';
+      // Find id symbol if present
+      const idTerm = p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) || 'id';
+      // Find type if present in same rule
+      const typeTerm = p.rhs.find(s => cfg.typeKeywords.includes(s.toLowerCase())) || (isConst ? 'const' : 'var');
+
       suggestions.push({
         ruleId: p.id,
         actionType: 'addSymbol',
-        symbolName: 'id',
-        symbolType: isConst ? 'const' : 'var',
-        symbolKind: isConst ? 'const' : 'var',
-        description: `Declare ${isConst ? 'constant' : 'variable'} in current scope`
-      });
-    } else if (
-      rhsLower.includes('int') ||
-      rhsLower.includes('real') ||
-      rhsLower.includes('bool') ||
-      rhsLower.includes('char')
-    ) {
-      const typeTerm = p.rhs.find(s => ['int', 'real', 'bool', 'char'].includes(s.toLowerCase())) || 'type';
-      suggestions.push({
-        ruleId: p.id,
-        actionType: 'addSymbol',
-        symbolName: 'id',
+        symbolName: idTerm,
         symbolType: typeTerm,
+        symbolKind: isConst ? 'const' : 'var',
+        description: `Declare ${isConst ? 'constant' : 'variable'} '${idTerm}' in current scope`
+      });
+      continue;
+    }
+
+    // 4. Typed declaration without var keyword (e.g. "int id;", "real x")
+    const matchedType = cfg.typeKeywords.find(k => rhsLower.includes(k));
+    if (matchedType) {
+      const idTerm = p.rhs.find(s => cfg.idSymbols.includes(s.toLowerCase())) || 'id';
+      suggestions.push({
+        ruleId: p.id,
+        actionType: 'addSymbol',
+        symbolName: idTerm,
+        symbolType: matchedType,
         symbolKind: 'var',
-        description: `Declare variable with type '${typeTerm}'`
+        description: `Declare variable '${idTerm}' of type '${matchedType}'`
       });
     }
   }
