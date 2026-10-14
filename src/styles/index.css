@@ -45,6 +45,7 @@
   --color-primary: #38bdf8;
   --color-primary-hover: #0284c7;
   --color-primary-subtle: rgba(56, 189, 248, 0.12);
+  --color-accent: #a78bfa;
 
   --color-success: #34d399;
   --color-success-subtle: rgba(52, 211, 153, 0.12);
@@ -99,6 +100,7 @@
   --color-primary: #0369a1;
   --color-primary-hover: #075985;
   --color-primary-subtle: rgba(3, 105, 161, 0.12);
+  --color-accent: #6d28d9;
 
   --color-success: #047857;
   --color-success-subtle: rgba(4, 120, 87, 0.12);
@@ -152,6 +154,7 @@
   --color-primary: #0000ee;
   --color-primary-hover: #0000aa;
   --color-primary-subtle: #e0e7ff;
+  --color-accent: #5b21b6;
 
   --color-success: #007700;
   --color-success-subtle: #dcfce7;
@@ -564,6 +567,24 @@ body {
   background-color: var(--color-primary-subtle);
   color: var(--color-primary);
   border: 1px solid var(--color-primary);
+}
+
+.badge-secondary {
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.badge-accent {
+  background-color: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+.badge-info {
+  background-color: var(--color-primary-subtle);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
 }
 
 .badge-success {

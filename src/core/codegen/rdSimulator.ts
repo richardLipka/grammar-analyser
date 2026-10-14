@@ -9,18 +9,25 @@
  * - The active rule/branch being executed
  * - The Symbol Table state ("stack of stacks" with lexical scopes and declarations)
  * - Semantic action hooks executed along the descent
+ *
+ * Tokens may carry their text (lexemes: the name x read as the terminal id). The
+ * actions of a rule are tied to positions of its right-hand side: a name is declared
+ * when its identifier has been read, a scope opens before and closes after given
+ * symbols, and every other identifier read is looked up in the symbol table.
  */
 
 import { Grammar, Production, END_MARKER } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
-import { LLTable } from '../ll/llTable';
 import { DerivationNode } from '../generator/wordGenerator';
 import {
   SymbolTable,
   SymbolTableSnapshot,
+  SymbolEntry,
+  SymbolKind,
   RuleActionDefinition,
+  DeclarationKeywordConfig,
   isIdentifierTerminal,
-  isNonIdentifierLiteral
+  normalizeKeywordConfig
 } from './symbolTable';
 
 export interface RDCallFrame {
@@ -32,6 +39,15 @@ export interface RDCallFrame {
   nodeId: string;
   depth: number;
   openedScopeId?: string;
+}
+
+/** The scope where a name read in the input was found; no scope = not declared. */
+export interface RDLookup {
+  name: string;
+  scopeId?: string;
+  scopeName?: string;
+  level?: number;
+  kind?: SymbolKind;
 }
 
 export interface RDSimulationStep {
@@ -65,6 +81,10 @@ export interface RDSimulationStep {
   leftParse: number[];
   /** Snapshot of the Symbol Table ("stack of stacks") */
   symbolTableSnapshot: SymbolTableSnapshot;
+  /** The name declared in this step */
+  declared?: SymbolEntry;
+  /** The name looked up in this step (an identifier that is not being declared) */
+  lookup?: RDLookup;
   isError?: boolean;
   isAccepted?: boolean;
   errorMessage?: string;
@@ -78,6 +98,12 @@ export interface RDSimulationResult {
   errorMessageCz?: string;
   finalTree?: DerivationNode;
   leftParse: number[];
+  /** The text of every input token, the end marker included */
+  lexemes: string[];
+  /** Names used but not declared in any visible scope (with the step) */
+  undeclared: { name: string; step: number }[];
+  /** The simulation stopped at the step limit */
+  truncated?: boolean;
 }
 
 export interface RDContext {
@@ -92,6 +118,10 @@ export interface RDContext {
 export interface CustomActionConfig {
   /** Explicit rule-action definitions */
   ruleActions?: RuleActionDefinition[];
+  /** Type keywords ($type) and identifier terminals (names that are looked up) */
+  keywords?: Partial<DeclarationKeywordConfig>;
+  /** The text of the input tokens (x for the token id); the tokens themselves when absent */
+  lexemes?: string[];
   /** Custom JavaScript callback hooks */
   hooks?: {
     onEnter?: (nt: string, ctx: RDContext) => void;
@@ -100,6 +130,10 @@ export interface CustomActionConfig {
     onExit?: (nt: string, ctx: RDContext) => void;
   };
 }
+
+const KIND_CZ: Record<SymbolKind, string> = {
+  var: 'proměnná', const: 'konstanta', procedure: 'procedura', function: 'funkce', type: 'typ', param: 'parametr', custom: 'vlastní'
+};
 
 /** Deep clone of a derivation node tree with active node/branch highlighted */
 function cloneTreeWithActive(node: DerivationNode, activePathSet: Set<string>, activeNodeId: string): DerivationNode {
@@ -112,17 +146,6 @@ function cloneTreeWithActive(node: DerivationNode, activePathSet: Set<string>, a
     mark,
     children: node.children ? node.children.map(c => cloneTreeWithActive(c, activePathSet, activeNodeId)) : undefined
   };
-}
-
-/** Finds a node by ID in the tree */
-function findNode(root: DerivationNode, id: string): DerivationNode | null {
-  if (root.id === id) return root;
-  if (!root.children) return null;
-  for (const child of root.children) {
-    const found = findNode(child, id);
-    if (found) return found;
-  }
-  return null;
 }
 
 /** Finds the path of node IDs from root to target */
@@ -145,12 +168,15 @@ export function simulateRecursiveDescent(
   g: Grammar,
   analysis: GrammarAnalysis,
   actionConfig?: CustomActionConfig,
-  maxSteps = 800
+  maxSteps = 2000
 ): RDSimulationResult {
   const steps: RDSimulationStep[] = [];
   const input = [...inputTokens, END_MARKER];
+  const lexemes = input.map((tok, i) => (i < inputTokens.length ? actionConfig?.lexemes?.[i] ?? tok : tok));
   const leftParse: number[] = [];
+  const undeclared: { name: string; step: number }[] = [];
   const symTab = new SymbolTable('global');
+  const keywords = normalizeKeywordConfig(actionConfig?.keywords);
 
   if (!g.startSymbol) {
     return {
@@ -158,7 +184,9 @@ export function simulateRecursiveDescent(
       steps: [],
       errorMessage: 'Grammar has no start symbol.',
       errorMessageCz: 'Gramatika nemá počáteční symbol.',
-      leftParse: []
+      leftParse: [],
+      lexemes,
+      undeclared
     };
   }
 
@@ -170,13 +198,19 @@ export function simulateRecursiveDescent(
 
   // Pre-index custom rule actions
   const ruleActionMap = new Map<number, RuleActionDefinition[]>();
-  if (actionConfig?.ruleActions) {
-    for (const a of actionConfig.ruleActions) {
-      const list = ruleActionMap.get(a.ruleId) || [];
-      list.push(a);
-      ruleActionMap.set(a.ruleId, list);
-    }
+  for (const a of actionConfig?.ruleActions ?? []) {
+    if (a.actionType === 'none') continue;
+    const list = ruleActionMap.get(a.ruleId) || [];
+    list.push(a);
+    ruleActionMap.set(a.ruleId, list);
   }
+  // Names are looked up only when the symbol table is in use
+  const tableActive = ruleActionMap.size > 0;
+  const isIdentifier = (X: string) => isIdentifierTerminal(X, keywords.idSymbols);
+  const isTypeKeyword = (X: string) => keywords.typeKeywords.includes(X.toLowerCase());
+  let lastType = '';
+  let lastDeclared = '';
+  const resolveType = (t: string | undefined) => (t === '$type' ? lastType : t ?? '');
 
   let nodeIdCounter = 1;
   const rootNode: DerivationNode = {
@@ -194,6 +228,8 @@ export function simulateRecursiveDescent(
 
   const getConsumed = () => input.slice(0, tokenPos);
   const getRemaining = () => input.slice(tokenPos);
+  // The current symbol with its text: id (x)
+  const shown = (pos: number) => (lexemes[pos] !== input[pos] ? `${input[pos]} (${lexemes[pos]})` : input[pos] ?? END_MARKER);
 
   const getContext = (): RDContext => ({
     symTab,
@@ -237,72 +273,23 @@ export function simulateRecursiveDescent(
     });
   };
 
-  const executeRuleActions = (p: Production): string | undefined => {
-    const actions = ruleActionMap.get(p.id);
-    if (!actions) return undefined;
-    const ctx = getContext();
-    let openedScopeId: string | undefined;
-
-    for (const act of actions) {
-      if (act.actionType === 'none') continue;
+  /** Actions without a position that act when the rule is chosen: custom code, fixed names */
+  const executeRuleActions = (p: Production) => {
+    for (const act of ruleActionMap.get(p.id) ?? []) {
       try {
-        if (act.actionType === 'enterScope') {
-          const sc = symTab.enterScope(act.scopeName || `scope_${p.lhs}`);
-          openedScopeId = sc.id;
-        } else if (act.actionType === 'exitScope') {
-          symTab.exitScope();
-        } else if (act.actionType === 'addSymbol') {
-          let symName = act.symbolName || 'id';
-          if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
-            const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
-            if (idIdx >= 0 && input[tokenPos + idIdx]) {
-              const candidate = input[tokenPos + idIdx];
-              if (!isNonIdentifierLiteral(candidate)) {
-                symName = candidate;
-              }
-            } else {
-              const candidate = input[tokenPos];
-              if (candidate && !isNonIdentifierLiteral(candidate) && isIdentifierTerminal(candidate)) {
-                symName = candidate;
-              } else {
-                symName = 'id';
-              }
-            }
-          }
-          if (symName && symName !== END_MARKER && !isNonIdentifierLiteral(symName)) {
-            symTab.addSymbol(symName, act.symbolType || 'var', act.customData || {}, act.symbolKind || 'var', steps.length);
-          }
-        } else if (act.actionType === 'markType') {
-          let symName = act.symbolName || 'id';
-          if (isIdentifierTerminal(symName) || symName === '$id' || symName === 'x') {
-            const idIdx = p.rhs.findIndex(s => isIdentifierTerminal(s));
-            if (idIdx >= 0 && input[tokenPos + idIdx]) {
-              const candidate = input[tokenPos + idIdx];
-              if (!isNonIdentifierLiteral(candidate)) {
-                symName = candidate;
-              }
-            } else {
-              const candidate = input[tokenPos];
-              if (candidate && !isNonIdentifierLiteral(candidate) && isIdentifierTerminal(candidate)) {
-                symName = candidate;
-              } else {
-                symName = 'id';
-              }
-            }
-          }
-          if (symName && symName !== END_MARKER && !isNonIdentifierLiteral(symName)) {
-            symTab.markType(symName, act.symbolType || 'var');
-          }
+        if (act.actionType === 'addSymbol' && act.position === undefined && act.symbolName) {
+          symTab.addSymbol(act.symbolName, resolveType(act.symbolType), act.customData || {}, act.symbolKind || 'var', steps.length);
+        } else if (act.actionType === 'markType' && act.position === undefined && act.symbolName) {
+          symTab.markType(act.symbolName, resolveType(act.symbolType));
         } else if (act.actionType === 'custom' && act.jsCode) {
-          // Controlled execution of user snippet with ctx
+          // The user's own snippet, run with the context of the simulation
           const fn = new Function('ctx', act.jsCode);
-          fn(ctx);
+          fn(getContext());
         }
       } catch (err) {
         console.warn(`Error executing custom action for rule ${p.id}:`, err);
       }
     }
-    return openedScopeId;
   };
 
   // Stack of active frames
@@ -315,8 +302,8 @@ export function simulateRecursiveDescent(
     'main',
     'frame_0',
     rootNode.id,
-    `Starting recursive descent at '${g.startSymbol}' with lookahead '${sym}'`,
-    `Zahájení rekurzivního sestupu v '${g.startSymbol}' s řídicím symbolem '${sym}'`
+    `Starting recursive descent at '${g.startSymbol}' with lookahead '${shown(0)}'`,
+    `Zahájení rekurzivního sestupu v '${g.startSymbol}' s aktuálním symbolem '${shown(0)}'`
   );
 
   function parseNonTerminal(nt: string, parentNode: DerivationNode): boolean {
@@ -340,8 +327,8 @@ export function simulateRecursiveDescent(
       nt,
       frameId,
       parentNode.id,
-      `Call function ${nt}() [lookahead: '${sym}']`,
-      `Volání funkce ${nt}() [řídicí symbol: '${sym}']`
+      `Call function ${nt}() [lookahead: '${shown(tokenPos)}']`,
+      `Volání funkce ${nt}() [aktuální symbol: '${shown(tokenPos)}']`
     );
 
     // Select rule by lookahead
@@ -350,8 +337,8 @@ export function simulateRecursiveDescent(
 
     if (!matchingRule) {
       isError = true;
-      errorMsg = `Syntax error in ${nt}(): unexpected symbol '${sym}'.`;
-      errorMsgCz = `Syntaktická chyba ve funkci ${nt}(): neočekávaný symbol '${sym}'.`;
+      errorMsg = `Syntax error in ${nt}(): unexpected symbol '${shown(tokenPos)}'.`;
+      errorMsgCz = `Syntaktická chyba ve funkci ${nt}(): neočekávaný symbol '${shown(tokenPos)}'.`;
       parentNode.mark = 'mismatch';
 
       recordStep(
@@ -372,10 +359,7 @@ export function simulateRecursiveDescent(
     leftParse.push(matchingRule.id);
 
     // Execute semantic rule actions
-    const openedScopeId = executeRuleActions(matchingRule);
-    if (openedScopeId) {
-      frame.openedScopeId = openedScopeId;
-    }
+    executeRuleActions(matchingRule);
     actionConfig?.hooks?.onRule?.(matchingRule, getContext());
 
     // Populate parse tree children
@@ -414,9 +398,6 @@ export function simulateRecursiveDescent(
 
     // Epsilon rule returns immediately
     if (matchingRule.rhs.length === 0) {
-      if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
-        symTab.exitScope();
-      }
       actionConfig?.hooks?.onExit?.(nt, getContext());
       callStack.pop();
       recordStep(
@@ -430,6 +411,32 @@ export function simulateRecursiveDescent(
       return true;
     }
 
+    const last = matchingRule.rhs.length - 1;
+    const actions = ruleActionMap.get(matchingRule.id) ?? [];
+    const at = (type: RuleActionDefinition['actionType'], i: number, fallback?: number) =>
+      actions.filter(a => a.actionType === type && (a.position ?? fallback) === i);
+    // Scopes opened by this rule, closed after the symbol closeAfter
+    const opened: { id: string; closeAfter: number }[] = [];
+
+    const closeScope = (scopeId: string | undefined, node: DerivationNode) => {
+      const active = symTab.getActiveStack();
+      if (scopeId !== undefined && !active.some(s => s.id === scopeId)) return;
+      // An inner scope that was not closed goes too
+      for (;;) {
+        const exited = symTab.exitScope();
+        if (!exited) return;
+        recordStep(
+          callStack,
+          nt,
+          frameId,
+          node.id,
+          `Exit scope '${exited.name}' (level ${exited.level}); its names are no longer visible`,
+          `Konec rozsahu '${exited.name}' (úroveň ${exited.level}); jeho jména už nejsou viditelná`
+        );
+        if (scopeId === undefined || exited.id === scopeId) return;
+      }
+    };
+
     // Process each RHS symbol
     for (let i = 0; i < matchingRule.rhs.length; i++) {
       if (isError || steps.length >= maxSteps) break;
@@ -439,13 +446,25 @@ export function simulateRecursiveDescent(
       frame.rhsIndex = i;
       frame.currentSymbol = X;
 
+      for (const act of at('enterScope', i, 0)) {
+        const name = (act.scopeName || `scope_${nt}`).replace('$name', lastDeclared).trim() || `scope_${nt}`;
+        const sc = symTab.enterScope(name);
+        opened.push({ id: sc.id, closeAfter: act.closeAfter ?? last });
+        frame.openedScopeId = sc.id;
+        recordStep(
+          callStack,
+          nt,
+          frameId,
+          childNode.id,
+          `Enter scope '${sc.name}' (level ${sc.level}); names declared from now on belong to it`,
+          `Vstup do rozsahu '${sc.name}' (úroveň ${sc.level}); jména deklarovaná od teď patří do něj`
+        );
+      }
+
       if (g.nonTerminals.has(X)) {
         // Non-terminal: recursive call
         const success = parseNonTerminal(X, childNode);
         if (!success) {
-          if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
-            symTab.exitScope();
-          }
           callStack.pop();
           return false;
         }
@@ -456,29 +475,67 @@ export function simulateRecursiveDescent(
           nt,
           frameId,
           childNode.id,
-          `Expect terminal '${X}' [current lookahead: '${sym}']`,
-          `Očekává se terminál '${X}' [aktuální symbol: '${sym}']`
+          `Expect terminal '${X}' [current lookahead: '${shown(tokenPos)}']`,
+          `Očekává se terminál '${X}' [aktuální symbol: '${shown(tokenPos)}']`
         );
 
         if (sym === X) {
           const matched = sym;
-          actionConfig?.hooks?.onMatch?.(X, matched, getContext());
+          const lexeme = lexemes[tokenPos];
+          actionConfig?.hooks?.onMatch?.(X, lexeme, getContext());
           tokenPos++;
           sym = input[tokenPos] ?? END_MARKER;
+
+          // Semantic actions at this symbol: declare the name, or look it up
+          let noteEn = '';
+          let noteCz = '';
+          const extra: Partial<RDSimulationStep> = { matchedToken: matched };
+          if (isTypeKeyword(X)) lastType = lexeme;
+          const declarations = at('addSymbol', i);
+          for (const act of declarations) {
+            const kind = act.symbolKind || 'var';
+            const type = resolveType(act.symbolType);
+            const redeclared = !!symTab.lookupLocal(lexeme);
+            const entry = symTab.addSymbol(lexeme, type, act.customData || {}, kind, steps.length);
+            lastDeclared = lexeme;
+            extra.declared = entry;
+            noteEn += `; declare ${kind} '${lexeme}'${type ? ` : ${type}` : ''} in scope '${entry.scopeName}' (level ${entry.scopeLevel})${redeclared ? ' – already declared in this scope!' : ''}`;
+            noteCz += `; deklarace: ${KIND_CZ[kind]} '${lexeme}'${type ? ` : ${type}` : ''} v rozsahu '${entry.scopeName}' (úroveň ${entry.scopeLevel})${redeclared ? ' – v tomto rozsahu už je deklarováno!' : ''}`;
+          }
+          for (const act of at('markType', i)) {
+            const type = resolveType(act.symbolType);
+            if (symTab.markType(lexeme, type)) {
+              noteEn += `; type of '${lexeme}' set to ${type}`;
+              noteCz += `; typ '${lexeme}' nastaven na ${type}`;
+            }
+          }
+          if (tableActive && declarations.length === 0 && isIdentifier(X)) {
+            const found = symTab.lookup(lexeme);
+            if (found) {
+              extra.lookup = { name: lexeme, scopeId: found.scope.id, scopeName: found.scope.name, level: found.scope.level, kind: found.entry.kind };
+              noteEn += `; the name '${lexeme}' is found: the ${found.entry.kind} of scope '${found.scope.name}' (level ${found.scope.level})`;
+              noteCz += `; jméno '${lexeme}' nalezeno: ${KIND_CZ[found.entry.kind]} z rozsahu '${found.scope.name}' (úroveň ${found.scope.level})`;
+            } else {
+              extra.lookup = { name: lexeme };
+              undeclared.push({ name: lexeme, step: steps.length });
+              noteEn += `; the name '${lexeme}' is not declared in any visible scope!`;
+              noteCz += `; jméno '${lexeme}' není deklarováno v žádném viditelném rozsahu!`;
+            }
+          }
 
           recordStep(
             callStack,
             nt,
             frameId,
             childNode.id,
-            `Matched terminal '${X}', consume and advance lookahead to '${sym}'`,
-            `Úspěšné srovnání terminálu '${X}', posun vstupu na '${sym}'`,
-            { matchedToken: matched }
+            `Matched terminal '${lexeme !== X ? `${X}' (${lexeme})` : `${X}'`}, advance to '${shown(tokenPos)}'${noteEn}`,
+            `Úspěšné srovnání terminálu '${lexeme !== X ? `${X}' (${lexeme})` : `${X}'`}, posun vstupu na '${shown(tokenPos)}'${noteCz}`,
+            extra
           );
         } else {
           isError = true;
-          errorMsg = `Syntax error: expected terminal '${X}', but found '${sym}'.`;
-          errorMsgCz = `Syntaktická chyba: očekáván terminál '${X}', ale nalezen '${sym}'.`;
+          errorMsg = `Syntax error: expected terminal '${X}', but found '${shown(tokenPos)}'.`;
+          errorMsgCz = `Syntaktická chyba: očekáván terminál '${X}', ale nalezen '${shown(tokenPos)}'.`;
           childNode.mark = 'mismatch';
 
           recordStep(
@@ -490,67 +547,66 @@ export function simulateRecursiveDescent(
             errorMsgCz,
             { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz }
           );
-          if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
-            symTab.exitScope();
-          }
           callStack.pop();
           return false;
         }
       }
-    }
 
-    // If this frame entered a scope that hasn't been closed by an explicit closer rule,
-    // exit it cleanly upon returning from this non-terminal.
-    if (frame.openedScopeId && symTab.currentScope()?.id === frame.openedScopeId) {
-      const exited = symTab.exitScope();
-      if (exited) {
-        recordStep(
-          callStack,
-          nt,
-          frameId,
-          parentNode.id,
-          `Exited scope '${exited.name}' (level ${exited.level}) upon returning from ${nt}()`,
-          `Ukončen blok '${exited.name}' (úroveň ${exited.level}) při návratu z ${nt}()`
-        );
+      // Scopes that end after this symbol
+      for (let k = opened.length - 1; k >= 0; k--) {
+        if (opened[k].closeAfter === i) {
+          closeScope(opened[k].id, childNode);
+          opened.splice(k, 1);
+        }
       }
+      for (let k = at('exitScope', i, last).length; k > 0; k--) closeScope(undefined, childNode);
+    }
+    // A scope whose end lies beyond the right-hand side (closeAfter too large) ends with the rule
+    for (const o of opened.reverse()) closeScope(o.id, parentNode);
+
+    if (isError || steps.length >= maxSteps) {
+      callStack.pop();
+      return false;
     }
 
     actionConfig?.hooks?.onExit?.(nt, getContext());
     callStack.pop();
 
-    if (!isError) {
-      recordStep(
-        callStack,
-        callStack.length > 0 ? callStack[callStack.length - 1].functionName : 'main',
-        callStack.length > 0 ? callStack[callStack.length - 1].id : 'frame_0',
-        parentNode.id,
-        `Return from ${nt}()`,
-        `Návrat z funkce ${nt}()`
-      );
-    }
+    recordStep(
+      callStack,
+      callStack.length > 0 ? callStack[callStack.length - 1].functionName : 'main',
+      callStack.length > 0 ? callStack[callStack.length - 1].id : 'frame_0',
+      parentNode.id,
+      `Return from ${nt}()`,
+      `Návrat z funkce ${nt}()`
+    );
 
-    return !isError;
+    return true;
   }
 
   // Run start symbol
   const parseSuccess = parseNonTerminal(g.startSymbol, rootNode);
+  const truncated = steps.length >= maxSteps;
 
   if (parseSuccess && !isError) {
     if (sym === END_MARKER) {
       isAccepted = true;
+      const names = undeclared.length > 0
+        ? { en: ` Not declared: ${[...new Set(undeclared.map(u => u.name))].join(', ')}.`, cz: ` Nedeklarováno: ${[...new Set(undeclared.map(u => u.name))].join(', ')}.` }
+        : { en: '', cz: '' };
       recordStep(
         [],
         'main',
         'frame_0',
         rootNode.id,
-        `Parsing completed successfully! Input word accepted.`,
-        `Syntaktická analýza úspěšně dokončena! Slovo bylo přijato.`,
+        `Parsing completed successfully! Input word accepted.${names.en}`,
+        `Syntaktická analýza úspěšně dokončena! Slovo bylo přijato.${names.cz}`,
         { isAccepted: true }
       );
     } else {
       isError = true;
-      errorMsg = `End of input expected ('$'), but remaining symbol '${sym}' found.`;
-      errorMsgCz = `Očekáván konec vstupu ('$'), ale zbývá symbol '${sym}'.`;
+      errorMsg = `End of input expected ('$'), but remaining symbol '${shown(tokenPos)}' found.`;
+      errorMsgCz = `Očekáván konec vstupu ('$'), ale zbývá symbol '${shown(tokenPos)}'.`;
       recordStep(
         [],
         'main',
@@ -561,14 +617,20 @@ export function simulateRecursiveDescent(
         { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz }
       );
     }
+  } else if (truncated && !isError) {
+    errorMsg = `The simulation stopped after ${maxSteps} steps; shorten the input.`;
+    errorMsgCz = `Simulace se zastavila po ${maxSteps} krocích; zkraťte vstup.`;
   }
 
   return {
     accepted: isAccepted,
     steps,
-    errorMessage: isError ? errorMsg : undefined,
-    errorMessageCz: isError ? errorMsgCz : undefined,
+    errorMessage: isError || (truncated && !isAccepted) ? errorMsg : undefined,
+    errorMessageCz: isError || (truncated && !isAccepted) ? errorMsgCz : undefined,
     finalTree: cloneTreeWithActive(rootNode, new Set(), ''),
-    leftParse
+    leftParse,
+    lexemes,
+    undeclared,
+    truncated: truncated && !isAccepted ? true : undefined
   };
 }

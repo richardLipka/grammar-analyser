@@ -273,17 +273,20 @@ export class SymbolTable {
   }
 }
 
+
 /**
  * Configuration of editable keywords used for automated declaration and scope detection.
  */
 export interface DeclarationKeywordConfig {
-  /** Keywords indicating a new scope/block opens (e.g. ['procedure', 'function', 'begin', '{', 'proc', 'block']) */
+  /** Keywords followed by the name of a procedure or function with its own scope (procedure p; function f) */
+  procKeywords: string[];
+  /** Keywords opening a block ({, begin); the block is a scope only when declarations can occur inside it */
   scopeOpeners: string[];
-  /** Keywords indicating a scope/block closes (e.g. ['end', '}']) */
+  /** Keywords closing a block (}, end) */
   scopeClosers: string[];
   /** Keywords introducing variable/const declarations (e.g. ['var', 'const', 'let', 'val']) */
   declKeywords: string[];
-  /** Keywords representing data types (e.g. ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number']) */
+  /** Keywords representing data types (e.g. ['int', 'real', 'bool', 'char']) */
   typeKeywords: string[];
   /** Identifier terminal names in grammar (e.g. ['id', 'ident', 'identifier', 'name', 'variable', 'varname', 'symbol']) */
   idSymbols: string[];
@@ -390,26 +393,57 @@ export function isIdentifierTerminal(symbol: string, customList?: string[]): boo
   return IDENTIFIER_TERMINAL_REGEX.test(clean);
 }
 
+/** Terminals that stand for a number in the input (num, number, digit, int_lit, …) */
+const NUMBER_TERMINAL_RE = /^(num|number|numeral|digit|digits|int_lit|float_lit|integer_literal|float_literal|intconst|numconst)$/i;
+
+/**
+ * The terminals of the grammar that a name (x, count) and a number (42) in the input stand for:
+ * the first identifier terminal (one of `idSymbols` first) and the first number terminal.
+ */
+export function tokenClasses(terminals: Iterable<string>, idSymbols: string[] = DEFAULT_ID_SYMBOLS): { identifier?: string; number?: string } {
+  const list = [...terminals];
+  const listed = idSymbols.map(s => s.toLowerCase());
+  const identifier = list.find(t => listed.includes(t.toLowerCase()) && !isNonIdentifierLiteral(t)) ?? list.find(t => isIdentifierTerminal(t, idSymbols));
+  const number = list.find(t => NUMBER_TERMINAL_RE.test(t));
+  return { identifier, number };
+}
+
 export const DEFAULT_KEYWORD_CONFIG: DeclarationKeywordConfig = {
-  scopeOpeners: ['procedure', 'function', 'begin', '{', 'proc', 'block'],
-  scopeClosers: ['end', '}'],
+  procKeywords: ['procedure', 'function', 'proc', 'func', 'fn', 'def', 'method'],
+  scopeOpeners: ['{', 'begin'],
+  scopeClosers: ['}', 'end'],
   declKeywords: ['var', 'const', 'let', 'val'],
-  typeKeywords: ['int', 'real', 'bool', 'char', 'string', 'float', 'double', 'void', 'number'],
+  // Not 'number': in PL/0 and many textbook grammars it is the literal token, not a type
+  typeKeywords: ['int', 'integer', 'real', 'bool', 'boolean', 'char', 'string', 'float', 'double', 'long', 'short', 'void'],
   idSymbols: [...DEFAULT_ID_SYMBOLS]
 };
 
 /**
  * Definition of a declarative action hook attached to a grammar rule.
+ *
+ * Positions are indices into the right-hand side of the rule, so an action happens
+ * at the right moment of the procedure of the rule: a name is declared when its
+ * identifier has been read (and the name is the one in the input), and a scope
+ * opens and closes around a part of the right-hand side.
  */
 export interface RuleActionDefinition {
   ruleId: number;
   /** Action type: 'none' | 'enterScope' | 'exitScope' | 'addSymbol' | 'markType' | 'custom' */
   actionType: 'none' | 'enterScope' | 'exitScope' | 'addSymbol' | 'markType' | 'custom';
-  /** Scope name or template (e.g. 'scope_Proc', 'block_1') */
+  /**
+   * addSymbol / markType: the identifier of the right-hand side whose name (read from the
+   * input) is declared or typed, right after it is read.
+   * enterScope: the scope opens before this symbol (default 0, the start of the rule).
+   * exitScope: the innermost scope closes after this symbol (default: the last symbol).
+   */
+  position?: number;
+  /** enterScope: the scope closes after this symbol (default: the last symbol of the rule) */
+  closeAfter?: number;
+  /** Scope name; $name stands for the name declared last (procedure p) */
   scopeName?: string;
-  /** Symbol name to add or lookup (e.g. 'id', '$id', 'x') */
+  /** addSymbol / markType without a position: this name */
   symbolName?: string;
-  /** Symbol type (e.g. 'int', 'var', 'procedure') */
+  /** Symbol type; $type stands for the type keyword read last (int, float) */
   symbolType?: string;
   /** Symbol kind */
   symbolKind?: SymbolKind;
@@ -421,11 +455,38 @@ export interface RuleActionDefinition {
   description?: string;
 }
 
+/** Terminals after which a name is not declared any more (x = 5, x : integer, x := 1) */
+const ASSIGN_TERMINALS = new Set(['=', ':=', ':', '<-', '←']);
+
+/** The keyword configuration with defaults for missing lists, trimmed and in lower case. */
+export function normalizeKeywordConfig(config?: Partial<DeclarationKeywordConfig>): DeclarationKeywordConfig {
+  const list = (key: keyof DeclarationKeywordConfig) =>
+    (config?.[key] ?? DEFAULT_KEYWORD_CONFIG[key]).map(s => s.trim().toLowerCase()).filter(Boolean);
+  return {
+    procKeywords: list('procKeywords'),
+    scopeOpeners: list('scopeOpeners'),
+    scopeClosers: list('scopeClosers'),
+    declKeywords: list('declKeywords'),
+    typeKeywords: list('typeKeywords'),
+    idSymbols: list('idSymbols')
+  };
+}
+
 /**
  * Automated analysis of a grammar to detect declarations and generate declarative rule actions.
- * Inspects production right-hand sides for configured keywords:
- * - Block/scope openers: { ... }, begin ... end, procedure ... ;
- * - Declarations: var ..., const ..., int id, etc.
+ *
+ * - procedure p / function f (a procedure keyword followed by an identifier): p is declared in the
+ *   enclosing scope, and a scope "procedure p" covers the rest of the rule (parameters, body), but
+ *   not a trailing call of the rule itself (ProcPart -> procedure id ; Block ; ProcPart);
+ * - var x, const c = 5, let y (a declaration keyword): the first identifier before = or : is
+ *   declared; so are the identifiers of the non-terminals that follow it and occur only there
+ *   (VarRest -> , id VarRest; ConstDef -> id = number);
+ * - int x, Type x (a type keyword, or a non-terminal deriving only type keywords, before an
+ *   identifier): x is declared with the type read last ($type); int f ( … ) declares a function
+ *   with a scope for its parameters and body;
+ * - { … }, begin … end: a scope, when declarations can occur inside (C blocks), but not for a
+ *   compound statement without declarations (PL/0's begin … end);
+ * - an identifier read anywhere else is a use: the simulator looks the name up.
  *
  * @param g - The grammar
  * @param config - User-editable keyword configuration
@@ -434,84 +495,158 @@ export function suggestSymbolActions(
   g: Grammar,
   config?: Partial<DeclarationKeywordConfig>
 ): RuleActionDefinition[] {
-  const cfg: DeclarationKeywordConfig = {
-    scopeOpeners: (config?.scopeOpeners ?? DEFAULT_KEYWORD_CONFIG.scopeOpeners).map(s => s.trim().toLowerCase()).filter(Boolean),
-    scopeClosers: (config?.scopeClosers ?? DEFAULT_KEYWORD_CONFIG.scopeClosers).map(s => s.trim().toLowerCase()).filter(Boolean),
-    declKeywords: (config?.declKeywords ?? DEFAULT_KEYWORD_CONFIG.declKeywords).map(s => s.trim().toLowerCase()).filter(Boolean),
-    typeKeywords: (config?.typeKeywords ?? DEFAULT_KEYWORD_CONFIG.typeKeywords).map(s => s.trim().toLowerCase()).filter(Boolean),
-    idSymbols: (config?.idSymbols ?? DEFAULT_KEYWORD_CONFIG.idSymbols).map(s => s.trim().toLowerCase()).filter(Boolean)
+  const cfg = normalizeKeywordConfig(config);
+  const isT = (s: string) => g.terminals.has(s);
+  const inList = (list: string[], s: string) => isT(s) && list.includes(s.toLowerCase());
+  const isId = (s: string) => isT(s) && isIdentifierTerminal(s, cfg.idSymbols);
+  const rulesOf = (A: string) => g.productions.filter(p => p.lhs === A);
+
+  // Type -> int | float | char: a non-terminal that derives just one type keyword
+  const typeNts = new Set([...g.nonTerminals].filter(A => {
+    const rs = rulesOf(A);
+    return rs.length > 0 && rs.every(p => p.rhs.length === 1 && inList(cfg.typeKeywords, p.rhs[0]));
+  }));
+  const isType = (s: string) => inList(cfg.typeKeywords, s) || typeNts.has(s);
+  // The last symbol of a rule that belongs to the declaration (not a trailing call of the rule itself)
+  const lastOwn = (p: Production) => {
+    let k = p.rhs.length - 1;
+    while (k > 0 && p.rhs[k] === p.lhs) k--;
+    return k;
+  };
+  // Where the declared names end: before =, :=, :
+  const stopFrom = (p: Production, from: number) => {
+    const k = p.rhs.findIndex((s, i) => i >= from && isT(s) && ASSIGN_TERMINALS.has(s));
+    return k < 0 ? p.rhs.length : k;
+  };
+  const closing = (p: Production, from: number) => {
+    const k = p.rhs.indexOf(')', from);
+    return k < 0 ? p.rhs.length : k;
   };
 
-  const suggestions: RuleActionDefinition[] = [];
+  const out: RuleActionDefinition[] = [];
+  const declaredAt = new Set<string>(); // "rule:position" of declared identifiers
+  const declare = (p: Production, position: number, kind: SymbolKind, type: string, description: string) => {
+    const key = `${p.id}:${position}`;
+    if (declaredAt.has(key)) return;
+    declaredAt.add(key);
+    out.push({ ruleId: p.id, actionType: 'addSymbol', position, symbolKind: kind, symbolType: type, description });
+  };
+  const openScope = (p: Production, position: number, closeAfter: number, scopeName: string, description: string) => {
+    if (position > closeAfter || out.some(a => a.ruleId === p.id && a.actionType === 'enterScope')) return;
+    out.push({ ruleId: p.id, actionType: 'enterScope', position, closeAfter, scopeName, description });
+  };
+  // Parts of right-hand sides whose non-terminals declare names: [rule, from, to) with the kind and type
+  const contexts: { p: Production; from: number; to: number; kind: SymbolKind; type: string }[] = [];
 
   for (const p of g.productions) {
-    const rhsLower = p.rhs.map(s => s.toLowerCase());
-    const lhsLower = p.lhs.toLowerCase();
-
-    // 1. Scope openers (procedure, function, block, begin, {, etc.)
-    // Matches if a terminal in RHS is an opener, or if the rule's LHS defines the block
-    const hasOpener = cfg.scopeOpeners.some(k => {
-      const inRhsTerminal = p.rhs.some(s => s.toLowerCase() === k && g.terminals.has(s));
-      const isLhs = lhsLower === k || lhsLower.startsWith(k + '_');
-      return inRhsTerminal || isLhs;
+    const r = p.rhs;
+    // 1. procedure p ; … / function f ( … ) …
+    const k = r.findIndex((s, i) => inList(cfg.procKeywords, s) && i + 1 < r.length && isId(r[i + 1]));
+    if (k >= 0) {
+      const kind: SymbolKind = /fun|fn|def|method/i.test(r[k]) ? 'function' : 'procedure';
+      declare(p, k + 1, kind, '', `${r[k]} ${r[k + 1]}: declares the ${kind} name`);
+      openScope(p, k + 2, lastOwn(p), `${r[k]} $name`, `scope of the ${kind}`);
+      if (r[k + 2] === '(') contexts.push({ p, from: k + 3, to: closing(p, k + 3), kind: 'param', type: '$type' });
+    }
+    // 2. int x ; Type x ; int f ( … ) { … }
+    r.forEach((s, i) => {
+      if (i === 0 || !isId(s) || !isType(r[i - 1]) || declaredAt.has(`${p.id}:${i}`)) return;
+      const fn = r[i + 1] === '(';
+      declare(p, i, fn ? 'function' : 'var', '$type', `${r[i - 1]} ${s}: typed declaration`);
+      if (fn) {
+        openScope(p, i + 1, lastOwn(p), 'function $name', 'scope of the function');
+        contexts.push({ p, from: i + 2, to: closing(p, i + 2), kind: 'param', type: '$type' });
+      } else {
+        contexts.push({ p, from: i + 1, to: stopFrom(p, i + 1), kind: 'var', type: '$type' });
+      }
     });
-    if (hasOpener) {
-      suggestions.push({
-        ruleId: p.id,
-        actionType: 'enterScope',
-        scopeName: `scope_${p.lhs}`,
-        description: `Enter scope for '${p.lhs}'`
-      });
-      continue;
-    }
-
-    // 2. Scope closers (end, }, etc.)
-    const hasCloser = cfg.scopeClosers.some(k => rhsLower.includes(k));
-    if (hasCloser) {
-      suggestions.push({
-        ruleId: p.id,
-        actionType: 'exitScope',
-        description: `Exit scope on '${p.rhs.join(' ')}'`
-      });
-      continue;
-    }
-
-    // 3. Declarations (var, const, let, val)
-    const declWord = cfg.declKeywords.find(k => rhsLower.includes(k));
-    if (declWord) {
-      const isConst = declWord === 'const';
-      // Find id symbol if present using fuzzy & list detection (strictly excluding literals like num)
-      const idTerm = p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols)) || 'id';
-      // Find type if present in same rule
-      const typeTerm = p.rhs.find(s => cfg.typeKeywords.includes(s.toLowerCase())) || (isConst ? 'const' : 'var');
-
-      suggestions.push({
-        ruleId: p.id,
-        actionType: 'addSymbol',
-        symbolName: idTerm,
-        symbolType: typeTerm,
-        symbolKind: isConst ? 'const' : 'var',
-        description: `Declare ${isConst ? 'constant' : 'variable'} '${idTerm}' in current scope`
-      });
-      continue;
-    }
-
-    // 4. Typed declaration without var keyword (e.g. "int id;", "real name", "float ident")
-    const matchedType = cfg.typeKeywords.find(k => rhsLower.includes(k));
-    if (matchedType) {
-      // Find id symbol, strictly excluding the type itself, literals like num, and punctuation
-      const idTerm =
-        p.rhs.find(s => isIdentifierTerminal(s, cfg.idSymbols) && s.toLowerCase() !== matchedType) || 'id';
-      suggestions.push({
-        ruleId: p.id,
-        actionType: 'addSymbol',
-        symbolName: idTerm,
-        symbolType: matchedType,
-        symbolKind: 'var',
-        description: `Declare variable '${idTerm}' of type '${matchedType}'`
-      });
+    // 3. var x … ; const c = … ; let y
+    const d = r.findIndex(s => inList(cfg.declKeywords, s));
+    if (d >= 0) {
+      const kind: SymbolKind = ['const', 'val'].includes(r[d].toLowerCase()) ? 'const' : 'var';
+      const type = r.some(isType) ? '$type' : '';
+      const to = stopFrom(p, d + 1);
+      const j = r.findIndex((s, i) => i > d && i < to && isId(s));
+      if (j >= 0) declare(p, j, kind, type, `${r[d]} ${r[j]}: declaration`);
+      contexts.push({ p, from: d + 1, to, kind, type });
     }
   }
 
-  return suggestions;
+  // 4. Non-terminals that continue a declaration (VarRest, ConstDef, ParamList) and occur nowhere else
+  const ctxOf = new Map<string, { kind: SymbolKind; type: string }>();
+  const ambiguous = new Set<string>();
+  const ruleContexts = () => [
+    ...contexts,
+    ...g.productions
+      .filter(q => ctxOf.has(q.lhs) && !ambiguous.has(q.lhs))
+      .map(q => ({ p: q, from: 0, to: stopFrom(q, 0), ...ctxOf.get(q.lhs)! }))
+  ];
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const c of ruleContexts()) {
+      for (let i = c.from; i < c.to; i++) {
+        const X = c.p.rhs[i];
+        if (!g.nonTerminals.has(X) || typeNts.has(X) || X === g.startSymbol || ambiguous.has(X)) continue;
+        const known = ctxOf.get(X);
+        if (!known) {
+          ctxOf.set(X, { kind: c.kind, type: c.type });
+          changed = true;
+        } else if (known.kind !== c.kind) {
+          ambiguous.add(X);
+          changed = true;
+        }
+      }
+    }
+  }
+  // Drop the non-terminals that also occur outside declarations (an expression, a statement)
+  for (let changed = true; changed;) {
+    changed = false;
+    const allowed = new Set(ruleContexts().flatMap(c =>
+      Array.from({ length: Math.max(0, c.to - c.from) }, (_, i) => `${c.p.id}:${c.from + i}`)));
+    for (const A of ctxOf.keys()) {
+      if (ambiguous.has(A)) continue;
+      const elsewhere = g.productions.some(q => q.rhs.some((s, i) => s === A && !allowed.has(`${q.id}:${i}`)));
+      if (elsewhere) {
+        ambiguous.add(A);
+        changed = true;
+      }
+    }
+  }
+  for (const [A, c] of ctxOf) {
+    if (ambiguous.has(A)) continue;
+    for (const q of rulesOf(A)) {
+      const to = stopFrom(q, 0);
+      const j = q.rhs.findIndex((s, i) => i < to && isId(s));
+      if (j >= 0) declare(q, j, c.kind, c.type, `${q.rhs[j]} in ${A}: continues a declaration`);
+      // int x in a parameter list is a parameter
+      if (c.kind === 'param') {
+        for (const a of out) if (a.ruleId === q.id && a.actionType === 'addSymbol' && a.symbolKind === 'var') a.symbolKind = 'param';
+      }
+    }
+  }
+
+  // 5. Blocks { … } and begin … end that can contain declarations
+  const declaring = new Set(out.filter(a => a.actionType === 'addSymbol').map(a => g.productions.find(p => p.id === a.ruleId)!.lhs));
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const p of g.productions) {
+      if (!declaring.has(p.lhs) && p.rhs.some(s => declaring.has(s))) {
+        declaring.add(p.lhs);
+        changed = true;
+      }
+    }
+  }
+  for (const p of g.productions) {
+    const r = p.rhs;
+    const k = r.findIndex(s => inList(cfg.scopeOpeners, s));
+    if (k < 0) continue;
+    const j = r.findIndex((s, i) => i > k && inList(cfg.scopeClosers, s));
+    const closeAfter = j >= 0 ? j : lastOwn(p);
+    const inside = r.slice(k + 1, closeAfter + 1);
+    const declares = inside.some(s => declaring.has(s)) ||
+      out.some(a => a.ruleId === p.id && a.actionType === 'addSymbol' && a.position! > k && a.position! <= closeAfter);
+    if (declares) openScope(p, k + 1, closeAfter, 'block', `${r[k]} … ${j >= 0 ? r[j] : ''}: a block with declarations`);
+  }
+
+  return out.sort((a, b) => a.ruleId - b.ruleId || (a.position ?? 0) - (b.position ?? 0));
 }

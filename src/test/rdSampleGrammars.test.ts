@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLLTable } from '../core/ll/llTable';
-import { tokenizeInput } from '../core/parser/inputTokenizer';
+import { tokenizeInput, scanInput } from '../core/parser/inputTokenizer';
 import { simulateRecursiveDescent } from '../core/codegen/rdSimulator';
 import {
   suggestSymbolActions,
@@ -12,7 +12,8 @@ import {
   DeclarationKeywordConfig,
   isIdentifierTerminal,
   isNonIdentifierLiteral,
-  DEFAULT_ID_SYMBOLS
+  DEFAULT_ID_SYMBOLS,
+  tokenClasses
 } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS, RDSampleGrammar } from '../core/presets/rdSampleGrammars';
 
@@ -121,12 +122,14 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
     const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
 
     it('detects scope opener and typed declarations correctly', () => {
+      // Block -> { Decls Stmts }: a scope from Decls to the closing }
       const blockAction = actions.find(a => a.actionType === 'enterScope');
-      expect(blockAction).toBeDefined();
-      expect(blockAction?.scopeName).toBe('scope_Block');
+      expect(blockAction).toMatchObject({ scopeName: 'block', position: 1, closeAfter: 3 });
 
+      // Decl -> Type id ; declares the name read as id, with the type read last; Type -> int declares nothing
       const addSymActions = actions.filter(a => a.actionType === 'addSymbol');
-      expect(addSymActions.length).toBeGreaterThan(0);
+      expect(addSymActions).toEqual([expect.objectContaining({ position: 1, symbolType: '$type', symbolKind: 'var' })]);
+      expect(grammar.productions.find(p => p.id === addSymActions[0].ruleId)!.rhs).toEqual(['Type', 'id', ';']);
     });
 
     it('handles multiple sibling blocks at the same nesting level', () => {
@@ -228,10 +231,8 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       const constAction = actions.find(a => a.symbolKind === 'const');
       const letAction = actions.find(a => a.symbolKind === 'var');
 
-      expect(constAction).toBeDefined();
-      expect(constAction?.symbolType).toBe('const');
-      expect(letAction).toBeDefined();
-      expect(letAction?.symbolType).toBe('var');
+      expect(constAction).toMatchObject({ actionType: 'addSymbol', position: 1, symbolType: '' });
+      expect(letAction).toMatchObject({ actionType: 'addSymbol', position: 1, symbolType: '' });
     });
 
     it('parses empty script (epsilon) cleanly', () => {
@@ -242,23 +243,17 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
     });
 
     it('handles functions containing internal nested blocks', () => {
-      // Input: function id { let id ; { const id ; } }
-      const tokens = [
-        'function', 'id', '{',
-        'let', 'id', ';',
-        '{', 'const', 'id', ';', '}',
-        '}'
-      ];
-      const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
+      const scanned = scanInput('function f { let v ; { const k ; } }', grammar.terminals, tokenClasses(grammar.terminals));
+      const res = simulateRecursiveDescent(scanned.tokens, grammar, analysis, { ruleActions: actions, lexemes: scanned.lexemes });
       expect(res.accepted).toBe(true);
 
       const finalStep = res.steps[res.steps.length - 1];
       const tree = buildScopeTree(finalStep.symbolTableSnapshot.allScopes);
       expect(tree.length).toBe(1);
-
-      // Verify function and block scopes exist in tree
-      const allNames = finalStep.symbolTableSnapshot.allScopes.map(s => s.name);
-      expect(allNames.some(n => n.includes('Func') || n.includes('Block'))).toBe(true);
+      expect(tree[0].scope.symbols.map(s => `${s.kind} ${s.name}`)).toEqual(['function f']);
+      expect(tree[0].children[0].scope.name).toBe('function f');
+      expect(tree[0].children[0].children[0].scope.name).toBe('block');
+      expect(tree[0].children[0].children[0].scope.symbols.map(s => s.name)).toEqual(['k']);
     });
   });
 
@@ -355,29 +350,22 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       const gConst = parseGrammar(gConstText).grammar!;
       const actions = suggestSymbolActions(gConst);
 
-      // "const" rule should declare 'id', NEVER 'num'
+      // "const" rule should declare the name read as id (position 1), NEVER num
       const constAction = actions.find(a => a.ruleId === gConst.productions[0].id);
-      expect(constAction).toBeDefined();
-      expect(constAction?.actionType).toBe('addSymbol');
-      expect(constAction?.symbolName).toBe('id');
-      expect(constAction?.symbolName).not.toBe('num');
+      expect(constAction).toMatchObject({ actionType: 'addSymbol', position: 1, symbolKind: 'const' });
 
       // Stmt rule has no declaration keyword -> should have NO addSymbol action
       const stmtAction = actions.find(a => a.ruleId === gConst.productions[1].id);
       expect(stmtAction).toBeUndefined();
 
       // Run simulator: symbol table should have 'x', never 'num' or '42'
-      const sim = simulateRecursiveDescent(
-        ['const', 'x', '=', '42', ';'],
-        gConst,
-        analyzeGrammar(gConst),
-        { ruleActions: actions }
-      );
+      const scanned = scanInput('const x = 42 ;', gConst.terminals, tokenClasses(gConst.terminals));
+      expect(scanned.tokens).toEqual(['const', 'id', '=', 'num', ';']);
+      const sim = simulateRecursiveDescent(scanned.tokens, gConst, analyzeGrammar(gConst), { ruleActions: actions, lexemes: scanned.lexemes });
+      expect(sim.accepted).toBe(true);
       const lastStep = sim.steps[sim.steps.length - 1];
       const allNames = lastStep.symbolTableSnapshot.scopeStack[0].symbols.map(s => s.name);
-      expect(allNames).toContain('x');
-      expect(allNames).not.toContain('num');
-      expect(allNames).not.toContain('42');
+      expect(allNames).toEqual(['x']);
     });
 
     it('correctly extracts declared symbols when grammar uses "identifier" or "name" instead of "id"', () => {
@@ -387,18 +375,13 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       const actionsIdent = suggestSymbolActions(gIdent);
 
       expect(actionsIdent.length).toBe(1);
-      expect(actionsIdent[0].actionType).toBe('addSymbol');
-      expect(actionsIdent[0].symbolName).toBe('identifier');
+      expect(actionsIdent[0]).toMatchObject({ actionType: 'addSymbol', position: 1 });
 
-      const simIdent = simulateRecursiveDescent(
-        ['let', 'identifier', ';'],
-        gIdent,
-        analyzeGrammar(gIdent),
-        { ruleActions: actionsIdent }
-      );
+      const scannedIdent = scanInput('let count ;', gIdent.terminals, tokenClasses(gIdent.terminals));
+      const simIdent = simulateRecursiveDescent(scannedIdent.tokens, gIdent, analyzeGrammar(gIdent), { ruleActions: actionsIdent, lexemes: scannedIdent.lexemes });
       expect(simIdent.accepted).toBe(true);
       const lastStepIdent = simIdent.steps[simIdent.steps.length - 1];
-      expect(lastStepIdent.symbolTableSnapshot.scopeStack[0].symbols[0].name).toBe('identifier');
+      expect(lastStepIdent.symbolTableSnapshot.scopeStack[0].symbols[0].name).toBe('count');
 
       // 2. Grammar with "name" and typed declaration
       const gNameText = `Decl -> "float" "name" ";" .`;
@@ -406,20 +389,14 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
       const actionsName = suggestSymbolActions(gName);
 
       expect(actionsName.length).toBe(1);
-      expect(actionsName[0].actionType).toBe('addSymbol');
-      expect(actionsName[0].symbolName).toBe('name');
-      expect(actionsName[0].symbolType).toBe('float');
+      expect(actionsName[0]).toMatchObject({ actionType: 'addSymbol', position: 1, symbolType: '$type' });
 
-      const simName = simulateRecursiveDescent(
-        ['float', 'name', ';'],
-        gName,
-        analyzeGrammar(gName),
-        { ruleActions: actionsName }
-      );
+      const scannedName = scanInput('float size ;', gName.terminals, tokenClasses(gName.terminals));
+      const simName = simulateRecursiveDescent(scannedName.tokens, gName, analyzeGrammar(gName), { ruleActions: actionsName, lexemes: scannedName.lexemes });
       expect(simName.accepted).toBe(true);
       const lastStepName = simName.steps[simName.steps.length - 1];
       const symEntry = lastStepName.symbolTableSnapshot.scopeStack[0].symbols[0];
-      expect(symEntry.name).toBe('name');
+      expect(symEntry.name).toBe('size');
       expect(symEntry.type).toBe('float');
     });
   });

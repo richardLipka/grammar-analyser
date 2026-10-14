@@ -40,6 +40,79 @@ export function tokenizeInput(text: string, terminals: Iterable<string>): Tokeni
   return { tokens, split, unknown };
 }
 
+export interface ScannedInput extends TokenizedInput {
+  /** The text of every token: the name or number read as an identifier or number terminal, otherwise the terminal */
+  lexemes: string[];
+}
+
+/**
+ * A simple scanner for the recursive-descent simulator: as tokenizeInput, but a name
+ * (x, count) that is no terminal is read as the identifier terminal (id, ident) and a
+ * number as the number terminal (num, number), keeping its text as the lexeme. Within
+ * a word, names, numbers and the other terminals are taken by maximal munch
+ * (x:=x-1 gives x := x - 1); keywords are the terminals that look like names.
+ */
+export function scanInput(text: string, terminals: Iterable<string>, classes: { identifier?: string; number?: string }): ScannedInput {
+  if (!classes.identifier && !classes.number) {
+    const plain = tokenizeInput(text, terminals);
+    return { ...plain, lexemes: [...plain.tokens] };
+  }
+  const terms = [...new Set(terminals)].filter(t => t.length > 0).sort((a, b) => b.length - a.length);
+  const termSet = new Set(terms);
+  const tokens: string[] = [];
+  const lexemes: string[] = [];
+  const unknown: string[] = [];
+  let split = false;
+  const push = (token: string, lexeme: string) => {
+    tokens.push(token);
+    lexemes.push(lexeme);
+  };
+
+  for (const word of text.trim().split(/\s+/).filter(Boolean)) {
+    if (termSet.has(word)) {
+      push(word, word);
+      continue;
+    }
+    const start = tokens.length;
+    let ok = true;
+    for (let i = 0; i < word.length && ok;) {
+      const rest = word.slice(i);
+      const name = rest.match(/^[\p{L}_][\p{L}\p{N}_]*/u)?.[0];
+      const num = rest.match(/^\p{N}+(?:\.\p{N}+)?/u)?.[0];
+      if (name) {
+        const parts = termSet.has(name) ? [name] : classes.identifier ? null : splitWord(name, terms);
+        if (parts) parts.forEach(t => push(t, t));
+        else if (classes.identifier) push(classes.identifier, name);
+        else ok = false;
+        i += name.length;
+      } else if (num && !termSet.has(num) && classes.number) {
+        push(classes.number, num);
+        i += num.length;
+      } else {
+        const t = terms.find(t => rest.startsWith(t));
+        if (t) {
+          push(t, t);
+          i += t.length;
+        } else {
+          ok = false;
+        }
+      }
+    }
+    if (!ok) {
+      tokens.length = start;
+      lexemes.length = start;
+      const parts = splitWord(word, terms);
+      if (parts) parts.forEach(t => push(t, t));
+      else {
+        push(word, word);
+        unknown.push(word);
+      }
+    }
+    if (tokens.length - start > 1) split = true;
+  }
+  return { tokens, lexemes, split, unknown };
+}
+
 /** Longest-match split of a word into terminals, null if there is none. */
 function splitWord(word: string, termsLongestFirst: string[]): string[] | null {
   const failed = new Set<number>();

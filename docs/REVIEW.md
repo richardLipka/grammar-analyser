@@ -777,3 +777,35 @@ The owner reported five problems found while linking the FJP exercises to the an
 **5. The browser tab title** follows the interface language (`documentTitle`); `index.html` has the Czech title and description, as Czech is the default.
 
 *Tests:* `courseNotation.test.ts` (18 tests). All 27 presets are parsed exactly as before (compared rule by rule before and after the change).
+
+## 24. Review of the symbol table of recursive descent (2026-10-14)
+
+Commits 51e6edd–a69aada (by another agent) added a step simulator of recursive descent, a symbol table ("stack of stacks") driven by actions attached to the rules, a JavaScript generator and a new layout of the tab. The review found these problems; all are fixed.
+
+**The symbol table did not hold names.** The simulator input is a word of terminals (`int id ;`), so every declared symbol was called `id` (or `ident`), and two declarations in one scope were flagged as redeclarations although the program meant different names. The name of a declaration was also taken from the input at the position "rule start + index of id in the right-hand side", which is wrong as soon as a non-terminal precedes the identifier. And the actions of a rule ran when the rule was chosen, before any of its symbols were read.
+- *Fix:* a scanner (`scanInput`) reads a name in the input as the identifier terminal and a number as the number terminal and keeps the text (`x := n - 1` → `ident := ident - number`), and the simulator gets the texts. An action now has a position in the right-hand side: a name is declared after its identifier has been read (with that text), a scope opens before one symbol and closes after another. Every other identifier read is looked up in the open scopes; the step says where it was found, and names that are not declared are reported. The sample grammars come with programs with names, and these are what the tab starts with.
+
+**The automatic detection was wrong for PL/0 and others.**
+- `var a, b` declared only `a` (the list `VarRest` has no keyword); `const` declared a symbol `id` that was not in the input (`ConstDef -> ident = number` was not followed).
+- `number` was a type keyword, so every `Factor -> number` "declared" a variable `id` of type `number` (in the PL/0 preset), and `Type -> int` declared a symbol although the rule has no identifier.
+- A procedure got two nested scopes (`ProcPart` and `Block`, the latter because the left-hand side is called Block), its name was never declared, and the next procedure of the right-recursive list `ProcPart -> procedure id ; Block ; ProcPart` was nested inside the previous one.
+- `begin … end` opened a scope, which it is not in PL/0 (and an `end` in another rule would pop a scope at the choice of that rule, before its symbols were read).
+- *Fix:* `suggestSymbolActions` was rewritten. Procedure keywords (a separate list: procedure, function, proc, func, fn, def, method) followed by an identifier declare the name in the enclosing scope and open a scope for the rest of the rule, without a trailing self-call; parameters in `( … )` are parameters. Declaration keywords declare the first identifier before `=`/`:`/`:=` and continue into non-terminals that occur only in declarations (`VarRest`, `ConstDef`, `ConstRest`). A type keyword or a non-terminal that derives only type keywords before an identifier declares it with the type read last (`$type`); `int f (` declares a function with a scope. `{ … }` and `begin … end` are scopes only when declarations can occur between them. Rules without an identifier declare nothing, and no exit actions are generated.
+- *Result:* PL/0 gives `global: n const, x var, y var, p procedure` and `procedure p: x var`; C blocks give the nested blocks with `x int` shadowed by `x float`; the uses resolve to the right scopes (`rdScoping.test.ts` checks the exact tables and lookups).
+
+**The simulator.** A long input ended at the 800-step limit with the banner "Parsing in progress…" for ever; now the limit is 2,000 steps and the result says that the simulation stopped. Scope entries and exits are steps of their own.
+
+**The JavaScript generator.** Non-terminals called like the locals or globals of the generated `parse` (`log`, `hooks`, `input`, `output`, `leftParse`, `String`) gave a SyntaxError or a wrong program, since the procedure replaced the variable; these names are now reserved. The JavaScript output is compared with the P-code VM on all LL(1) presets and random grammars (`rdLanguages.test.ts`), and its comment no longer promises a `symTab` hook that does not exist.
+
+**The tab.**
+- The rewrite had dropped the program input, the run of the P-code (the output of the PL/0 program), the table of the terminal characters, the note on nesting and the detailed hints of the languages; they are back in the sub-tab Generated code, which also runs the JavaScript.
+- The three columns (call stack, tree, symbol table) had minimum widths of 960 px but the card beside the grammar panel has about 930 px at a 1,440 px window, so the table was cut off; the columns now follow the width of the card (container queries): three, two with the table below, or one.
+- The badge styles `badge-accent`, `badge-secondary`, `badge-info` and the colour `--color-accent` did not exist; they are defined for all themes.
+- Every row of a name was highlighted as "new" in every step (the comparison was by name); now the row declared in this step is highlighted, and the entry a name read resolves to.
+- The panel of the active procedure showed `function main() { else { error(); } }` for the main program; now `sym = first symbol; Program(); if (sym != $) error();`.
+- Hand-edited actions stayed when the grammar changed (with rule numbers of the old grammar); another grammar now starts with the detected actions. The table of actions holds several actions per rule with positions chosen from the right-hand side.
+- "Approach 3" and other leftovers of the design discussion were removed from the texts; the sample selector shows the sample of the current grammar.
+
+*The tests* also had a probe for gcc that compiled to `-o NUL`, which on Windows creates a file `NUL.exe` in the working directory; it now compiles into a temporary directory.
+
+*Tests:* `rdScoping.test.ts` (exact symbol tables and lookups of all samples, PL/0 begin/end, a list of procedures, undeclared and redeclared names, the step limit, presets = samples), updated `rdSampleGrammars.test.ts` and `symbolTable.test.ts`, JavaScript in `rdLanguages.test.ts`. 409 tests pass.

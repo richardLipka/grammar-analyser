@@ -91,24 +91,28 @@ describe('SymbolTable ("Stack of Stacks")', () => {
       Stmt -> myVar "=" "0"
     `).grammar!;
 
-    // With default keywords, "module", "dim", "subroutine", "finish" might not match
+    // With default keywords, "module", "dim", "subroutine", "finish" do not match
+    expect(suggestSymbolActions(g)).toEqual([]);
     // Now with custom edited keywords:
     const customSuggestions = suggestSymbolActions(g, {
-      scopeOpeners: ['module', 'subroutine', 'do'],
+      procKeywords: ['module', 'subroutine'],
+      scopeOpeners: ['do'],
       scopeClosers: ['finish'],
       declKeywords: ['dim'],
       typeKeywords: ['float'],
       idSymbols: ['myVar', 'id']
     });
 
-    const openSub = customSuggestions.find(s => s.actionType === 'enterScope' && s.ruleId === 3);
-    expect(openSub).toBeDefined();
+    // subroutine id …: the name in the enclosing scope, a scope for the rest of the rule
+    expect(customSuggestions.filter(s => s.ruleId === 3)).toEqual([
+      expect.objectContaining({ actionType: 'addSymbol', position: 1, symbolKind: 'procedure' }),
+      expect.objectContaining({ actionType: 'enterScope', position: 2, closeAfter: 4, scopeName: 'subroutine $name' })
+    ]);
+    // the scope ends with the rule (EndBody holds the closer), so no separate exit is needed
+    expect(customSuggestions.some(s => s.actionType === 'exitScope')).toBe(false);
 
-    const closeSub = customSuggestions.find(s => s.actionType === 'exitScope');
-    expect(closeSub).toBeDefined();
-
+    // dim myVar …: myVar is the identifier terminal at position 1
     const addVar = customSuggestions.find(s => s.actionType === 'addSymbol' && s.ruleId === 2);
-    expect(addVar).toBeDefined();
-    expect(addVar?.symbolName).toBe('myVar');
+    expect(addVar).toMatchObject({ position: 1, symbolKind: 'var' });
   });
 });

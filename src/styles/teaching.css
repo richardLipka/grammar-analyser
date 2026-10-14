@@ -2234,19 +2234,24 @@
   flex-wrap: wrap;
 }
 
+/* The columns follow the width of the card (next to the grammar panel), not of the window */
+.rd-workspace-host {
+  container-type: inline-size;
+}
+
 .rd-sim-grid,
 .rd-workspace-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.4fr) minmax(320px, 1.3fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.3fr);
   gap: 16px;
   margin-bottom: 16px;
   align-items: stretch;
 }
 
-@media (max-width: 1280px) {
+@container (max-width: 1100px) {
   .rd-sim-grid,
   .rd-workspace-grid {
-    grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.3fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
   }
   .rd-sim-grid > .rd-col-right,
   .rd-workspace-grid > .rd-col-right {
@@ -2254,11 +2259,108 @@
   }
 }
 
-@media (max-width: 860px) {
+@container (max-width: 680px) {
   .rd-sim-grid,
   .rd-workspace-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.rd-step-note {
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  background-color: var(--color-bg-elevated);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.rd-mode-row,
+.rd-sample-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+
+.rd-sample-row {
+  justify-content: flex-start;
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.rd-sample-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The terminal a name was read as: x with a small id */
+.rd-token-class {
+  font-size: 0.72em;
+  opacity: 0.7;
+  margin-left: 1px;
+}
+
+.rd-scope-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.rd-symbol-used {
+  background-color: var(--color-success-subtle);
+  font-weight: 700;
+}
+
+.rd-meta-pill.warning {
+  background-color: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  margin-left: 6px;
+}
+
+.rd-actions-table td {
+  vertical-align: top;
+}
+
+.rd-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+
+.rd-param-label {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.rd-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  font-size: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.rd-icon-btn:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-primary);
 }
 
 .rd-col-left,
@@ -2429,6 +2531,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   margin-bottom: 8px;
 }
 

@@ -1,275 +1,170 @@
+/**
+ * The symbol table of the recursive-descent simulator on the sample grammars: the
+ * names come from the input (x read as id), declarations are made when their
+ * identifier is read, scopes cover the right parts of the rules, and every other
+ * identifier is looked up in the scopes open at that moment.
+ */
 import { describe, it, expect } from 'vitest';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLLTable } from '../core/ll/llTable';
-import { simulateRecursiveDescent } from '../core/codegen/rdSimulator';
-import { suggestSymbolActions, DEFAULT_KEYWORD_CONFIG, buildScopeTree } from '../core/codegen/symbolTable';
+import { scanInput } from '../core/parser/inputTokenizer';
+import { simulateRecursiveDescent, RDSimulationResult } from '../core/codegen/rdSimulator';
+import { suggestSymbolActions, DEFAULT_KEYWORD_CONFIG, buildScopeTree, ScopeTreeNode, tokenClasses } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
+import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 
-describe('Recursive Descent Scoping & Pure Syntax Execution', () => {
-  it('runs pure recursive descent without symbol table when nothing is recognized', () => {
-    const pureSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_pure_arithmetic')!;
-    expect(pureSample).toBeDefined();
+/** Runs a sample on a program with names; returns the result and the final scope tree as text */
+function run(sampleId: string, program?: string): { res: RDSimulationResult; tree: string; lookups: string[] } {
+  const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === sampleId)!;
+  const g = parseGrammar(sample.grammarText).grammar!;
+  const analysis = analyzeGrammar(g);
+  expect(buildLLTable(g, analysis).isLL1).toBe(true);
+  const scanned = scanInput(program ?? sample.namedInput, g.terminals, tokenClasses(g.terminals));
+  expect(scanned.unknown).toEqual([]);
+  const res = simulateRecursiveDescent(scanned.tokens, g, analysis, {
+    ruleActions: suggestSymbolActions(g, DEFAULT_KEYWORD_CONFIG),
+    lexemes: scanned.lexemes
+  });
+  const show = (n: ScopeTreeNode, depth: number): string[] => [
+    `${'  '.repeat(depth)}${n.scope.name}: ${n.scope.symbols.map(s => `${s.name} ${s.kind}${s.type ? ` ${s.type}` : ''}${s.customData.redeclared ? ' (redeclared)' : ''}`).join(', ')}`,
+    ...n.children.flatMap(c => show(c, depth + 1))
+  ];
+  const last = res.steps[res.steps.length - 1];
+  return {
+    res,
+    tree: buildScopeTree(last.symbolTableSnapshot.allScopes).flatMap(n => show(n, 0)).join('\n'),
+    lookups: res.steps.filter(s => s.lookup).map(s => `${s.lookup!.name} -> ${s.lookup!.scopeName ?? 'undeclared'}`)
+  };
+}
 
-    const parsed = parseGrammar(pureSample.grammarText);
-    expect(parsed.errors).toEqual([]);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const llTable = buildLLTable(grammar, analysis);
-    expect(llTable.isLL1).toBe(true);
-
-    // Auto-detection on pure arithmetic grammar returns 0 rule actions
-    const autoActions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
-    expect(autoActions.length).toBe(0);
-
-    // Simulate without any actionConfig (completely pure syntactic recursive descent)
-    const tokens = ['id', '+', 'num', '*', '(', 'id', '-', 'num', ')'];
-    const res = simulateRecursiveDescent(tokens, grammar, analysis, undefined);
-
+describe('Recursive-descent symbol table on the sample grammars', () => {
+  it('arithmetic expressions: no declarations, no symbol table', () => {
+    const { res, tree } = run('rd_sample_pure_arithmetic');
     expect(res.accepted).toBe(true);
-    expect(res.errorMessage).toBeUndefined();
-    expect(res.steps.length).toBeGreaterThan(15);
-    expect(res.leftParse.length).toBeGreaterThan(0);
+    expect(tree).toBe('global: ');
+    expect(res.steps.every(s => s.symbolTableSnapshot.scopeStack.length === 1 && !s.lookup)).toBe(true);
+    // the call stack holds the procedures of the descent
+    const factor = res.steps.find(s => s.activeFunction === 'Factor')!;
+    expect(factor.callStack.map(f => f.functionName)).toEqual(['Expr', 'Term', 'Factor']);
+  });
 
-    // Call stack in simulation traces actual recursive function calls
-    const intermediateStep = res.steps.find(s => s.activeFunction === 'Factor');
-    expect(intermediateStep).toBeDefined();
-    expect(intermediateStep!.callStack.map(f => f.functionName)).toContain('Expr');
-    expect(intermediateStep!.callStack.map(f => f.functionName)).toContain('Term');
-    expect(intermediateStep!.callStack.map(f => f.functionName)).toContain('Factor');
+  it('C blocks: typed declarations, a block per { }, shadowing, lookups in the open blocks', () => {
+    const { res, tree, lookups } = run('rd_sample_c_blocks');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe([
+      'global: ',
+      '  block: x var int',
+      '    block: x var float, c var char'
+    ].join('\n'));
+    // c = 1 inside the inner block, x = 2 after it: the outer x (int)
+    expect(lookups).toEqual(['c -> block', 'x -> block']);
+    const outerUse = res.steps.find(s => s.lookup?.name === 'x')!;
+    expect(outerUse.lookup!.level).toBe(1);
+    // the active stack while the inner block is open: global, outer block, inner block
+    const inner = res.steps.find(s => s.declared?.name === 'c')!;
+    expect(inner.symbolTableSnapshot.scopeStack.map(s => s.level)).toEqual([0, 1, 2]);
+    // all blocks are closed at the end, the history keeps them
+    const last = res.steps[res.steps.length - 1];
+    expect(last.symbolTableSnapshot.scopeStack.length).toBe(1);
+    expect(last.symbolTableSnapshot.allScopes.filter(s => !s.isOpen).length).toBe(2);
+  });
 
-    // Parse tree has valid root and children
-    expect(res.finalTree).toBeDefined();
-    expect(res.finalTree!.symbol).toBe('Expr');
-    expect(res.finalTree!.children!.length).toBeGreaterThan(0);
+  it('PL/0-like sample: a list of variables, a procedure in the enclosing scope, its own scope', () => {
+    const { res, tree, lookups } = run('rd_sample_pascal_pl0');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe([
+      'global: a var, b var, p procedure',
+      '  procedure p: a var'
+    ].join('\n'));
+    expect(lookups).toEqual(['a -> procedure p', 'p -> global']);
+  });
 
-    // Symbol table remains untouched with 0 symbols throughout pure execution
-    for (const step of res.steps) {
-      expect(step.symbolTableSnapshot.scopeStack.length).toBe(1);
-      expect(step.symbolTableSnapshot.totalActiveSymbols).toBe(0);
+  it('modern declarations: const and let, a function scope and a block inside it', () => {
+    const { res, tree, lookups } = run('rd_sample_modern_script');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe([
+      'global: k const, v var, f function',
+      '  function f: v var',
+      '    block: k const'
+    ].join('\n'));
+    expect(lookups).toEqual(['v -> function f']);
+  });
+
+  it('the whole PL/0: constants, variable lists, a procedure with a local variable shadowing a global one', () => {
+    const { res, tree, lookups } = run('rd_sample_pl0');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe([
+      'global: n const, x var, y var, p procedure',
+      '  procedure p: x var'
+    ].join('\n'));
+    // inside p, x is the local one; in the main program the global one
+    expect(lookups).toEqual([
+      'x -> procedure p', 'n -> global',
+      'x -> global', 'y -> global', 'x -> global', 'y -> global', 'p -> global', 'x -> global'
+    ]);
+    expect(res.undeclared).toEqual([]);
+  });
+
+  it('PL/0: begin … end is a compound statement, not a scope', () => {
+    const { res, tree } = run('rd_sample_pl0', 'var x ; begin x := 1 ; begin x := 2 end end .');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe('global: x var');
+  });
+
+  it('PL/0: the second procedure of a list is not nested in the first one', () => {
+    const { res, tree } = run('rd_sample_pl0', 'procedure p ; ; procedure q ; call p ; call q .');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe([
+      'global: p procedure, q procedure',
+      '  procedure p: ',
+      '  procedure q: '
+    ].join('\n'));
+  });
+
+  it('reports names that are not declared and names declared twice in one scope', () => {
+    const { res, tree, lookups } = run('rd_sample_pl0', 'var x , x ; y := 1 .');
+    expect(res.accepted).toBe(true);
+    expect(tree).toBe('global: x var, x var (redeclared)');
+    expect(lookups).toEqual(['y -> undeclared']);
+    expect(res.undeclared).toEqual([{ name: 'y', step: expect.any(Number) }]);
+    expect(res.steps[res.steps.length - 1].actionDescription).toContain('Not declared: y');
+  });
+
+  it('the scoping presets are the sample grammars', () => {
+    for (const [preset, sample] of [
+      ['scoping_c_blocks', 'rd_sample_c_blocks'],
+      ['scoping_pascal_pl0', 'rd_sample_pascal_pl0'],
+      ['scoping_modern_declarations', 'rd_sample_modern_script'],
+      ['lang_pl0', 'rd_sample_pl0']
+    ]) {
+      const p = PRESET_GRAMMARS.find(x => x.id === preset)!;
+      const s = RD_SAMPLE_GRAMMARS.find(x => x.id === sample)!;
+      expect(p.grammarText, preset).toBe(s.grammarText);
+      expect(p.sampleInput, preset).toBe(s.sampleInput);
     }
   });
 
-  it('correctly handles C-style nested block scoping ({ ... }, int/float/char)', () => {
-    const cSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_c_blocks')!;
-    expect(cSample).toBeDefined();
-
-    const parsed = parseGrammar(cSample.grammarText);
-    expect(parsed.errors).toEqual([]);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const llTable = buildLLTable(grammar, analysis);
-    expect(llTable.isLL1).toBe(true);
-
-    // Auto-generated actions detect Block scope opener and typed declarations
-    const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
-    expect(actions.length).toBeGreaterThan(0);
-
-    const enterScopeAction = actions.find(a => a.actionType === 'enterScope');
-    expect(enterScopeAction).toBeDefined();
-
-    // Input with outer block declaring id, inner block declaring id (shadowing) and id, then exiting
-    // Tokens: { int id ; { float id ; char id ; id = num ; } id = num ; }
-    const tokens = [
-      '{', 'int', 'id', ';',
-      '{', 'float', 'id', ';', 'char', 'id', ';', 'id', '=', 'num', ';', '}',
-      'id', '=', 'num', ';', '}'
-    ];
-
-    const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
-    expect(res.accepted).toBe(true);
-    expect(res.errorMessage).toBeUndefined();
-
-    // Find step inside the inner block where both inner 'x' and 'y' are declared
-    const innerStep = res.steps.find(s =>
-      s.symbolTableSnapshot.scopeStack.length === 3 && // global + outer Block + inner Block
-      s.symbolTableSnapshot.totalActiveSymbols === 3
-    );
-    expect(innerStep).toBeDefined();
-
-    const innerScope = innerStep!.symbolTableSnapshot.scopeStack[2];
-    expect(innerScope.level).toBe(2);
-    expect(innerScope.symbols.length).toBe(2);
-
-    const innerSymbols = innerScope.symbols;
-    expect(innerSymbols.some(s => s.type === 'float')).toBe(true);
-    expect(innerSymbols.some(s => s.type === 'char')).toBe(true);
-
-    const outerScope = innerStep!.symbolTableSnapshot.scopeStack[1];
-    expect(outerScope.level).toBe(1);
-    expect(outerScope.symbols[0].type).toBe('int');
-
-    // After inner block returns, scope level 2 is popped, and scopeStack length is back to 2
-    const afterInnerBlockStep = res.steps.find(s =>
-      s.actionDescription.includes("Exited scope 'scope_Block'")
-    );
-    expect(afterInnerBlockStep).toBeDefined();
-
-    // Final step: outer block has also returned, scopeStack is back to global
-    const lastStep = res.steps[res.steps.length - 1];
-    expect(lastStep.symbolTableSnapshot.scopeStack.length).toBe(1);
-    expect(lastStep.symbolTableSnapshot.allScopes.length).toBe(3); // global + 2 recorded scopes in history
-  });
-
-  it('correctly handles Pascal / PL/0 style procedures and scoping', () => {
-    const pl0Sample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_pascal_pl0')!;
-    expect(pl0Sample).toBeDefined();
-
-    const parsed = parseGrammar(pl0Sample.grammarText);
-    expect(parsed.errors).toEqual([]);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const llTable = buildLLTable(grammar, analysis);
-    expect(llTable.isLL1).toBe(true);
-
-    const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
-    expect(actions.some(a => a.actionType === 'enterScope')).toBe(true);
-    expect(actions.some(a => a.actionType === 'addSymbol')).toBe(true);
-
-    // Input: var id , id ; procedure id ; var id ; begin id := num end ; begin call id end .
-    const tokens = [
-      'var', 'id', ',', 'id', ';',
-      'procedure', 'id', ';',
-      'var', 'id', ';',
-      'begin', 'id', ':=', 'num', 'end', ';',
-      'begin', 'call', 'id', 'end', '.'
-    ];
-
-    const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
-    expect(res.accepted).toBe(true);
-    expect(res.errorMessage).toBeUndefined();
-
-    // Verify step inside procedure Block where local symbol exists
-    const stepWithProc = res.steps.find(s =>
-      s.symbolTableSnapshot.scopeStack.some(sc => sc.name === 'scope_ProcDecl' || sc.name === 'scope_Block') &&
-      s.symbolTableSnapshot.scopeStack.some(sc => sc.symbols.length > 0)
-    );
-    expect(stepWithProc).toBeDefined();
-  });
-
-  it('correctly handles modern script declarations (const vs let)', () => {
-    const modernSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_modern_script')!;
-    expect(modernSample).toBeDefined();
-
-    const parsed = parseGrammar(modernSample.grammarText);
-    expect(parsed.errors).toEqual([]);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const llTable = buildLLTable(grammar, analysis);
-    expect(llTable.isLL1).toBe(true);
-
-    const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
-    const constAction = actions.find(a => a.symbolKind === 'const');
-    const letAction = actions.find(a => a.symbolKind === 'var');
-
-    expect(constAction).toBeDefined();
-    expect(letAction).toBeDefined();
-
-    // Input: const id ; let id ; function id { let id ; { const id ; id = num ; } }
-    const tokens = [
-      'const', 'id', ';',
-      'let', 'id', ';',
-      'function', 'id', '{',
-      'let', 'id', ';',
-      '{', 'const', 'id', ';', 'id', '=', 'num', ';', '}',
-      '}'
-    ];
-
-    const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
-    expect(res.accepted).toBe(true);
-    expect(res.errorMessage).toBeUndefined();
-
-    // Check that at completion, global scope has both const and var symbols
-    const finalStep = res.steps[res.steps.length - 1];
-    const globalScope = finalStep.symbolTableSnapshot.scopeStack[0];
-    expect(globalScope.symbols.some(s => s.kind === 'const')).toBe(true);
-    expect(globalScope.symbols.some(s => s.kind === 'var')).toBe(true);
-
-    // Check that nested scopes (function and block) were created during simulation
-    const nestedStep = res.steps.find(s => s.symbolTableSnapshot.scopeStack.length >= 2);
-    expect(nestedStep).toBeDefined();
-  });
-
-  it('verifies visual simulator step records and branch choices', () => {
-    const cSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_c_blocks')!;
-    const parsed = parseGrammar(cSample.grammarText);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const tokens = ['{', 'int', 'id', ';', '}'];
-
-    const res = simulateRecursiveDescent(tokens, grammar, analysis);
-    expect(res.accepted).toBe(true);
-
-    // Every step must have valid visual state
-    for (const step of res.steps) {
-      expect(typeof step.step).toBe('number');
-      expect(Array.isArray(step.callStack)).toBe(true);
-      expect(typeof step.activeFunction).toBe('string');
-      expect(typeof step.activeNodeId).toBe('string');
-      expect(step.parseTree).toBeDefined();
-      expect(step.parseTree.id).toBeDefined();
-      expect(step.activeBranchPath.length).toBeGreaterThan(0);
-      expect(step.symbolTableSnapshot).toBeDefined();
-      expect(step.consumedTokens.length + step.remainingTokens.length).toBe(tokens.length + 1); // + $
-    }
-
-    // Branch choices must be recorded when choosing rules
-    const branchSteps = res.steps.filter(s => s.branchChoice !== undefined);
-    expect(branchSteps.length).toBeGreaterThan(0);
-    for (const bs of branchSteps) {
-      expect(bs.branchChoice!.lhs).toBeDefined();
-      expect(bs.branchChoice!.rule).toBeDefined();
-      expect(bs.branchChoice!.lookahead).toBeDefined();
+  it('every sample accepts both its word of terminals and its program with names, with the same left parse', () => {
+    for (const s of RD_SAMPLE_GRAMMARS) {
+      const g = parseGrammar(s.grammarText).grammar!;
+      const analysis = analyzeGrammar(g);
+      const plain = simulateRecursiveDescent(s.sampleInput.split(' '), g, analysis);
+      const scanned = scanInput(s.namedInput, g.terminals, tokenClasses(g.terminals));
+      const named = simulateRecursiveDescent(scanned.tokens, g, analysis, { lexemes: scanned.lexemes });
+      expect(plain.accepted, s.id).toBe(true);
+      expect(named.accepted, s.id).toBe(true);
+      expect(named.lexemes.slice(0, -1), s.id).toEqual(scanned.lexemes);
     }
   });
 
-  it('builds a hierarchical scope tree and retains all scopes/symbols upon program completion', () => {
-    const cSample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_c_blocks')!;
-    const parsed = parseGrammar(cSample.grammarText);
-    const grammar = parsed.grammar!;
-    const analysis = analyzeGrammar(grammar);
-    const actions = suggestSymbolActions(grammar, DEFAULT_KEYWORD_CONFIG);
-
-    // Nested C program with outer and inner blocks
-    const tokens = [
-      '{', 'int', 'id', ';',
-      '{', 'float', 'id', ';', '}',
-      '{', 'char', 'id', ';', '}',
-      '}'
-    ];
-
-    const res = simulateRecursiveDescent(tokens, grammar, analysis, { ruleActions: actions });
-    expect(res.accepted).toBe(true);
-
-    const finalStep = res.steps[res.steps.length - 1];
-    // Active stack popped back to global (length 1)
-    expect(finalStep.symbolTableSnapshot.scopeStack.length).toBe(1);
-
-    // But allScopes retains every scope created!
-    // global + outer block + first inner block + second inner block = 4 scopes
-    expect(finalStep.symbolTableSnapshot.allScopes.length).toBe(4);
-
-    // Build the hierarchical tree
-    const tree = buildScopeTree(finalStep.symbolTableSnapshot.allScopes);
-    expect(tree.length).toBe(1); // One global root
-    expect(tree[0].scope.name).toBe('global');
-    expect(tree[0].children.length).toBe(1); // Outer block is child of global
-
-    const outerBlockNode = tree[0].children[0];
-    expect(outerBlockNode.scope.name).toBe('scope_Block');
-    expect(outerBlockNode.scope.symbols.some(s => s.type === 'int')).toBe(true);
-    expect(outerBlockNode.children.length).toBe(2); // Two nested sibling blocks
-
-    const inner1 = outerBlockNode.children[0];
-    const inner2 = outerBlockNode.children[1];
-    expect(inner1.scope.symbols.some(s => s.type === 'float')).toBe(true);
-    expect(inner2.scope.symbols.some(s => s.type === 'char')).toBe(true);
-
-    // Verify all scopes in final state are marked isOpen === false except root global
-    expect(tree[0].scope.isOpen).toBe(true);
-    expect(outerBlockNode.scope.isOpen).toBe(false);
-    expect(inner1.scope.isOpen).toBe(false);
-    expect(inner2.scope.isOpen).toBe(false);
+  it('stops at the step limit with a message instead of hanging in "parsing"', () => {
+    const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_pure_arithmetic')!;
+    const g = parseGrammar(sample.grammarText).grammar!;
+    const res = simulateRecursiveDescent(Array(40).fill('id + ').join('').concat('id').split(' ').filter(Boolean), g, analyzeGrammar(g), undefined, 100);
+    expect(res.accepted).toBe(false);
+    expect(res.truncated).toBe(true);
+    expect(res.errorMessage).toContain('stopped after 100 steps');
+    expect(res.steps.length).toBe(100);
   });
 });
-

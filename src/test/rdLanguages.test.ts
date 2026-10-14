@@ -28,15 +28,19 @@ const works = (cmd: string, args: string[]) => {
     return false;
   }
 };
+// gcc is there and can link (on Windows -o NUL would create NUL.exe in the working directory)
 const canCompileC = () => {
+  const dir = mkdtempSync(join(tmpdir(), 'rd-cc-'));
   try {
-    const res = spawnSync('gcc', ['-x', 'c', '-', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null'], {
+    const res = spawnSync('gcc', ['-x', 'c', '-', '-o', join(dir, 'probe')], {
       input: 'int main(void){return 0;}',
       encoding: 'utf8'
     });
     return res.status === 0;
   } catch {
     return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 };
 const python = ['python3', 'python'].find(cmd => works(cmd, ['--version']));
@@ -90,6 +94,41 @@ describe('recursive descent in C and Python', () => {
         expect(gen.c, `${label} C`).toContain(`/* ${rule} */`);
         expect(gen.python, `${label} Python`).toContain(`# ${rule}`);
       }
+    }
+  });
+
+  /** The generated JavaScript as a function, run here (as the button of the tab does) */
+  const jsParser = (js: string): ((input: string) => { ok: boolean; output: string }) =>
+    new Function(js.replace('export function parse', 'function parse') + '\nreturn parse;')();
+
+  it('JavaScript: the same output as the PL/0 program on the P-code VM', () => {
+    for (const [i, { label, g, sample }] of grammars().entries()) {
+      const gen = generateRecursiveDescent(g, analyzeGrammar(g));
+      const pcode = compilePl0(gen.pl0);
+      const parse = jsParser(gen.js);
+      const charOf = new Map(gen.tokens.map(t => [t.terminal, t.char]));
+      expect(gen.js, `${label} JavaScript comments`).toContain(`// ${g.productions[0].id}: ${g.productions[0].lhs} ->`);
+      for (const w of inputs(g, sample, i + 1)) {
+        const input = `${w.map(x => charOf.get(x)).join(' ')}$`;
+        const expected = normalize(runPcode(pcode, input).output);
+        const res = parse(input);
+        expect(normalize(res.output), `${label} JavaScript '${input}'`).toBe(expected);
+        expect(res.ok, `${label} JavaScript ok '${input}'`).toBe(expected.endsWith('OK'));
+      }
+    }
+  });
+
+  it('JavaScript: non-terminals named like the locals and globals of the program', () => {
+    // a function log, String or hooks inside parse would break const log = [], String(input), hooks.onEnter
+    const g = parseGrammar('log -> String hooks output\nString -> a\nhooks -> b input\ninput -> c | ε\noutput -> d leftParse\nleftParse -> e | ε').grammar!;
+    const analysis = analyzeGrammar(g);
+    expect(buildLLTable(g, analysis).isLL1).toBe(true);
+    const gen = generateRecursiveDescent(g, analysis);
+    const parse = jsParser(gen.js);
+    const charOf = new Map(gen.tokens.map(t => [t.terminal, t.char]));
+    for (const w of [['a', 'b', 'c', 'd', 'e'], ['a', 'b', 'd'], ['a', 'd']]) {
+      const input = `${w.map(x => charOf.get(x)).join(' ')}$`;
+      expect(normalize(parse(input).output), w.join(' ')).toBe(normalize(runPcode(compilePl0(gen.pl0), input).output));
     }
   });
 
