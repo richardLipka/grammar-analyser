@@ -9,7 +9,8 @@ import { SymbolTransformationType } from './grammarProcessor';
 export type InfoKey =
   | 'reduce' | 'eps' | 'units' | 'leftrec' | 'immediateLeftRec' | 'leftcorner'
   | 'factor' | 'rightfactor' | 'expandLeading' | 'substitute' | 'merge'
-  | 'absorb' | 'splitFollow' | 'cnf' | 'gnf' | 'll1';
+  | 'absorb' | 'splitFollow' | 'cnf' | 'gnf' | 'll1'
+  | 'danglingElse' | 'precedenceStrat' | 'splitLRContext' | 'leftToRightLinear' | 'lr';
 
 export interface Reference {
   citation: string;
@@ -68,6 +69,22 @@ export const REFERENCES: Record<string, Reference> = {
   rs70: {
     citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17, 226–256, 1970.',
     url: 'https://www.sciencedirect.com/science/article/pii/S0019995870904468'
+  },
+  floyd63: {
+    citation: 'Floyd, R. W.: Syntactic analysis and operator precedence. Journal of the ACM 10(3), 316–333, 1963.',
+    url: 'https://doi.org/10.1145/321172.321179'
+  },
+  mickunas76: {
+    citation: 'Mickunas, M. D., Lancaster, R. L., Schneider, V. B.: Transforming LR(k) grammars to LR(1), SLR(1) and (1,1) bounded right context grammars. Journal of the ACM 23(3), 511–533, 1976.',
+    url: 'https://doi.org/10.1145/321958.321969'
+  },
+  chomsky58: {
+    citation: 'Chomsky, N., Miller, G. A.: Finite state languages. Information and Control 1(2), 91–112, 1958.',
+    url: 'https://doi.org/10.1016/S0019-9958(58)90082-2'
+  },
+  denny10: {
+    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
+    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
   }
 };
 
@@ -366,6 +383,122 @@ export const TRANSFORMATION_INFO: Record<InfoKey, TransformationInfo> = {
       { ref: 'rs70', where: { en: 'theory of deterministic top-down (LL(k)) grammars', cz: 'teorie deterministických gramatik pro analýzu shora dolů (LL(k))' } },
       { ref: 'dragon', where: { en: '§4.3.3–4.3.4', cz: '§4.3.3–4.3.4' } }
     ]
+  },
+  danglingElse: {
+    title: { en: 'Dangling-else Disambiguation', cz: 'Odstranění nejednoznačnosti dangling-else' },
+    scheme: {
+      en: 'S -> S_m | S_o,  S_m -> if C then S_m else S_m | other,  S_o -> if C then S | if C then S_m else S_o',
+      cz: 'S -> S_m | S_o,  S_m -> if C then S_m else S_m | ostatní,  S_o -> if C then S | if C then S_m else S_o'
+    },
+    what: {
+      en: 'Splits statements into matched conditionals (where every then branch is paired with an else) and open conditionals (where at least one conditional branch is unclosed).',
+      cz: 'Rozdělí podmíněné příkazy na úplné větve (kde každá větev then má odpovídající else) a neúplné větve (kde alespoň jedna podmínka zůstává neuzavřená).'
+    },
+    why: {
+      en: 'Eliminates the classic Shift/Reduce conflict on the else token while preserving the standard programming language semantics (else binds to the closest preceding if).',
+      cz: 'Odstraňuje klasickou Shift/Reduce kolizi na symbolu else při zachování standardní sémantiky programovacích jazyků (else se váže k nejbližšímu předchozímu if).'
+    },
+    use: {
+      en: 'When a grammar contains conditional statements with optional else branches causing LR(0), SLR(1), or LALR(1) conflicts.',
+      cz: 'Když gramatika obsahuje podmíněné příkazy s volitelnou větví else způsobující kolize v LR(0), SLR(1) nebo LALR(1).'
+    },
+    refs: [
+      { ref: 'au72', where: { en: 'Vol. 1, §4.3', cz: 'sv. 1, §4.3' } },
+      { ref: 'dragon', where: { en: '§4.3.2', cz: '§4.3.2' } }
+    ]
+  },
+  precedenceStrat: {
+    title: { en: 'Operator Precedence Stratification', cz: 'Stratifikace priorit a asociativity operátorů' },
+    scheme: {
+      en: 'E -> E + T | T,  T -> T * F | F,  F -> ( E ) | id',
+      cz: 'E -> E + T | T,  T -> T * F | F,  F -> ( E ) | id'
+    },
+    what: {
+      en: 'Decomposes flat, ambiguous binary operator expressions into a multi-tier hierarchy where higher precedence operators are evaluated deeper in the parse tree.',
+      cz: 'Rozloží ploché, nejednoznačné výrazy s binárními operátory do víceúrovňové hierarchie, kde operátory s vyšší prioritou jsou vyhodnocovány hlouběji v derivačním stromu.'
+    },
+    why: {
+      en: 'Eliminates both Shift/Reduce and Reduce/Reduce conflicts in bottom-up LR parsers, and resolves FIRST/FIRST conflicts in top-down LL parsers without altering the language.',
+      cz: 'Odstraňuje jak Shift/Reduce, tak Reduce/Reduce kolize ve vzestupných LR analyzátorech a řeší kolize FIRST/FIRST v sestupných LL analyzátorech bez změny jazyka.'
+    },
+    use: {
+      en: 'When arithmetic or relational expressions are specified with flat rules of the form E -> E op E.',
+      cz: 'Když jsou aritmetické nebo relační výrazy zadány plochými pravidly tvaru E -> E op E.'
+    },
+    refs: [
+      { ref: 'floyd63', where: { en: 'Operator precedence grammar construction', cz: 'Konstrukce operátorových gramatik' } },
+      { ref: 'dragon', where: { en: '§4.2.2', cz: '§4.2.2' } }
+    ]
+  },
+  splitLRContext: {
+    title: { en: 'Non-Terminal Context Splitting', cz: 'Kontextové rozštěpení neterminálů' },
+    scheme: {
+      en: 'A ⟹ A₁ (after context u),  A₂ (after context w)',
+      cz: 'A ⟹ A₁ (po kontextu u),  A₂ (po kontextu w)'
+    },
+    what: {
+      en: 'Duplicates non-terminals across distinct calling contexts to separate lookahead sets that would otherwise merge and collide during LR(0) state union in LALR(1) and SLR(1).',
+      cz: 'Zdvojuje neterminály v různých volacích kontextech, aby se oddělily množiny symbolů pro zkoumání dopředu (lookahead), které by se jinak sloučily a kolidovaly v LALR(1) a SLR(1).'
+    },
+    why: {
+      en: 'Eliminates spurious Reduce/Reduce conflicts introduced by LALR(1) state merging while preserving exact language equivalence.',
+      cz: 'Odstraňuje parazitní Reduce/Reduce kolize vzniklé sloučením stavů v LALR(1) při zachování přesné ekvivalence jazyka.'
+    },
+    use: {
+      en: 'When a grammar is LR(1) but has Reduce/Reduce conflicts in SLR(1) and LALR(1).',
+      cz: 'Když je gramatika LR(1), ale v SLR(1) a LALR(1) vykazuje kolize Reduce/Reduce.'
+    },
+    refs: [
+      { ref: 'mickunas76', where: { en: 'JACM 23(3), 511–533', cz: 'JACM 23(3), 511–533' } },
+      { ref: 'denny10', where: { en: 'Science of Computer Programming 75(11), 943–979', cz: 'Science of Computer Programming 75(11), 943–979' } }
+    ]
+  },
+  leftToRightLinear: {
+    title: { en: 'Left-to-Right Linear Regular Conversion', cz: 'Převod levolineární gramatiky na pravolineární' },
+    scheme: {
+      en: 'A -> B a  ⟹  B\' -> a A\' (NFA transition reversal)',
+      cz: 'A -> B a  ⟹  B\' -> a A\' (otočení přechodů NFA)'
+    },
+    what: {
+      en: 'Converts a left-linear regular grammar into an equivalent right-linear grammar by reversing the state transition structure of the underlying finite automaton.',
+      cz: 'Převede levolineární regulární gramatiku na ekvivalentní pravolineární otočením přechodové struktury podkladového konečného automatu.'
+    },
+    why: {
+      en: 'Completely removes left recursion from regular grammars, allowing them to be parsed top-down with LL(1) and recursive descent.',
+      cz: 'Zcela odstraní levou rekurzi z regulárních gramatik, což umožňuje jejich deterministickou analýzu shora dolů pomocí LL(1) a rekurzivního sestupu.'
+    },
+    use: {
+      en: 'When a regular language is specified left-linearly and needs to be used in LL(1) parsers.',
+      cz: 'Když je regulární jazyk definován levolineárně a je potřeba jej analyzovat v LL(1) překladači.'
+    },
+    refs: [
+      { ref: 'chomsky58', where: { en: 'Information and Control 1(2), 91–112', cz: 'Information and Control 1(2), 91–112' } },
+      { ref: 'hmu', where: { en: 'Chapter 2: Finite Automata and Regular Expressions', cz: 'Kapitola 2: Konečné automaty a regulární výrazy' } }
+    ]
+  },
+  lr: {
+    title: { en: 'Automatic attempt to resolve LR conflicts', cz: 'Automatický pokus o vyřešení LR kolizí' },
+    scheme: {
+      en: '1. dangling-else stratification  2. operator precedence ladder  3. context splitting',
+      cz: '1. rozdělení dangling-else  2. žebřík priorit operátorů  3. kontextové štěpení stavů'
+    },
+    what: {
+      en: 'Inspects LR parsing tables for Shift/Reduce and Reduce/Reduce conflicts and automatically applies the appropriate formal restructuring technique: matched/open stratification, precedence hierarchy, or state duplication.',
+      cz: 'Zkontroluje rozkladové tabulky LR na přítomnost kolizí Shift/Reduce a Reduce/Reduce a automaticky aplikuje odpovídající formální transformační techniku.'
+    },
+    why: {
+      en: 'Every transformation strictly preserves the generated language while making the LR parser deterministic.',
+      cz: 'Každá transformace striktně zachovává generovaný jazyk a činí LR analyzátor deterministickým.'
+    },
+    use: {
+      en: 'When an LR parser generator reports conflicts that cannot be solved without grammar restructuring.',
+      cz: 'Když generátor LR rozkladových tabulek hlásí kolize, které nelze vyřešit bez strukturální úpravy gramatiky.'
+    },
+    refs: [
+      { ref: 'au72', where: { en: 'Vol. 1, §4.3', cz: 'sv. 1, §4.3' } },
+      { ref: 'mickunas76', where: { en: 'JACM 23(3), 511–533', cz: 'JACM 23(3), 511–533' } },
+      { ref: 'denny10', where: { en: 'Science of Computer Programming 75(11), 943–979', cz: 'Science of Computer Programming 75(11), 943–979' } }
+    ]
   }
 };
 
@@ -396,5 +529,8 @@ export function infoKeyForType(type: SymbolTransformationType): InfoKey {
 /** The reference entry for a whole-grammar transformation (ids of WHOLE_GRAMMAR_TRANSFORMATIONS). */
 export const WHOLE_GRAMMAR_INFO: Record<string, InfoKey> = {
   reduce: 'reduce', eps: 'eps', units: 'units', leftrec: 'leftrec', leftcorner: 'leftcorner',
-  factor: 'factor', rightfactor: 'rightfactor', cnf: 'cnf', gnf: 'gnf', ll1: 'll1'
+  factor: 'factor', rightfactor: 'rightfactor', cnf: 'cnf', gnf: 'gnf', ll1: 'll1',
+  danglingElse: 'danglingElse', precedenceStrat: 'precedenceStrat', splitLRContext: 'splitLRContext',
+  leftToRightLinear: 'leftToRightLinear', lr: 'lr'
 };
+

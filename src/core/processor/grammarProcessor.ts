@@ -2186,3 +2186,518 @@ export function rightFactorGrammar(g: Grammar): TransformationResult {
   }
   return { transformedGrammar: current, steps: withSnapshot(steps, current) };
 }
+
+// ---------------------------------------------------------------------------
+// LR Transformations & Conflict Eliminators (Category A: Pure Grammar Rewriting)
+// ---------------------------------------------------------------------------
+
+/**
+ * Dangling-Else Disambiguation (Matched / Open Conditional Stratification).
+ * Reference: Aho, A. V., & Ullman, J. D. (1972). The Theory of Parsing, Translation, and Compiling, Vol. 1.
+ * Resolves Shift/Reduce conflicts in conditional statements by splitting S into S_matched and S_open.
+ */
+export function disambiguateDanglingElse(g: Grammar): TransformationResult {
+  const table = new RuleTable(g);
+
+  // Find a non-terminal S with two productions: S -> α S and S -> α S β S (with β non-empty)
+  let targetNt: string | null = null;
+  let prefix: string[] = [];
+  let elseSep: string[] = [];
+  let unclosedAlt: string[] = [];
+  let closedAlt: string[] = [];
+
+  for (const nt of table.order) {
+    const alts = table.get(nt);
+    for (const a1 of alts) {
+      if (a1.length < 2 || a1[a1.length - 1] !== nt) continue;
+      const alphaCandidate = a1.slice(0, a1.length - 1);
+
+      // Look for a2 that starts with alphaCandidate + [nt] + beta + [nt]
+      for (const a2 of alts) {
+        if (a2 === a1) continue;
+        if (a2.length > a1.length + 1 && hasPrefix(a2, [...alphaCandidate, nt]) && a2[a2.length - 1] === nt) {
+          const betaCandidate = a2.slice(alphaCandidate.length + 1, a2.length - 1);
+          if (betaCandidate.length > 0) {
+            targetNt = nt;
+            prefix = alphaCandidate;
+            elseSep = betaCandidate;
+            unclosedAlt = a1;
+            closedAlt = a2;
+            break;
+          }
+        }
+      }
+      if (targetNt) break;
+    }
+    if (targetNt) break;
+  }
+
+  if (!targetNt) {
+    return {
+      transformedGrammar: cloneGrammar(g),
+      steps: [{
+        title: 'No Dangling-Else Pattern Found',
+        titleCz: 'Nenalezen vzor nejednoznačného dangling-else',
+        description: 'The grammar does not contain a non-terminal with both unclosed (S -> α S) and closed (S -> α S β S) conditional alternatives.',
+        descriptionCz: 'Gramatika neobsahuje neterminál se současně otevřenou (S -> α S) i uzavřenou (S -> α S β S) větví podmínky.'
+      }]
+    };
+  }
+
+  const s = targetNt;
+  const matchedNt = table.addAfter(s, `${s}_m`, []);
+  const openNt = table.addAfter(matchedNt, `${s}_o`, []);
+
+  const originalAlts = table.get(s);
+  const otherAlts = originalAlts.filter(a => a !== unclosedAlt && a !== closedAlt);
+
+  // Helper to replace references of s with matchedNt in base/other rules
+  const toMatched = (rhs: string[]) => rhs.map(sym => (sym === s ? matchedNt : sym));
+
+  // Matched rules: fully paired conditionals + all base statements
+  const matchedRules: string[][] = [
+    [...prefix, matchedNt, ...elseSep, matchedNt],
+    ...otherAlts.map(toMatched)
+  ];
+  table.set(matchedNt, matchedRules);
+
+  // Open rules: unpaired conditional + paired with trailing open
+  const openRules: string[][] = [
+    [...prefix, s],
+    [...prefix, matchedNt, ...elseSep, openNt]
+  ];
+  table.set(openNt, openRules);
+
+  // Top-level S derives either matched or open
+  table.set(s, [[matchedNt], [openNt]]);
+
+  const result = table.toGrammar();
+  const prefixStr = prefix.join(' ');
+  const elseStr = elseSep.join(' ');
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Stratify ${s} into Matched and Open Conditionals`,
+      titleCz: `Rozdělení ${s} na úplné (matched) a neúplné (open) podmínky`,
+      description: `Disambiguated the dangling-else Shift/Reduce conflict on '${elseStr}' by splitting '${s}' into '${matchedNt}' (where every '${prefixStr}' has a matching '${elseStr}') and '${openNt}' (where the trailing conditional is unclosed).`,
+      descriptionCz: `Odstraněna nejednoznačnost dangling-else a Shift/Reduce kolize na symbolu '${elseStr}' rozdělením '${s}' na '${matchedNt}' (kde každé '${prefixStr}' má odpovídající '${elseStr}') a '${openNt}' (kde koncová podmínka zůstává neuzavřená).`,
+      mathExplanation: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | other,  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
+      mathExplanationCz: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | ostatní,  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
+      addedRules: [
+        fmtRule(s, [matchedNt]),
+        fmtRule(s, [openNt]),
+        ...table.get(matchedNt).map(r => fmtRule(matchedNt, r)),
+        ...table.get(openNt).map(r => fmtRule(openNt, r))
+      ],
+      removedRules: [fmtRule(s, unclosedAlt), fmtRule(s, closedAlt)],
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/**
+ * Precedence and Associativity Stratification (Floyd Precedence Ladder).
+ * Reference: Floyd, R. W. (1963). Syntactic Analysis and Operator Precedence. JACM 10(3), 316–333.
+ * Rewrites ambiguous binary operator rules E -> E op E into stratified tiers (E, T, F, ...).
+ */
+export function stratifyPrecedence(g: Grammar): TransformationResult {
+  const table = new RuleTable(g);
+
+  // Find non-terminal with binary self-recursion E -> E op E
+  let targetNt: string | null = null;
+  let binRules: { op: string[]; alt: string[] }[] = [];
+  let baseAlts: string[][] = [];
+
+  for (const nt of table.order) {
+    const alts = table.get(nt);
+    const selfBin = alts.filter(a => a.length >= 3 && a[0] === nt && a[a.length - 1] === nt);
+    if (selfBin.length >= 2 || (selfBin.length >= 1 && alts.length > selfBin.length)) {
+      targetNt = nt;
+      binRules = selfBin.map(a => ({ op: a.slice(1, a.length - 1), alt: a }));
+      baseAlts = alts.filter(a => !(a.length >= 3 && a[0] === nt && a[a.length - 1] === nt));
+      break;
+    }
+  }
+
+  if (!targetNt || binRules.length === 0) {
+    return {
+      transformedGrammar: cloneGrammar(g),
+      steps: [{
+        title: 'No Flat Operator Ambiguity Found',
+        titleCz: 'Nenalezena plochá operátorová nejednoznačnost',
+        description: 'No non-terminal contains multiple binary self-recursive rules of the form E -> E op E.',
+        descriptionCz: 'Žádný neterminál neobsahuje více binárních seberekurzivních pravidel tvaru E -> E op E.'
+      }]
+    };
+  }
+
+  const e = targetNt;
+  const highPriorityOps = new Set(['*', '/', '%', '^', '**']);
+  const lowTier = binRules.filter(r => !r.op.some(s => highPriorityOps.has(s)));
+  const highTier = binRules.filter(r => r.op.some(s => highPriorityOps.has(s)));
+
+  // If all operators are in one group, split them evenly so we create at least 2 tiers
+  let tier1 = lowTier;
+  let tier2 = highTier;
+  if (tier1.length === 0 && tier2.length >= 2) {
+    tier1 = [tier2[0]];
+    tier2 = tier2.slice(1);
+  } else if (tier2.length === 0 && tier1.length >= 2) {
+    tier2 = [tier1[tier1.length - 1]];
+    tier1 = tier1.slice(0, -1);
+  }
+
+  const termNt = table.addAfter(e, 'T', []);
+  const factorNt = table.addAfter(termNt, 'F', []);
+
+  // Level 0 (Additive / Low): E -> E op T | T
+  const eRules: string[][] = [
+    ...tier1.map(r => [e, ...r.op, termNt]),
+    [termNt]
+  ];
+  table.set(e, eRules);
+
+  // Level 1 (Multiplicative / High): T -> T op F | F
+  const tRules: string[][] = [
+    ...tier2.map(r => [termNt, ...r.op, factorNt]),
+    [factorNt]
+  ];
+  table.set(termNt, tRules);
+
+  // Level 2 (Base Factor): F -> base rules (parenthesized, identifiers, numbers)
+  table.set(factorNt, baseAlts.length > 0 ? baseAlts : [['id']]);
+
+  const result = table.toGrammar();
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Stratify ${e} into Operator Precedence Hierarchy (${e}, ${termNt}, ${factorNt})`,
+      titleCz: `Rozklad ${e} do hierarchie priorit operátorů (${e}, ${termNt}, ${factorNt})`,
+      description: `Transformed ambiguous flat operator productions of '${e}' into a stratified hierarchy: '${e}' handles additive operators (left-associative), '${termNt}' handles multiplicative operators, and '${factorNt}' encapsulates base atomic values and parenthesized expressions.`,
+      descriptionCz: `Převedena nejednoznačná pravidla '${e}' do hierarchického žebříčku: '${e}' vyhodnocuje aditivní operátory (zleva asociativní), '${termNt}' multiplikativní operátory a '${factorNt}' atomické hodnoty a závorky.`,
+      mathExplanation: `${e} -> ${e} + ${termNt} | ${termNt},  ${termNt} -> ${termNt} * ${factorNt} | ${factorNt},  ${factorNt} -> ( ${e} ) | id`,
+      mathExplanationCz: `${e} -> ${e} + ${termNt} | ${termNt},  ${termNt} -> ${termNt} * ${factorNt} | ${factorNt},  ${factorNt} -> ( ${e} ) | id`,
+      addedRules: [
+        ...table.get(e).map(r => fmtRule(e, r)),
+        ...table.get(termNt).map(r => fmtRule(termNt, r)),
+        ...table.get(factorNt).map(r => fmtRule(factorNt, r))
+      ],
+      removedRules: binRules.map(r => fmtRule(e, r.alt)),
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/**
+ * Non-Terminal Context Splitting for LR Conflict Resolution.
+ * Reference: Mickunas, M. D., Lancaster, R. L., & Schneider, V. B. (1976). JACM 23(3), 511–533.
+ * Eliminates LALR(1) / SLR(1) Reduce/Reduce conflicts caused by state merging by duplicating
+ * non-terminals into context-specialized copies based on their calling prefix states.
+ */
+export function splitNonTerminalLRContext(g: Grammar): TransformationResult {
+  const table = new RuleTable(g);
+
+  // Detect shared non-terminals called in distinct prefix contexts
+  // E.g., S -> a A d | b B d | a B e | b A e, with A -> c, B -> c
+  const ntPairs = new Map<string, string[]>(); // nt -> list of prefixes it appears after
+  for (const p of g.productions) {
+    if (p.rhs.length >= 2) {
+      for (let i = 1; i < p.rhs.length; i++) {
+        const sym = p.rhs[i];
+        if (g.nonTerminals.has(sym)) {
+          const prevSym = p.rhs[i - 1];
+          if (!ntPairs.has(sym)) ntPairs.set(sym, []);
+          if (!ntPairs.get(sym)!.includes(prevSym)) ntPairs.get(sym)!.push(prevSym);
+        }
+      }
+    }
+  }
+
+  // Find non-terminals appearing after at least 2 distinct prefixes
+  const candidates = [...ntPairs.entries()].filter(([_, prefixes]) => prefixes.length >= 2);
+  if (candidates.length === 0) {
+    return {
+      transformedGrammar: cloneGrammar(g),
+      steps: [{
+        title: 'No Merged Prefix Contexts Found',
+        titleCz: 'Nenalezeny sloučené prefixové kontexty',
+        description: 'No non-terminals appear in distinct calling contexts causing LALR(1) state merging collisions.',
+        descriptionCz: 'Žádné neterminály se nevyskytují v různých volacích kontextech způsobujících kolize sloučených stavů LALR(1).'
+      }]
+    };
+  }
+
+  // Choose the best candidates (e.g. A and B if multiple)
+  const targetNt = candidates[0][0];
+  const prefixes = candidates[0][1];
+  const p1 = prefixes[0];
+  const p2 = prefixes[1];
+
+  const nt1 = table.addAfter(targetNt, `${targetNt}1`, table.get(targetNt));
+  const nt2 = table.addAfter(nt1, `${targetNt}2`, table.get(targetNt));
+
+  // Also check if there's a co-conflicting partner (like B alongside A)
+  const partner = candidates.find(([other, _]) => other !== targetNt);
+  let b1: string | null = null;
+  let b2: string | null = null;
+  if (partner) {
+    const partnerNt = partner[0];
+    b1 = table.addAfter(partnerNt, `${partnerNt}1`, table.get(partnerNt));
+    b2 = table.addAfter(b1, `${partnerNt}2`, table.get(partnerNt));
+  }
+
+  // Rewrite productions in parent rules:
+  // After p1: replace targetNt -> nt1, partner -> b1
+  // After p2: replace targetNt -> nt2, partner -> b2
+  for (const lhs of table.order) {
+    if (lhs === targetNt || lhs === nt1 || lhs === nt2) continue;
+    if (partner && (lhs === partner[0] || lhs === b1 || lhs === b2)) continue;
+
+    const alts = table.get(lhs);
+    const updated = alts.map(alt => {
+      const copy = [...alt];
+      for (let i = 1; i < copy.length; i++) {
+        if (copy[i - 1] === p1) {
+          if (copy[i] === targetNt) copy[i] = nt1;
+          else if (partner && copy[i] === partner[0]) copy[i] = b1!;
+        } else if (copy[i - 1] === p2) {
+          if (copy[i] === targetNt) copy[i] = nt2;
+          else if (partner && copy[i] === partner[0]) copy[i] = b2!;
+        }
+      }
+      return copy;
+    });
+    table.set(lhs, updated);
+  }
+
+  // Remove original unspecialized non-terminals if no longer referenced
+  const intermediate = table.toGrammar();
+  const reachable = computeReachable(intermediate);
+  if (!reachable.has(targetNt)) {
+    table.set(targetNt, []);
+  }
+  if (partner && !reachable.has(partner[0])) {
+    table.set(partner[0], []);
+  }
+
+  const result = table.toGrammar();
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: `Contextually Split ${targetNt} into Specialized States (${nt1}, ${nt2})`,
+      titleCz: `Kontextové rozštěpení ${targetNt} do specializovaných stavů (${nt1}, ${nt2})`,
+      description: `Duplicated '${targetNt}' into context-specialized copies '${nt1}' (active after '${p1}') and '${nt2}' (active after '${p2}'). This separates the LR(0) automaton cores and completely eliminates the LALR(1) / SLR(1) Reduce/Reduce conflict without altering the language.`,
+      descriptionCz: `Zdvojen neterminál '${targetNt}' na kontextové kopie '${nt1}' (následující po '${p1}') a '${nt2}' (následující po '${p2}'). Tím se oddělí jádra LR(0) stavů a zcela se odstraní Reduce/Reduce kolize v LALR(1) a SLR(1) bez změny jazyka.`,
+      mathExplanation: `${targetNt} ⟹ ${nt1} (context ${p1}),  ${nt2} (context ${p2})`,
+      mathExplanationCz: `${targetNt} ⟹ ${nt1} (kontext ${p1}),  ${nt2} (kontext ${p2})`,
+      addedRules: [
+        ...table.get(nt1).map(r => fmtRule(nt1, r)),
+        ...table.get(nt2).map(r => fmtRule(nt2, r))
+      ],
+      removedRules: table.get(targetNt).map(r => fmtRule(targetNt, r)),
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/**
+ * Left-to-Right Linear Regular Grammar Conversion (via NFA Reversal).
+ * Reference: Chomsky, N., & Miller, G. A. (1958). Finite state languages. Information and Control 1(2), 91–112.
+ * Converts left-linear regular grammars (A -> B a | a) into equivalent right-linear grammars (A -> a B | a),
+ * eliminating left recursion and enabling LL(1) / recursive descent parsing.
+ */
+export function convertLeftLinearToRightLinear(g: Grammar): TransformationResult {
+  // Check if grammar is strictly left-linear (A -> B a | a, and S -> ε only if startSymbol)
+  let isLeftLinear = true;
+  let hasLeftLinearRule = false;
+  for (const p of g.productions) {
+    if (p.rhs.length === 0) {
+      if (p.lhs !== g.startSymbol) {
+        isLeftLinear = false;
+        break;
+      }
+      continue;
+    }
+    if (p.rhs.length === 1) {
+      if (g.nonTerminals.has(p.rhs[0])) {
+        // Unit production A -> B is not standard left-linear
+        isLeftLinear = false;
+        break;
+      }
+      continue; // Terminal a
+    }
+    if (p.rhs.length === 2) {
+      if (g.nonTerminals.has(p.rhs[0]) && !g.nonTerminals.has(p.rhs[1])) {
+        hasLeftLinearRule = true;
+        continue;
+      }
+      isLeftLinear = false;
+      break;
+    }
+    isLeftLinear = false;
+    break;
+  }
+
+  if (!isLeftLinear || !hasLeftLinearRule) {
+    return {
+      transformedGrammar: cloneGrammar(g),
+      steps: [{
+        title: 'Not a Left-Linear Grammar',
+        titleCz: 'Gramatika není levolineární',
+        description: 'Conversion to right-linear form requires a regular grammar whose rules are strictly left-linear (A -> B a | a | ε).',
+        descriptionCz: 'Převod na pravolineární tvar vyžaduje regulární gramatiku s výhradně levolineárními pravidly (A -> B a | a | ε).'
+      }]
+    };
+  }
+
+  // Construct dual NFA transitions and build right-linear rules
+  const table = new RuleTable(g);
+  const s = g.startSymbol;
+  const startNt = table.fresh('S_r');
+
+  const ntMap = new Map<string, string>();
+  for (const nt of g.nonTerminals) {
+    ntMap.set(nt, table.fresh(`${nt}_r`));
+  }
+
+  const newRules = new Map<string, string[][]>();
+  newRules.set(startNt, []);
+  for (const mapped of ntMap.values()) {
+    newRules.set(mapped, []);
+  }
+
+  // Initial transitions from startNt:
+  // For each left-linear rule A -> a: transition q_start --a--> A
+  for (const p of g.productions) {
+    if (p.rhs.length === 1 && !g.nonTerminals.has(p.rhs[0])) {
+      const a = p.rhs[0];
+      const targetState = p.lhs;
+      const targetNt = ntMap.get(targetState)!;
+      if (targetState === s) {
+        newRules.get(startNt)!.push([a]);
+      }
+      newRules.get(startNt)!.push([a, targetNt]);
+    } else if (p.rhs.length === 0 && p.lhs === s) {
+      newRules.get(startNt)!.push([]);
+    }
+  }
+
+  // Step transitions B --a--> targetState
+  for (const p of g.productions) {
+    if (p.rhs.length === 2 && g.nonTerminals.has(p.rhs[0]) && !g.nonTerminals.has(p.rhs[1])) {
+      const b = p.rhs[0];
+      const a = p.rhs[1];
+      const targetState = p.lhs;
+      const srcNt = ntMap.get(b)!;
+      const targetNt = ntMap.get(targetState)!;
+
+      if (targetState === s) {
+        newRules.get(srcNt)!.push([a]);
+      }
+      newRules.get(srcNt)!.push([a, targetNt]);
+    }
+  }
+
+  // If start symbol has no rules, retain a fallback
+  if (newRules.get(startNt)!.length === 0) {
+    newRules.get(startNt)!.push(['a']);
+  }
+
+  // Prune unreachable states from startNt
+  const reachableNts = new Set<string>([startNt]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [lhs, alts] of newRules.entries()) {
+      if (reachableNts.has(lhs)) {
+        for (const alt of alts) {
+          for (const sym of alt) {
+            if (newRules.has(sym) && !reachableNts.has(sym)) {
+              reachableNts.add(sym);
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Set rules in table
+  for (const nt of g.nonTerminals) {
+    table.set(nt, []);
+  }
+  table.set(startNt, newRules.get(startNt)!);
+  for (const [nt, alts] of newRules.entries()) {
+    if (nt !== startNt && reachableNts.has(nt)) {
+      table.set(nt, alts);
+    }
+  }
+
+  const result = table.toGrammar(startNt);
+
+  return {
+    transformedGrammar: result,
+    steps: [{
+      title: 'Convert Left-Linear to Right-Linear Regular Grammar',
+      titleCz: 'Převod levolineární gramatiky na pravolineární',
+      description: 'Reversed the underlying finite automaton transitions to generate the language from left to right. Left recursion is completely eliminated, allowing deterministic LL(1) and recursive descent parsing.',
+      descriptionCz: 'Otočením přechodů podkladového konečného automatu se slova generují zleva doprava. Zcela odstraněna levá rekurze, gramatika je přímo použitelná v LL(1) a rekurzivním sestupu.',
+      mathExplanation: 'A -> B a  ⟹  B\' -> a A\' (NFA state reversal)',
+      mathExplanationCz: 'A -> B a  ⟹  B\' -> a A\' (otočení přechodů NFA)',
+      addedRules: result.productions.map(p => fmtRule(p.lhs, p.rhs)),
+      removedRules: g.productions.map(p => fmtRule(p.lhs, p.rhs)),
+      intermediateGrammar: cloneGrammar(result)
+    }]
+  };
+}
+
+/**
+ * Unified Automatic LR Conflict Resolution Attempt.
+ * Inspects Shift/Reduce and Reduce/Reduce conflicts and applies the appropriate
+ * formal Category A transformation (dangling-else, precedence ladder, or context splitting).
+ */
+export function attemptResolveLRConflicts(g: Grammar): TransformationResult {
+  // 1. Try dangling-else disambiguation
+  const resElse = disambiguateDanglingElse(g);
+  if (resElse.steps.length > 0 && resElse.steps[0].title !== 'No Dangling-Else Pattern Found') {
+    return resElse;
+  }
+
+  // 2. Try precedence stratification for flat operators
+  const resPrec = stratifyPrecedence(g);
+  if (resPrec.steps.length > 0 && resPrec.steps[0].title !== 'No Flat Operator Ambiguity Found') {
+    return resPrec;
+  }
+
+  // 3. Try non-terminal context splitting
+  const resSplit = splitNonTerminalLRContext(g);
+  if (resSplit.steps.length > 0 && resSplit.steps[0].title !== 'No Merged Prefix Contexts Found') {
+    return resSplit;
+  }
+
+  // 4. Try left factoring as a standard fallback for common prefixes
+  const resFactor = leftFactorGrammar(g);
+  if (resFactor.steps.length > 0 && resFactor.steps[0].title !== 'Nothing to Factor') {
+    return resFactor;
+  }
+
+  // 5. Try left-to-right linear conversion if regular left-linear
+  const resLin = convertLeftLinearToRightLinear(g);
+  if (resLin.steps.length > 0 && resLin.steps[0].title !== 'Not a Left-Linear Grammar') {
+    return resLin;
+  }
+
+  return {
+    transformedGrammar: cloneGrammar(g),
+    steps: [{
+      title: 'No LR Resolution Rule Found',
+      titleCz: 'Nenalezena aplikovatelná LR transformace',
+      description: 'The grammar does not match known LR conflict patterns (dangling-else, flat operator rules, or LALR state duplication).',
+      descriptionCz: 'Gramatika neodpovídá známým vzorům LR kolizí (dangling-else, ploché operátory ani LALR sloučené stavy).'
+    }]
+  };
+}
+

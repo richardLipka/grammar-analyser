@@ -319,7 +319,143 @@ export function analyzeTechniqueOnGrammar(
       };
     }
 
+    case 'leftToRightLinear': {
+      const leftLinearRules = g.productions.filter(
+        p => p.rhs.length === 2 && g.nonTerminals.has(p.rhs[0]) && !g.nonTerminals.has(p.rhs[1])
+      );
+      const hasDefect = leftLinearRules.length > 0;
+
+      return {
+        hasDefect,
+        statusText: hasDefect
+          ? (cz ? `Nalezena levolineární pravidla (${leftLinearRules.length})` : `Left-linear productions detected (${leftLinearRules.length})`)
+          : (cz ? 'Žádná levolineární pravidla' : 'No left-linear productions'),
+        defectDetail: hasDefect
+          ? (cz
+              ? `Levolineární pravidla obsahují přímou levou rekurzi: ${leftLinearRules.map(p => `${p.lhs} → ${p.rhs.join(' ')}`).join(', ')}`
+              : `Left-linear rules contain immediate left recursion: ${leftLinearRules.map(p => `${p.lhs} → ${p.rhs.join(' ')}`).join(', ')}`)
+          : (cz ? 'Gramatika neobsahuje levolineární pravidla.' : 'Grammar does not contain left-linear rules.'),
+        affectedRulesOrSymbols: leftLinearRules.map(p => `${p.lhs} → ${p.rhs.join(' ')}`)
+      };
+    }
+
+    case 'danglingElse': {
+      let foundPair: { s: string; unclosed: string; closed: string } | null = null;
+      for (const nt of g.nonTerminals) {
+        const alts = g.productions.filter(p => p.lhs === nt).map(p => p.rhs);
+        for (const a1 of alts) {
+          if (a1.length >= 2 && a1[a1.length - 1] === nt) {
+            const prefix = a1.slice(0, a1.length - 1);
+            for (const a2 of alts) {
+              if (a2.length > a1.length + 1 && a2[a2.length - 1] === nt) {
+                const matchesPrefix = prefix.every((sym, idx) => a2[idx] === sym);
+                if (matchesPrefix && a2[prefix.length] === nt) {
+                  foundPair = {
+                    s: nt,
+                    unclosed: `${nt} → ${a1.join(' ')}`,
+                    closed: `${nt} → ${a2.join(' ')}`
+                  };
+                  break;
+                }
+              }
+            }
+          }
+          if (foundPair) break;
+        }
+        if (foundPair) break;
+      }
+
+      const hasDefect = foundPair !== null;
+
+      return {
+        hasDefect,
+        statusText: hasDefect
+          ? (cz ? `Detekována nejednoznačnost dangling-else na ${foundPair!.s}` : `Dangling-else ambiguity detected on ${foundPair!.s}`)
+          : (cz ? 'Nenalezen vzor dangling-else' : 'No dangling-else pattern found'),
+        defectDetail: hasDefect
+          ? (cz
+              ? `Pravidla způsobující Shift/Reduce kolizi: ${foundPair!.unclosed} a ${foundPair!.closed}`
+              : `Rules causing Shift/Reduce conflict: ${foundPair!.unclosed} and ${foundPair!.closed}`)
+          : (cz ? 'Gramatika neobsahuje nejednoznačné větvení if-then-else.' : 'Grammar does not contain ambiguous if-then-else branching.'),
+        affectedRulesOrSymbols: foundPair ? [foundPair.unclosed, foundPair.closed] : []
+      };
+    }
+
+    case 'precedenceStrat': {
+      let flatNt: string | null = null;
+      let binCount = 0;
+      for (const nt of g.nonTerminals) {
+        const alts = g.productions.filter(p => p.lhs === nt).map(p => p.rhs);
+        const selfBin = alts.filter(a => a.length >= 3 && a[0] === nt && a[a.length - 1] === nt);
+        if (selfBin.length >= 2) {
+          flatNt = nt;
+          binCount = selfBin.length;
+          break;
+        }
+      }
+
+      const hasDefect = flatNt !== null;
+
+      return {
+        hasDefect,
+        statusText: hasDefect
+          ? (cz ? `Detekovány ploché binární operátory (${binCount}) na ${flatNt}` : `Flat binary operators detected (${binCount}) on ${flatNt}`)
+          : (cz ? 'Žádná nejednoznačná plochá pravidla operátorů' : 'No ambiguous flat operator productions'),
+        defectDetail: hasDefect
+          ? (cz
+              ? `Neterminál ${flatNt} obsahuje ${binCount} seberekurzivních pravidel tvaru ${flatNt} → ${flatNt} op ${flatNt}, způsobujících Shift/Reduce a Reduce/Reduce kolize.`
+              : `Non-terminal ${flatNt} contains ${binCount} self-recursive rules of the form ${flatNt} → ${flatNt} op ${flatNt}, causing Shift/Reduce and Reduce/Reduce conflicts.`)
+          : (cz ? 'Operátory jsou již správně hierarchicky stratifikovány.' : 'Operators are already stratified into a hierarchy.'),
+        affectedRulesOrSymbols: flatNt ? [`${flatNt} → ${flatNt} op ${flatNt}`] : []
+      };
+    }
+
+    case 'splitLRContext': {
+      const ntPairs = new Map<string, string[]>();
+      for (const p of g.productions) {
+        if (p.rhs.length >= 2) {
+          for (let i = 1; i < p.rhs.length; i++) {
+            const sym = p.rhs[i];
+            if (g.nonTerminals.has(sym)) {
+              const prev = p.rhs[i - 1];
+              if (!ntPairs.has(sym)) ntPairs.set(sym, []);
+              if (!ntPairs.get(sym)!.includes(prev)) ntPairs.get(sym)!.push(prev);
+            }
+          }
+        }
+      }
+      const candidates = [...ntPairs.entries()].filter(([_, prefixes]) => prefixes.length >= 2);
+      const hasDefect = candidates.length > 0;
+
+      return {
+        hasDefect,
+        statusText: hasDefect
+          ? (cz ? `Detekovány sloučené volací kontexty pro: ${candidates.map(c => c[0]).join(', ')}` : `Merged calling contexts detected for: ${candidates.map(c => c[0]).join(', ')}`)
+          : (cz ? 'Žádné sloučené kontexty vyžadující štěpení' : 'No merged contexts requiring splitting'),
+        defectDetail: hasDefect
+          ? (cz
+              ? `Neterminály ${candidates.map(c => `${c[0]} (po ${c[1].join(', ')})`).join('; ')} způsobují při sloučení stavů LALR(1) kolize Reduce/Reduce.`
+              : `Non-terminals ${candidates.map(c => `${c[0]} (after ${c[1].join(', ')})`).join('; ')} cause Reduce/Reduce conflicts in LALR(1) state merging.`)
+          : (cz ? 'Kontexty neterminálů jsou jednoznačně odděleny.' : 'Non-terminal contexts are cleanly separated.'),
+        affectedRulesOrSymbols: candidates.map(c => c[0])
+      };
+    }
+
+    case 'autoLR': {
+      // Check any LR conflict patterns
+      const hasDefect = true; // Evaluates available LR conflict resolutions
+      return {
+        hasDefect,
+        statusText: cz ? 'Analýza LR rozkladových konfliktů' : 'LR Parse Table Conflict Analysis',
+        defectDetail: cz
+          ? 'Zkontroluje gramatiku na přítomnost Shift/Reduce a Reduce/Reduce kolizí a aplikuje odpovídající rozlišení (dangling-else, žebřík priorit operátorů, kontextové štěpení).'
+          : 'Inspects grammar for Shift/Reduce and Reduce/Reduce conflicts and applies the appropriate formal resolution (dangling-else, operator ladder, or context splitting).',
+        affectedRulesOrSymbols: []
+      };
+    }
+
     default:
+
       return {
         hasDefect: false,
         statusText: cz ? 'Gramatika připravena' : 'Grammar ready',

@@ -4,7 +4,7 @@ import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, sta
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Cpu, XCircle } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
@@ -12,6 +12,8 @@ import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
 import { exportLRTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
 import { tokenizeInput } from '../../core/parser/inputTokenizer';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
+import { InfoButton } from '../components/TransformationInfo';
+import { InfoKey } from '../../core/processor/transformationInfo';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
 
@@ -33,6 +35,8 @@ interface LRViewProps {
   onSelectVariant?: (variant: LRVariantName) => void;
   layout: LRLayout;
   onLayoutChange: (layout: LRLayout) => void;
+  onAttemptLR?: () => void;
+  onShowInfo?: (key: InfoKey) => void;
 }
 
 export const LRView: React.FC<LRViewProps> = ({
@@ -47,7 +51,9 @@ export const LRView: React.FC<LRViewProps> = ({
   selectedVariant: controlledVariant,
   onSelectVariant,
   layout,
-  onLayoutChange
+  onLayoutChange,
+  onAttemptLR,
+  onShowInfo
 }) => {
   const t = TRANSLATIONS[lang];
   const [internalVariant, setInternalVariant] = useState<LRVariantName>('SLR(1)');
@@ -206,6 +212,15 @@ export const LRView: React.FC<LRViewProps> = ({
                   {t.statesCount} <strong>{activeTable.states.length}</strong> • {t.conflictCellsHighlighted}
                 </span>
               </div>
+              {onAttemptLR && (
+                <div className="ll1-attempt-row" style={{ marginTop: '8px' }}>
+                  <button type="button" className="btn btn-accent" onClick={onAttemptLR} title={t.hintLR}>
+                    <Sparkles size={14} />
+                    <span>{t.lrAttemptButton}</span>
+                  </button>
+                  {onShowInfo && <InfoButton lang={lang} onClick={() => onShowInfo('lr')} />}
+                </div>
+              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
                 {conflicts.map((c, idx) => (

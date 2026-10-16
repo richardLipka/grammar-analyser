@@ -1093,6 +1093,8 @@ export const App: React.FC = () => {
                     onSelectVariant={setLrVariant}
                     layout={lrLayout}
                     onLayoutChange={setLrLayout}
+                    onAttemptLR={() => applyWholeGrammar('lr')}
+                    onShowInfo={setInfoKey}
                   />
                 )}
 

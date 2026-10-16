@@ -193,17 +193,22 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
   const categories = [
     {
       id: 'clean',
-      label: cz ? 'Čištění a redukce' : 'Cleaning & Reduction',
+      label: t.teachingCatClean || (cz ? 'Čištění a redukce' : 'Cleaning & Reduction'),
       items: TEACHING_TECHNIQUES.filter(x => x.category === 'clean')
     },
     {
-      id: 'll1',
-      label: cz ? 'Levá rekurze a LL(1)' : 'Left Recursion & LL(1)',
-      items: TEACHING_TECHNIQUES.filter(x => x.category === 'll1')
+      id: 'll',
+      label: t.teachingCatLL || (cz ? 'LL(1) transformace a levá rekurze' : 'LL(1) Transformations & Left Recursion'),
+      items: TEACHING_TECHNIQUES.filter(x => x.category === 'll')
+    },
+    {
+      id: 'lr',
+      label: t.teachingCatLR || (cz ? 'LR transformace a řešení kolizí' : 'LR Transformations & Conflict Elimination'),
+      items: TEACHING_TECHNIQUES.filter(x => x.category === 'lr')
     },
     {
       id: 'normal',
-      label: cz ? 'Normální formy (CNF / GNF)' : 'Normal Forms (CNF / GNF)',
+      label: t.teachingCatNormal || (cz ? 'Normální formy (CNF / GNF)' : 'Normal Forms (CNF / GNF)'),
       items: TEACHING_TECHNIQUES.filter(x => x.category === 'normal')
     }
   ];
@@ -842,7 +847,7 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
               </div>
             )}
 
-            {/* Side-by-Side Grammars & Derivation Trees Grid */}
+            {/* Row 1: Side-by-Side Grammars */}
             <div className="equiv-grid">
               {/* Left Column: Original Grammar G */}
               <div className="equiv-column">
@@ -863,21 +868,6 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
                     {cz ? 'Chybná gramatika.' : 'Invalid grammar.'}
                   </div>
                 )}
-
-                {wordDerivationOriginal && wordDerivationOriginal.generated && wordDerivationOriginal.tree && (
-                  <div className="equiv-word">
-                    <div className="equiv-word-caption">
-                      {cz ? `Derivační strom v původní gramatice G pro slovo „${activeWordChoice?.wordText}“` : `Derivation tree in original grammar G for word "${activeWordChoice?.wordText}"`}
-                    </div>
-                    <DerivationTreeVisualizer
-                      rootNode={wordDerivationOriginal.tree}
-                      height="340px"
-                      filename="original_grammar_tree"
-                      lang={lang}
-                    />
-                    <Derivation forms={wordDerivationOriginal.forms} lang={lang} />
-                  </div>
-                )}
               </div>
 
               {/* Right Column: Transformed Grammar G' */}
@@ -895,26 +885,61 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
                     ))}
                   </div>
                 )}
-
-                {wordDerivationTransformed && wordDerivationTransformed.generated && wordDerivationTransformed.tree && (
-                  <div className="equiv-word">
-                    <div className="equiv-word-caption">
-                      {cz ? `Derivační strom v upravené gramatice G' pro slovo „${activeWordChoice?.wordText}“` : `Derivation tree in transformed grammar G' for word "${activeWordChoice?.wordText}"`}
-                    </div>
-                    <DerivationTreeVisualizer
-                      rootNode={wordDerivationTransformed.tree}
-                      height="340px"
-                      filename="transformed_grammar_tree"
-                      lang={lang}
-                    />
-                    <Derivation forms={wordDerivationTransformed.forms} lang={lang} />
-                  </div>
-                )}
               </div>
             </div>
+
+            {/* Row 2: Side-by-Side Derivation Trees (Aligned on the Exact Same Level) */}
+            {(wordDerivationOriginal?.tree || wordDerivationTransformed?.tree) && (
+              <div className="equiv-grid" style={{ marginTop: '14px', alignItems: 'flex-start' }}>
+                {/* Left Column Tree */}
+                <div className="equiv-column">
+                  {wordDerivationOriginal && wordDerivationOriginal.generated && wordDerivationOriginal.tree ? (
+                    <div className="equiv-word">
+                      <div className="equiv-word-caption">
+                        {cz ? `Derivační strom v původní gramatice G pro slovo „${activeWordChoice?.wordText}“` : `Derivation tree in original grammar G for word "${activeWordChoice?.wordText}"`}
+                      </div>
+                      <DerivationTreeVisualizer
+                        rootNode={wordDerivationOriginal.tree}
+                        height="340px"
+                        filename="original_grammar_tree"
+                        lang={lang}
+                      />
+                      <Derivation forms={wordDerivationOriginal.forms} lang={lang} />
+                    </div>
+                  ) : (
+                    <div className="report-box warning" style={{ padding: '12px' }}>
+                      {cz ? 'Strom v původní gramatice nelze odvodit.' : 'Tree could not be derived in original grammar.'}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Column Tree */}
+                <div className="equiv-column">
+                  {wordDerivationTransformed && wordDerivationTransformed.generated && wordDerivationTransformed.tree ? (
+                    <div className="equiv-word">
+                      <div className="equiv-word-caption">
+                        {cz ? `Derivační strom v upravené gramatice G' pro slovo „${activeWordChoice?.wordText}“` : `Derivation tree in transformed grammar G' for word "${activeWordChoice?.wordText}"`}
+                      </div>
+                      <DerivationTreeVisualizer
+                        rootNode={wordDerivationTransformed.tree}
+                        height="340px"
+                        filename="transformed_grammar_tree"
+                        lang={lang}
+                      />
+                      <Derivation forms={wordDerivationTransformed.forms} lang={lang} />
+                    </div>
+                  ) : (
+                    <div className="report-box warning" style={{ padding: '12px' }}>
+                      {cz ? 'Strom v upravené gramatice nelze odvodit.' : 'Tree could not be derived in transformed grammar.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 };
+

@@ -25,7 +25,12 @@ import {
   substituteSymbol,
   absorbFollowingSymbol,
   convertToChomsky,
-  convertToGreibach
+  convertToGreibach,
+  disambiguateDanglingElse,
+  stratifyPrecedence,
+  splitNonTerminalLRContext,
+  convertLeftLinearToRightLinear,
+  attemptResolveLRConflicts
 } from '../processor/grammarProcessor';
 import { transformToLL1 } from '../processor/ll1Transformer';
 import { FormProperty } from '../analyser/equivalence';
@@ -44,7 +49,7 @@ export interface LiteratureReference {
 
 export interface TechniqueGuide {
   id: string;
-  category: 'clean' | 'll1' | 'normal';
+  category: 'clean' | 'll' | 'lr' | 'normal';
   name: {
     en: string;
     cz: string;
@@ -190,7 +195,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'immediateLeftRec',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Eliminating Immediate Left Recursion',
       cz: 'Odstranění přímé levé rekurze'
@@ -246,7 +251,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'leftrec',
-    category: 'll1',
+    category: 'll',
     name: {
       en: "Eliminating Indirect Left Recursion (Paull's Algorithm)",
       cz: 'Odstranění nepřímé levé rekurze (Paullův algoritmus)'
@@ -284,7 +289,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'leftcorner',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Left-Corner Transformation',
       cz: 'Transformace levého rohu'
@@ -323,7 +328,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'factor',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Left Factoring (Prefix Extraction)',
       cz: 'Levá faktorizace (vytýkání prefixu)'
@@ -362,7 +367,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'rightfactor',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Right Factoring (Suffix Extraction)',
       cz: 'Pravá faktorizace (vytýkání přípony)'
@@ -400,7 +405,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'expandLeading',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Eliminating Leading Non-Terminals',
       cz: 'Eliminace úvodních neterminálů'
@@ -499,7 +504,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'absorb',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Terminal Absorption',
       cz: 'Pohlcení terminálu'
@@ -626,7 +631,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
   },
   {
     id: 'll1',
-    category: 'll1',
+    category: 'll',
     name: {
       en: 'Systematic Transformation to LL(1)',
       cz: 'Systematická transformace na LL(1)'
@@ -662,5 +667,201 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
     },
     promisedForm: ['ll1'],
     apply: (g) => transformToLL1(g)
+  },
+  {
+    id: 'leftToRightLinear',
+    category: 'll',
+    name: {
+      en: 'Left-to-Right Linear Regular Conversion',
+      cz: 'Převod levolineární gramatiky na pravolineární'
+    },
+    subtitle: {
+      en: 'Elimination of left recursion in regular grammars via finite automaton state reversal',
+      cz: 'Odstranění levé rekurze z regulárních gramatik otočením přechodů konečného automatu'
+    },
+    scheme: "A -> B a | a  ⟹  S' -> a A',  A' -> b A' | a",
+    defect: {
+      en: 'Left-linear regular grammars contain immediate left recursion (A -> A b), which traps top-down LL(1) and recursive-descent parsers in infinite loops without advancing on the input.',
+      cz: 'Levolineární regulární gramatiky obsahují přímou levou rekurzi (A -> A b), která v sestupných LL(1) analyzátorech a rekurzivním sestupu způsobuje nekonečné zacyklení bez čtení vstupu.'
+    },
+    remedy: {
+      en: 'Construct the underlying finite automaton, reverse its state transition structure, and emit equivalent right-linear productions. Left recursion is completely eliminated while generating the exact same regular language.',
+      cz: 'Sestrojí se podkladový konečný automat, obrátí se směr přechodů a vytvoří se ekvivalentní pravolineární pravidla. Levá rekurze je zcela odstraněna při zachování přesně téhož jazyka.'
+    },
+    literature: {
+      authors: 'Noam Chomsky, George A. Miller',
+      title: 'Finite state languages',
+      venue: 'Information and Control, Vol. 1, Issue 2, pp. 91–112',
+      year: 1958,
+      url: 'https://doi.org/10.1016/S0019-9958(58)90082-2',
+      historicalNote: {
+        en: 'Foundational paper establishing the algebraic duality and state equivalence between left-linear and right-linear context-free grammars.',
+        cz: 'Zakládající práce dokazující algebraickou dualitu a stavovou ekvivalenci mezi levolineárními a pravolineárními gramatikami.'
+      }
+    },
+    exampleGrammarText: 'S -> A a | a\nA -> A b | b',
+    exampleIssueNote: {
+      en: 'S and A are left-linear, making LL(1) parsing impossible.',
+      cz: 'S a A jsou levolineární, což znemožňuje deterministickou LL(1) analýzu.'
+    },
+    promisedForm: ['noLeftRecursion'],
+    apply: (g) => convertLeftLinearToRightLinear(g)
+  },
+  {
+    id: 'danglingElse',
+    category: 'lr',
+    name: {
+      en: 'Dangling-else Disambiguation',
+      cz: 'Odstranění nejednoznačnosti dangling-else'
+    },
+    subtitle: {
+      en: 'Stratification into matched and open statements to eliminate LR Shift/Reduce conflicts',
+      cz: 'Rozdělení na úplné a neúplné příkazy pro odstranění LR Shift/Reduce kolize'
+    },
+    scheme: 'S -> S_m | S_o,  S_m -> if C then S_m else S_m | a,  S_o -> if C then S | if C then S_m else S_o',
+    defect: {
+      en: 'The classic dangling-else conditional rule causes a Shift/Reduce conflict in LR(0), SLR(1), and LALR(1) tables on the else token, because the parser cannot determine whether to shift else (binding to the inner if) or reduce (binding to the outer if).',
+      cz: 'Klasické pravidlo podmínky způsobuje v LR(0), SLR(1) i LALR(1) rozkladových tabulkách Shift/Reduce kolizi na symbolu else, protože analyzátor nemůže rozhodnout, zda posunout (vázat else k vnitřnímu if) nebo redukovat (vázat k vnějšímu if).'
+    },
+    remedy: {
+      en: 'Stratify statement rules into matched statements S_m (where every then branch has a matching else) and open statements S_o (where the trailing conditional is unclosed). This forces every else to bind unambiguously to the closest preceding if.',
+      cz: 'Rozdělit příkazy na úplné S_m (kde každá větev then má odpovídající else) a neúplné S_o (kde koncová podmínka zůstává otevřená). Tím se jednoznačně vynutí vazba každého else k nejbližšímu předchozímu if.'
+    },
+    literature: {
+      authors: 'Alfred V. Aho, Jeffrey D. Ullman',
+      title: 'The Theory of Parsing, Translation, and Compiling, Vol. 1: Parsing',
+      venue: 'Prentice-Hall, Englewood Cliffs, NJ',
+      year: 1972,
+      url: 'https://archive.org/details/theoryofparsingt0001ahov',
+      historicalNote: {
+        en: 'Introduced the canonical matched/open grammar transformation eliminating the dangling-else Shift/Reduce conflict without altering language recognition.',
+        cz: 'Zavedli kanonickou transformaci na úplné a neúplné příkazy, která odstraňuje Shift/Reduce kolizi bez změny přijímaného jazyka.'
+      }
+    },
+    exampleGrammarText: 'S -> i C t S | i C t S e S | a\nC -> c',
+    exampleIssueNote: {
+      en: 'S -> i C t S vs S -> i C t S e S creates a Shift/Reduce conflict on "e" (else).',
+      cz: 'S -> i C t S a S -> i C t S e S vytváří Shift/Reduce kolizi na symbolu "e" (else).'
+    },
+    promisedForm: [],
+    apply: (g) => disambiguateDanglingElse(g)
+  },
+  {
+    id: 'precedenceStrat',
+    category: 'lr',
+    name: {
+      en: 'Operator Precedence Stratification',
+      cz: 'Stratifikace priorit a asociativity operátorů'
+    },
+    subtitle: {
+      en: 'Decomposing flat ambiguous expressions into a multi-tier precedence ladder',
+      cz: 'Rozklad plochých nejednoznačných výrazů do hierarchie priorit'
+    },
+    scheme: 'E -> E + T | T,  T -> T * F | F,  F -> ( E ) | id',
+    defect: {
+      en: 'Flat binary operator expressions (E -> E + E | E * E | id) are ambiguous and produce extensive Shift/Reduce and Reduce/Reduce conflicts in LR parsers, as well as FIRST/FIRST conflicts in LL parsers.',
+      cz: 'Ploché výrazy s binárními operátory (E -> E + E | E * E | id) jsou nejednoznačné a v LR analyzátorech způsobují závažné Shift/Reduce a Reduce/Reduce kolize.'
+    },
+    remedy: {
+      en: 'Decompose the flat expression grammar into a multi-tier hierarchy (Floyd ladder): lower precedence operators are evaluated higher in the parse tree (E -> E + T | T), higher precedence operators are evaluated deeper (T -> T * F | F), and base primary expressions/parentheses are placed in the bottom factor tier (F -> ( E ) | id).',
+      cz: 'Rozložit plochá pravidla do hierarchického žebříčku (Floydův žebřík): operátory s nižší prioritou se vyhodnocují výše v derivačním stromu (E -> E + T | T), s vyšší prioritou hlouběji (T -> T * F | F) a základní hodnoty se závorkami tvoří nejnižší úroveň (F -> ( E ) | id).'
+    },
+    literature: {
+      authors: 'Robert W. Floyd',
+      title: 'Syntactic analysis and operator precedence',
+      venue: 'Journal of the ACM, Vol. 10, Issue 3, pp. 316–333',
+      year: 1963,
+      url: 'https://doi.org/10.1145/321172.321179',
+      historicalNote: {
+        en: 'Seminal paper establishing the formal theory of operator precedence and grammar stratification for expression languages.',
+        cz: 'Zásadní práce formulující teorii operátorové precedence a stratifikace gramatik pro jazyky aritmetických výrazů.'
+      }
+    },
+    exampleGrammarText: 'E -> E + E | E * E | id',
+    exampleIssueNote: {
+      en: 'Flat binary rules produce 4 Shift/Reduce conflicts in LR(0) and SLR(1) on "+" and "*".',
+      cz: 'Plochá binární pravidla vytvářejí 4 Shift/Reduce kolize v LR(0) i SLR(1) na operátorech "+" a "*".'
+    },
+    promisedForm: [],
+    apply: (g) => stratifyPrecedence(g)
+  },
+  {
+    id: 'splitLRContext',
+    category: 'lr',
+    name: {
+      en: 'Non-Terminal Context Splitting',
+      cz: 'Kontextové rozštěpení neterminálů'
+    },
+    subtitle: {
+      en: 'Duplicating non-terminals to eliminate LALR(1) / SLR(1) Reduce/Reduce conflicts',
+      cz: 'Zdvojení neterminálů pro odstranění Reduce/Reduce kolizí v LALR(1) a SLR(1)'
+    },
+    scheme: 'A ⟹ A₁ (in context u),  A₂ (in context w)',
+    defect: {
+      en: 'When a non-terminal is evaluated in distinct prefix contexts that share the same LR(0) core items, LALR(1) state merging collapses their lookahead sets, creating spurious Reduce/Reduce conflicts.',
+      cz: 'Když je neterminál volán v různých prefixových kontextech se stejnými jádry LR(0) položek, sloučení stavů v LALR(1) spojí jejich lookahead množiny a vyvolá parazitní Reduce/Reduce kolizi.'
+    },
+    remedy: {
+      en: 'Duplicate the non-terminal into context-specialized copies (A -> A1, A2). Because the specialized non-terminals have distinct names, their item sets no longer merge, completely eliminating the LALR(1) Reduce/Reduce conflict.',
+      cz: 'Zdvojit neterminál na kontextově specializované kopie (A -> A1, A2). Vzhledem k odlišným názvům se stavy nesloučí a Reduce/Reduce kolize je beze změny jazyka odstraněna.'
+    },
+    literature: {
+      authors: 'M. Dennis Mickunas, Ronald L. Lancaster, Victor B. Schneider',
+      title: 'Transforming LR(k) grammars to LR(1), SLR(1) and (1,1) bounded right context grammars',
+      venue: 'Journal of the ACM, Vol. 23, Issue 3, pp. 511–533',
+      year: 1976,
+      url: 'https://doi.org/10.1145/321958.321969',
+      historicalNote: {
+        en: 'Demonstrated that LR conflicts caused by lookahead conflation across distinct contexts can be mechanically eliminated by state-induced non-terminal splitting.',
+        cz: 'Dokázali, že LR kolize způsobené splynutím lookaheadů napříč kontexty lze mechanicky eliminovat rozštěpením neterminálů podle stavů.'
+      }
+    },
+    exampleGrammarText: 'S -> a A d | b B d | a B e | b A e\nA -> c\nB -> c',
+    exampleIssueNote: {
+      en: 'Classic grammar separating LR(1) from LALR(1): state merging creates a Reduce/Reduce conflict on "d" and "e".',
+      cz: 'Klasická gramatika oddělující LR(1) od LALR(1): sloučení stavů vyvolá Reduce/Reduce kolizi na "d" a "e".'
+    },
+    promisedForm: [],
+    apply: (g) => splitNonTerminalLRContext(g)
+  },
+  {
+    id: 'autoLR',
+    category: 'lr',
+    name: {
+      en: 'Automatic Attempt to Resolve LR Conflicts',
+      cz: 'Automatický pokus o vyřešení LR kolizí'
+    },
+    subtitle: {
+      en: 'Integrated detection and elimination of Shift/Reduce and Reduce/Reduce conflicts',
+      cz: 'Integrovaná detekce a odstranění Shift/Reduce i Reduce/Reduce kolizí'
+    },
+    scheme: '1. dangling-else  2. precedence ladder  3. state context splitting',
+    defect: {
+      en: 'The grammar yields Shift/Reduce or Reduce/Reduce conflicts in LR(0), SLR(1), or LALR(1) parsing tables.',
+      cz: 'Gramatika vykazuje kolize Shift/Reduce nebo Reduce/Reduce v rozkladových tabulkách LR(0), SLR(1) nebo LALR(1).'
+    },
+    remedy: {
+      en: 'Analyzes the nature of the LR conflicts and automatically applies the appropriate formal resolution transformation: dangling-else stratification, precedence hierarchy factoring, or non-terminal context splitting.',
+      cz: 'Analyzuje charakter LR kolizí a automaticky aplikuje vhodnou transformační metodu: rozdělení dangling-else, hierarchii priorit operátorů nebo kontextové rozštěpení neterminálů.'
+    },
+    literature: {
+      authors: 'Joel E. Denny, Brian A. Malloy',
+      title: 'The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution',
+      venue: 'Science of Computer Programming, Vol. 75, Issue 11, pp. 943–979',
+      year: 2010,
+      url: 'https://doi.org/10.1016/j.scico.2009.09.006',
+      historicalNote: {
+        en: 'Presents modern conflict analysis and inadequacy elimination for LR parsers, implemented in GNU Bison 3.0+.',
+        cz: 'Představuje moderní analýzu LR kolizí a eliminaci neadekvátnosti rozkladových tabulek, implementovanou v GNU Bison 3.0+.'
+      }
+    },
+    exampleGrammarText: 'S -> i C t S | i C t S e S | a\nC -> c',
+    exampleIssueNote: {
+      en: 'Shift/Reduce conflict in LR(0), SLR(1), and LALR(1).',
+      cz: 'Shift/Reduce kolize v LR(0), SLR(1) a LALR(1).'
+    },
+    promisedForm: [],
+    apply: (g) => attemptResolveLRConflicts(g)
   }
 ];
+
