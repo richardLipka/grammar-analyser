@@ -149,6 +149,17 @@ C -> "c" | ε`,
     sampleInput: 'a b c'
   },
   {
+    id: 'left_linear_regular',
+    nameEn: 'Left-Linear Regular Grammar (a⁺ b)',
+    nameCz: 'Levolineární regulární gramatika (a⁺ b)',
+    descriptionEn: 'Textbook left-linear regular grammar: S → A "b", A → A "a" | "a". Ideal for demonstrating the dual NFA construction converting left-linear to right-linear form (Chomsky & Miller 1958).',
+    descriptionCz: 'Učebnicová levolineární regulární gramatika: S → A "b", A → A "a" | "a". Ideální pro demonstraci převodu levolineární gramatiky na ekvivalentní pravolineární tvar pomocí duálního NKA (Chomsky & Miller 1958).',
+    category: 'Transformations',
+    grammarText: `S -> A "b"
+A -> A "a" | "a"`,
+    sampleInput: 'a a a b'
+  },
+  {
     id: 'll1_not_slr1',
     nameEn: 'LL(1) but not SLR(1)',
     nameCz: 'LL(1), ale ne SLR(1)',
