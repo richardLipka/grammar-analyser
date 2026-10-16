@@ -10,8 +10,8 @@
 import { Grammar, Production, formatProduction, EPSILON } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
 import { ATN, ATNDecisionPoint, buildATN } from './allAtn';
-import { LookaheadDFA, createLookaheadDFA, adaptivePredict, PredictionResult } from './allPredictor';
-import { DerivationNode } from '../generator/wordGenerator';
+import { LookaheadDFA, createLookaheadDFA, adaptivePredict, PredictionResult, LookaheadTraceStep } from './allPredictor';
+import { DerivationNode, cloneTree } from '../generator/wordGenerator';
 
 export interface ALLCompatibilityResult {
   canParse: boolean;
@@ -31,6 +31,7 @@ export interface ALLDecisionEvent {
   lookaheadTokens: string[];
   lookaheadDepth: number;
   dfaStateId: number;
+  trace?: LookaheadTraceStep[];
   isAmbiguous?: boolean;
 }
 
@@ -62,52 +63,17 @@ export interface ALLSimulationResult {
  * ALL(*) handles all context-free grammars that do not contain direct or indirect left recursion.
  */
 export function checkALLCompatibility(grammar: Grammar, analysis: GrammarAnalysis): ALLCompatibilityResult {
-  const leftRecursiveRules: string[] = [];
+  const leftRecursiveRules = analysis.leftRecursion?.kinds
+    ? Array.from(analysis.leftRecursion.kinds.keys()).sort()
+    : Array.from(new Set(grammar.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs))).sort();
+
   const reasons: string[] = [];
   const reasonsCz: string[] = [];
-
-  // Check direct left recursion: A -> A alpha
-  for (const p of grammar.productions) {
-    if (p.rhs.length > 0 && p.rhs[0] === p.lhs) {
-      if (!leftRecursiveRules.includes(p.lhs)) {
-        leftRecursiveRules.push(p.lhs);
-      }
-    }
-  }
-
-  // Check indirect left recursion via First-sets and nullable paths: A =>+ A alpha
-  for (const nt of grammar.nonTerminals) {
-    if (leftRecursiveRules.includes(nt)) continue;
-    const visited = new Set<string>();
-    const stack = [nt];
-
-    while (stack.length > 0) {
-      const current = stack.pop()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-
-      const prods = grammar.productions.filter(p => p.lhs === current);
-      for (const p of prods) {
-        for (const sym of p.rhs) {
-          if (sym === nt && current !== nt) {
-            leftRecursiveRules.push(nt);
-            break;
-          }
-          if (grammar.nonTerminals.has(sym)) {
-            stack.push(sym);
-            if (!analysis.nullable.has(sym)) break;
-          } else {
-            break;
-          }
-        }
-      }
-    }
-  }
 
   const hasLeftRecursion = leftRecursiveRules.length > 0;
   if (hasLeftRecursion) {
     reasons.push(`Grammar contains left-recursive non-terminals: ${leftRecursiveRules.join(', ')}. Top-down ATN closures require eliminating left recursion first.`);
-    reasonsCz.push(`Grammar obsahuje levě rekurzivní neterminály: ${leftRecursiveRules.join(', ')}. Shora dolů orientovaný uzávěr ATN vyžaduje nejprve odstranit levou rekurzi.`);
+    reasonsCz.push(`Gramatika obsahuje levě rekurzivní neterminály: ${leftRecursiveRules.join(', ')}. Shora dolů orientovaný uzávěr ATN vyžaduje nejprve odstranit levou rekurzi.`);
   }
 
   const atn = buildATN(grammar);
@@ -177,14 +143,6 @@ export function simulateALLParse(
       symbol,
       isTerminal,
       children: []
-    };
-  }
-
-  function cloneTree(node?: DerivationNode): DerivationNode | undefined {
-    if (!node) return undefined;
-    return {
-      ...node,
-      children: node.children ? node.children.map(cloneTree).filter((c): c is DerivationNode => !!c) : []
     };
   }
 
@@ -277,6 +235,7 @@ export function simulateALLParse(
           lookaheadTokens: pred.lookaheadTokens,
           lookaheadDepth: pred.lookaheadDepth,
           dfaStateId: pred.dfaStateId,
+          trace: pred.trace,
           isAmbiguous: pred.isAmbiguous
         };
       }

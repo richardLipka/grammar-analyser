@@ -254,13 +254,29 @@ function expandChildren(prod: Production, g: Grammar, nextId: () => string): Der
   return prod.rhs.map(sym => ({ id: nextId(), symbol: sym, isTerminal: !g.nonTerminals.has(sym) }));
 }
 
-function cloneTree(node: DerivationNode): DerivationNode {
+/**
+ * Deep-clones a derivation tree node and all its children.
+ */
+export function cloneTree(node: DerivationNode): DerivationNode {
   return {
     id: node.id,
     symbol: node.symbol,
     isTerminal: node.isTerminal,
     isForestRoot: node.isForestRoot,
+    mark: node.mark,
     children: node.children ? node.children.map(cloneTree) : undefined
+  };
+}
+
+/**
+ * Creates a new derivation tree node with unique or specified identifier.
+ */
+export function createTreeNode(symbol: string, isTerminal: boolean, id?: string): DerivationNode {
+  return {
+    id: id ?? `node_${Math.random().toString(36).slice(2, 9)}`,
+    symbol,
+    isTerminal,
+    children: []
   };
 }
 

@@ -9,10 +9,11 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { DerivationNode } from '../../core/generator/wordGenerator';
-import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon, AlignVerticalJustifyEnd } from 'lucide-react';
+import { AlignVerticalJustifyEnd } from 'lucide-react';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 import { Language } from '../../i18n/translations';
 import { usePanZoom } from './usePanZoom';
+import { GraphToolbar } from './GraphToolbar';
 
 interface DerivationTreeVisualizerProps {
   rootNode?: DerivationNode;
@@ -183,56 +184,39 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
       style={{ height, cursor: isDragging ? 'grabbing' : 'grab' }}
       onPointerDown={onPointerDown}
     >
-      <div className="graph-toolbar">
-        <button className="btn-icon" title={isCz ? 'Přiblížit' : 'Zoom in'} onClick={() => zoomBy(1.2)}>
-          <ZoomIn size={14} />
-        </button>
-        <button className="btn-icon" title={isCz ? 'Oddálit' : 'Zoom out'} onClick={() => zoomBy(1 / 1.2)}>
-          <ZoomOut size={14} />
-        </button>
-        <button className="btn-icon" title={isCz ? 'Zobrazit celý strom' : 'Fit whole tree'} onClick={fit}>
-          <Maximize2 size={14} />
-        </button>
-        <button
-          className={`btn-icon ${alignLeaves ? 'active' : ''}`}
-          title={isCz ? 'Zarovnat listy do jednoho řádku (výsledné slovo / větná forma)' : 'Align leaves on one row (yield / sentential form)'}
-          onClick={() => setAlignLeaves(a => !a)}
-        >
-          <AlignVerticalJustifyEnd size={14} />
-        </button>
-        <div style={{ width: '1px', height: '16px', backgroundColor: 'var(--color-border)', margin: '0 2px' }} />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ padding: '2px 6px', fontSize: '10.5px', height: '22px', gap: '3px' }}
-          title={isCz ? 'Exportovat SVG' : 'Export SVG'}
-          onClick={() => svgRef.current && exportSvgFile(svgRef.current, filename, exportBounds, exportTransform)}
-        >
-          <Download size={11} />
-          <span>SVG</span>
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ padding: '2px 6px', fontSize: '10.5px', height: '22px', gap: '3px' }}
-          title={isCz ? 'Exportovat PNG' : 'Export PNG'}
-          disabled={isExportingPng}
-          onClick={async () => {
-            if (!svgRef.current || isExportingPng) return;
-            setIsExportingPng(true);
-            try {
-              await exportPngFile(svgRef.current, filename, exportBounds, 2, exportTransform);
-            } catch (err) {
-              console.error('Failed to export PNG:', err);
-            } finally {
-              setIsExportingPng(false);
-            }
-          }}
-        >
-          <ImageIcon size={11} />
-          <span>{isExportingPng ? '...' : 'PNG'}</span>
-        </button>
-      </div>
+      <GraphToolbar
+        onZoomIn={() => zoomBy(1.2)}
+        onZoomOut={() => zoomBy(1 / 1.2)}
+        onFit={fit}
+        onExportSvg={() => svgRef.current && exportSvgFile(svgRef.current, filename, exportBounds, exportTransform)}
+        onExportPng={async () => {
+          if (!svgRef.current || isExportingPng) return;
+          setIsExportingPng(true);
+          try {
+            await exportPngFile(svgRef.current, filename, exportBounds, 2, exportTransform);
+          } catch (err) {
+            console.error('Failed to export PNG:', err);
+          } finally {
+            setIsExportingPng(false);
+          }
+        }}
+        isExportingPng={isExportingPng}
+        titleFit={isCz ? 'Zobrazit celý strom' : 'Fit whole tree'}
+        titleSvg={isCz ? 'Exportovat SVG' : 'Export SVG'}
+        titlePng={isCz ? 'Exportovat PNG' : 'Export PNG'}
+        extraButtons={
+          <button
+            type="button"
+            className={`btn-icon ${alignLeaves ? 'active' : ''}`}
+            title={isCz ? 'Zarovnat listy do jednoho řádku (výsledné slovo / větná forma)' : 'Align leaves on one row (yield / sentential form)'}
+            onClick={() => setAlignLeaves(a => !a)}
+            aria-label={isCz ? 'Zarovnat listy do jednoho řádku' : 'Align leaves on one row'}
+          >
+            <AlignVerticalJustifyEnd size={14} />
+          </button>
+        }
+        lang={lang}
+      />
 
       <div className="graph-caption" title={frontier.join(' ')}>
         {isComplete

@@ -18,11 +18,12 @@ import dagre from 'dagre';
 import { LRAutomaton, LRState } from '../../core/lr/lrAutomaton';
 import { groupLR1Items, LR0Item, GroupedLR1Item, lr0ItemKey } from '../../core/lr/lrItem';
 import { stateCreators, incomingEdges, itemTarget } from '../../core/lr/lrExplain';
-import { ZoomIn, ZoomOut, Maximize2, Download, Image as ImageIcon } from 'lucide-react';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 import { Language } from '../../i18n/translations';
 import { usePanZoom } from './usePanZoom';
 import { FloatingTip } from '../components/LRExplanation';
+import { edgePath } from './graphUtils';
+import { GraphToolbar } from './GraphToolbar';
 
 interface AutomatonGraphVisualizerProps {
   automaton: LRAutomaton;
@@ -256,19 +257,6 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     }
   };
 
-  const edgePath = (pts: { x: number; y: number }[]) => {
-    if (pts.length === 0) return '';
-    if (pts.length < 3) return `M ${pts.map(p => `${p.x},${p.y}`).join(' L ')}`;
-    // Smooth the dagre polyline with quadratic segments through the midpoints
-    let d = `M ${pts[0].x},${pts[0].y}`;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const mx = (pts[i].x + pts[i + 1].x) / 2;
-      const my = (pts[i].y + pts[i + 1].y) / 2;
-      d += ` Q ${pts[i].x},${pts[i].y} ${i === pts.length - 2 ? pts[i + 1].x : mx},${i === pts.length - 2 ? pts[i + 1].y : my}`;
-    }
-    return d;
-  };
-
   /** 'origin' = the creating transition, 'incoming' = another transition into the selected state, 'active' = outgoing */
   const edgeKind = (e: LayoutEdge): '' | 'origin' | 'incoming' | 'active' => {
     if (origin.selected === null) return '';
@@ -290,39 +278,18 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
         onPointerDown(e);
       }}
     >
-      <div className="graph-toolbar">
-        <button className="btn-icon" title={isCz ? 'Přiblížit' : 'Zoom in'} onClick={() => zoomBy(1.2)}>
-          <ZoomIn size={16} />
-        </button>
-        <button className="btn-icon" title={isCz ? 'Oddálit' : 'Zoom out'} onClick={() => zoomBy(1 / 1.2)}>
-          <ZoomOut size={16} />
-        </button>
-        <button className="btn-icon" title={isCz ? 'Zobrazit celý automat' : 'Fit whole automaton'} onClick={fit}>
-          <Maximize2 size={16} />
-        </button>
-        <div style={{ width: '1px', height: '18px', backgroundColor: 'var(--color-border)', margin: '0 2px' }} />
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', gap: '4px' }}
-          title={isCz ? 'Exportovat graf jako vektorový SVG' : 'Export graph as vector SVG'}
-          onClick={() => svgRef.current && exportSvgFile(svgRef.current, filename, exportBounds, exportTransform)}
-        >
-          <Download size={12} />
-          <span>SVG</span>
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          style={{ padding: '2px 7px', fontSize: '11px', height: '26px', gap: '4px' }}
-          title={isCz ? 'Exportovat graf jako PNG (vysoké rozlišení)' : 'Export graph as high-res PNG'}
-          onClick={handleExportPng}
-          disabled={isExportingPng}
-        >
-          <ImageIcon size={12} />
-          <span>{isExportingPng ? '...' : 'PNG'}</span>
-        </button>
-      </div>
+      <GraphToolbar
+        onZoomIn={() => zoomBy(1.2)}
+        onZoomOut={() => zoomBy(1 / 1.2)}
+        onFit={fit}
+        onExportSvg={() => svgRef.current && exportSvgFile(svgRef.current, filename, exportBounds, exportTransform)}
+        onExportPng={handleExportPng}
+        isExportingPng={isExportingPng}
+        titleFit={isCz ? 'Zobrazit celý automat' : 'Fit whole automaton'}
+        titleSvg={isCz ? 'Exportovat graf jako vektorový SVG' : 'Export graph as vector SVG'}
+        titlePng={isCz ? 'Exportovat graf jako PNG (vysoké rozlišení)' : 'Export graph as high-res PNG'}
+        lang={lang}
+      />
 
       <svg ref={svgRef} width="100%" height="100%">
         <defs>

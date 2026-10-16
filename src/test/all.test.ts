@@ -80,6 +80,15 @@ describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
       // Invalid word rejected
       const simFail = simulateALLParse(['a', 'a', 'b', 'z'], g, atn);
       expect(simFail.accepted).toBe(false);
+
+      // Verify that decision events include a step-by-step lookahead trace
+      const decisionSteps = sim1.steps.filter(s => s.decisionEvent !== undefined);
+      expect(decisionSteps.length).toBeGreaterThan(0);
+      const firstDecision = decisionSteps[0].decisionEvent!;
+      expect(firstDecision.trace).toBeDefined();
+      expect(firstDecision.trace!.length).toBeGreaterThanOrEqual(1);
+      // The trace shows viable alternatives shrinking as lookahead progresses
+      expect(firstDecision.trace![0].remainingAlts.length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -5,7 +5,7 @@ import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText, formatLookaheadSet } from '../components/Symbols';
 import { exportSetsToLatex } from '../../core/export/latexExport';
-import { ExternalLink } from 'lucide-react';
+import { ReferenceBar } from '../components/ReferenceBar';
 
 export const FIRST_FOLLOW_PRIMARY_REFERENCES = [
   {
@@ -85,26 +85,11 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({ grammar, analy
         </div>
 
         {/* Primary Literature Reference Bar */}
-        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární vědecká literatura (FIRST & FOLLOW):' : 'Primary literature (FIRST & FOLLOW sets):'}</span>
-          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
-            {FIRST_FOLLOW_PRIMARY_REFERENCES.map((ref, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <a
-                  href={ref.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={ref.citation}
-                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                >
-                  <strong>{ref.authorYear}</strong>
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
-                  <ExternalLink size={10} />
-                </a>
-              </span>
-            ))}
-          </div>
-        </div>
+        <ReferenceBar
+          references={FIRST_FOLLOW_PRIMARY_REFERENCES}
+          lang={lang}
+          label={cz ? 'Primární vědecká literatura (FIRST & FOLLOW):' : 'Primary literature (FIRST & FOLLOW sets):'}
+        />
       </div>
 
       {/* Production Predict / Director Sets */}

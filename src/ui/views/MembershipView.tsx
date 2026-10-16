@@ -11,6 +11,7 @@ import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { Language } from '../../i18n/translations';
 import { CheckCircle2, XCircle, ChevronLeft, ChevronRight, Grid3x3, SearchCheck, ExternalLink } from 'lucide-react';
+import { ReferenceBar } from '../components/ReferenceBar';
 
 export const MEMBERSHIP_PRIMARY_REFERENCES = {
   general: [
@@ -170,26 +171,11 @@ export const MembershipView: React.FC<MembershipViewProps> = ({ grammar, default
         )}
 
         {/* Primary Literature Reference Bar */}
-        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (obecná syntaktická analýza BKG):' : 'Primary literature (general CFG parsing):'}</span>
-          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
-            {MEMBERSHIP_PRIMARY_REFERENCES.general.map((ref, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <a
-                  href={ref.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={ref.citation}
-                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                >
-                  <strong>{ref.authorYear}</strong>
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
-                  <ExternalLink size={10} />
-                </a>
-              </span>
-            ))}
-          </div>
-        </div>
+        <ReferenceBar
+          references={MEMBERSHIP_PRIMARY_REFERENCES.general}
+          lang={lang}
+          label={cz ? 'Primární literatura (obecná syntaktická analýza BKG):' : 'Primary literature (general CFG parsing):'}
+        />
       </div>
 
       <CykCard grammar={grammar} tokens={tooLong ? null : tokenized.tokens} lang={lang} onConvertToCNF={onConvertToCNF} />
@@ -347,26 +333,11 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
       )}
 
       {/* Primary Literature Reference Bar */}
-      <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-        <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (algoritmus CYK):' : 'Primary literature (CYK algorithm):'}</span>
-        <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
-          {MEMBERSHIP_PRIMARY_REFERENCES.cyk.map((ref, i) => (
-            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-              <a
-                href={ref.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={ref.citation}
-                style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-              >
-                <strong>{ref.authorYear}</strong>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
-                <ExternalLink size={10} />
-              </a>
-            </span>
-          ))}
-        </div>
-      </div>
+      <ReferenceBar
+        references={MEMBERSHIP_PRIMARY_REFERENCES.cyk}
+        lang={lang}
+        label={cz ? 'Primární literatura (algoritmus CYK):' : 'Primary literature (CYK algorithm):'}
+      />
     </div>
   );
 };

@@ -31,18 +31,19 @@ src/
 │   ├── parser/             # Grammar parser (arrow/BNF, Yacc, ANTLR), input tokenizer and scanner, membership, CYK, derivation attempts
 │   ├── analyser/           # Nullable, endable, FIRST(k), FOLLOW(k), director sets, ambiguity, language equivalence
 │   ├── processor/          # Equivalent transformations (reduction, ε, unit rules, left recursion, factoring, CNF, GNF, LL(1) attempt)
-│   ├── generator/          # Word generation, example words, derivation trees
+│   ├── generator/          # Word generation, example words, derivation trees (cloneTree, createTreeNode)
 │   ├── jobs/               # Long computations as resumable generator jobs
 │   ├── ll/                 # llTable.ts (LL(1), LL(2) tables), llParser.ts (LL simulator)
 │   ├── lr/                 # lrItem, lrAutomaton (LR(0), LALR(1) by propagation, LR(1)), lrTable, lrParser, lrConstruction, lrExplain
+│   ├── all/                # allAtn.ts (ATN network), allPredictor.ts (Lookahead DFA & ATN simulation), allParser.ts (ALL simulator)
 │   ├── codegen/            # Recursive descent: generators (PL/0, Oberon, C, Python, JS), PL/0 compiler, P-code VM, step simulator, symbol table
-│   ├── export/             # LaTeX export
+│   ├── export/             # LaTeX and graph export (graphExport.ts, latexExport.ts)
 │   └── presets/            # Built-in example grammars (presetGrammars.ts, rdSampleGrammars.ts)
 ├── i18n/                   # Czech and English texts (keys must exist in both)
 ├── ui/
-│   ├── components/         # Shared widgets (simulator controls, symbols, LaTeX button, explanations)
-│   ├── visualizer/         # SVG automaton graph and derivation tree
-│   ├── views/              # One view per tab
+│   ├── components/         # Shared widgets (simulator controls, symbols, LaTeX button, explanations, ReferenceBar)
+│   ├── visualizer/         # SVG visualizers (AutomatonGraph, DerivationTree, LookaheadDFAGraph, GraphToolbar, graphUtils, usePanZoom)
+│   ├── views/              # One view per tab (Overview, FirstFollow, LL, LR, AutomatonGraph, RecursiveDescent, ALL, etc.)
 │   └── urlState.ts, useGrammarHistory.ts, useSteppedJob.ts
 ├── styles/                 # CSS with theme variables (light default, dark, projector)
 └── App.tsx, main.tsx       # Application state and bootstrapping
@@ -163,6 +164,19 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
   - Semantic errors stop the descent (switchable): a name not declared in any open scope, a name declared twice in one scope. The terminal itself (`id` written instead of a name) is not checked.
   - Detection (`suggestSymbolActions`): procedure/function keywords declare the name in the enclosing scope and open its own scope (not over a trailing self-call); declaration keywords and their list/definition non-terminals; typed declarations with the type read last (`$type`); `{ }`/`begin end` are scopes only when declarations can occur inside. `number` is not a type keyword.
   - Not implemented: types, kinds of names and parameters are not checked; no forward references, records, modules; no code, addresses or levels.
+
+### 5.4 ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)
+- **Theoretical Foundation**: Implements the dynamic non-backtracking adaptive LL(*) algorithm powering ANTLR 4. Resolves parsing decisions at runtime by launching subparser simulations on recursive Transition Networks (ATN) and caching deterministic prediction decisions in Lookahead DFAs.
+- **Augmented Transition Network (ATN)**:
+  - Constructed directly from context-free productions: rule start states, rule stop states, rule call transitions (with return targets), and terminal match transitions.
+  - Decision states: Non-terminals with multiple alternatives act as decision points branching into alternative paths.
+- **Lookahead DFA & Adaptive Prediction**:
+  - Deterministic state cache where states represent closure sets of ATN configurations: $(p, i, \gamma)$ where $p$ is an ATN state, $i$ is the alternative index ($1 \dots k$), and $\gamma$ is the call stack.
+  - $\varepsilon$-closure with call/return stack tracking enables precise context-sensitive lookahead evaluation beyond fixed $k$.
+  - Ambiguity resolution: If multiple alternatives survive at end-of-input or identical state configurations, lowest alternative index (rule order) resolves the conflict deterministically.
+- **Interactive Step Simulator & Graph Visualization**:
+  - Step simulator tracing input token pointer, active ATN configurations, lookahead depth, decision stack, and derivation tree construction.
+  - Interactive SVG visualizer for dynamically synthesized Lookahead DFAs using Dagre hierarchical layout, complete with pan, zoom, node drag, and state inspection drawer.
 
 ---
 

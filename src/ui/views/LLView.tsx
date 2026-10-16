@@ -14,6 +14,7 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { ProductionText, formatLookaheadSet } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { exportLLTableToLatex, exportParseTreeToTikz } from '../../core/export/latexExport';
+import { ReferenceBar } from '../components/ReferenceBar';
 
 interface LLViewProps {
   grammar: Grammar;
@@ -134,24 +135,11 @@ export const LLView: React.FC<LLViewProps> = ({
           </div>
         </div>
         <p className="hint-text" style={{ marginBottom: '6px' }}>{t.llTableHint}</p>
-        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px 14px', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 600 }}>{cz ? 'Primární literatura (LL analyzátory a tabulky):' : 'Primary literature (LL parsers & tables):'}</span>
-          {LL_PRIMARY_REFERENCES.map((ref, idx) => (
-            <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-              <a
-                href={ref.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={ref.citation}
-                style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-              >
-                <strong>{ref.authorYear}</strong>
-                <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
-                <ExternalLink size={10} />
-              </a>
-            </span>
-          ))}
-        </div>
+        <ReferenceBar
+          references={LL_PRIMARY_REFERENCES}
+          lang={lang}
+          label={cz ? 'Primární literatura (LL analyzátory a tabulky):' : 'Primary literature (LL parsers & tables):'}
+        />
 
         {llTable.conflicts.length > 0 ? (
           <div className="notice-box error" style={{ marginBottom: '14px' }}>

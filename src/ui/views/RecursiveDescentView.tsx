@@ -49,6 +49,7 @@ import {
   GitFork
 } from 'lucide-react';
 import { RD_SAMPLE_GRAMMARS } from '../../core/presets/rdSampleGrammars';
+import { ReferenceBar } from '../components/ReferenceBar';
 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
 export const PL0_INTERPRETER_URL = 'https://richardlipka.github.io/online-pl0-interpreter/';
@@ -751,26 +752,11 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
         </p>
 
         {/* Primary Literature Reference Bar */}
-        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
-          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (rekurzivní sestup a architektura překladače):' : 'Primary literature (recursive descent & compiler architecture):'}</span>
-          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
-            {RECURSIVE_DESCENT_PRIMARY_REFERENCES.map((ref, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <a
-                  href={ref.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={ref.citation}
-                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                >
-                  <strong>{ref.authorYear}</strong>
-                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
-                  <ExternalLink size={10} />
-                </a>
-              </span>
-            ))}
-          </div>
-        </div>
+        <ReferenceBar
+          references={RECURSIVE_DESCENT_PRIMARY_REFERENCES}
+          lang={lang}
+          label={cz ? 'Primární literatura (rekurzivní sestup a architektura překladače):' : 'Primary literature (recursive descent & compiler architecture):'}
+        />
 
         {/* Subtabs selector */}
         <div className="rd-subtabs" style={{ marginTop: '12px' }}>

@@ -9,7 +9,7 @@
 
 import { Grammar, Production, END_MARKER, formatProduction } from '../ast/grammar';
 import { LLTable, lookaheadK } from './llTable';
-import { DerivationNode } from '../generator/wordGenerator';
+import { DerivationNode, cloneTree } from '../generator/wordGenerator';
 
 export interface LLParseStep {
   step: number;
@@ -244,14 +244,5 @@ export function simulateLLParse(
     steps,
     errorMessage: `Stopped after ${maxSteps} steps: the parser loops (a conflict was resolved by a left-recursive rule).`,
     errorMessageCz: `Zastaveno po ${maxSteps} krocích: analyzátor se zacyklil (kolize byla vyřešena levorekurzivním pravidlem).`
-  };
-}
-
-function cloneTree(node: DerivationNode): DerivationNode {
-  return {
-    id: node.id,
-    symbol: node.symbol,
-    isTerminal: node.isTerminal,
-    children: node.children ? node.children.map(cloneTree) : undefined
   };
 }

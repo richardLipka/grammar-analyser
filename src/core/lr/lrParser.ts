@@ -15,7 +15,7 @@
 
 import { Grammar, Production, END_MARKER, formatProduction } from '../ast/grammar';
 import { LRTable, LRLayout, LR0_ACTION_COLUMN, stateLabel } from './lrTable';
-import { DerivationNode } from '../generator/wordGenerator';
+import { DerivationNode, cloneTree } from '../generator/wordGenerator';
 
 /** Symbol shown at the root of a parse forest with more than one tree. */
 export const FOREST_ROOT_SYMBOL = '⋯';
@@ -235,15 +235,5 @@ export function simulateLRParse(
     steps,
     errorMessage: `Stopped after ${maxSteps} steps: the parser loops (a conflict was resolved by a cycle of reductions).`,
     errorMessageCz: `Zastaveno po ${maxSteps} krocích: analyzátor se zacyklil (kolize byla vyřešena cyklem redukcí).`
-  };
-}
-
-function cloneTree(node: DerivationNode): DerivationNode {
-  return {
-    id: node.id,
-    symbol: node.symbol,
-    isTerminal: node.isTerminal,
-    isForestRoot: node.isForestRoot,
-    children: node.children ? node.children.map(cloneTree) : undefined
   };
 }
