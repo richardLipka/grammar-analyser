@@ -19,7 +19,7 @@ import { GraphToolbar } from './GraphToolbar';
 interface GSSGraphVisualizerProps {
   snapshot: GSSSnapshot;
   selectedNodeId?: number | null;
-  onSelectNode?: (nodeId: number) => void;
+  onSelectNode?: (nodeId: number | null) => void;
   lang?: Language;
   filename?: string;
 }
@@ -174,11 +174,18 @@ export const GSSGraphVisualizer: React.FC<GSSGraphVisualizerProps> = ({
         lang={lang}
       />
 
+      <div className="graph-caption" style={{ pointerEvents: 'none' }}>
+        {isCz
+          ? 'Kliknutím na vrchol zobrazíte podrobnosti: jak vznikl, položky gramatiky a vazbu na strom'
+          : 'Click any node to inspect how it was created, its grammar items, and link to the tree'}
+      </div>
+
       <svg
         ref={svgRef}
         width="100%"
         height="100%"
         style={{ display: 'block' }}
+        onClick={() => onSelectNode?.(null)}
       >
         <defs>
           <marker
@@ -259,12 +266,27 @@ export const GSSGraphVisualizer: React.FC<GSSGraphVisualizerProps> = ({
                   transform={`translate(${n.x - n.width / 2}, ${n.y - n.height / 2})`}
                   onClick={(evt) => {
                     evt.stopPropagation();
-                    onSelectNode?.(n.id);
+                    onSelectNode?.(selectedNodeId === n.id ? null : n.id);
                   }}
                   style={{ cursor: 'pointer' }}
                 >
+                  {/* Halo for selection */}
+                  {isSelected && (
+                    <rect
+                      x="-5"
+                      y="-5"
+                      width={n.width + 10}
+                      height={n.height + 10}
+                      rx="12"
+                      fill="none"
+                      stroke="var(--color-primary)"
+                      strokeWidth="2.5"
+                      style={{ filter: 'drop-shadow(0 0 6px var(--color-primary))' }}
+                    />
+                  )}
+
                   {/* Halo for active heads */}
-                  {isHead && (
+                  {isHead && !isSelected && (
                     <rect
                       x="-3"
                       y="-3"

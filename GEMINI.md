@@ -153,7 +153,7 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
   - Pan, zoom, node drag, node highlight, and state inspection drawer.
 - **Interactive Bottom-Up Simulators**:
   - **Deterministic LR Simulator**: Dual stack display (State stack $[0, 2, 5]$ and Symbol stack $[\$, E, +]$), trace log showing shift, reduce, and accept steps.
-  - **Generalized LR (GLR) Simulator (Tomita 1985, Scott & Johnstone 2006)**: Uses Graph-Structured Stack (GSS) to parse non-deterministic and ambiguous grammars with conflicts. Forks on S/R and R/R conflicts, merges states on identical frontiers, and generates alternative derivation trees. Interactive SVG GSS graph visualizer with Dagre layout and step trace log.
+  - **Generalized LR (GLR) Simulator (Tomita 1985, Scott & Johnstone 2006)**: Uses Graph-Structured Stack (GSS) to parse non-deterministic and ambiguous grammars with conflicts. Forks on S/R and R/R conflicts, merges states on identical frontiers, and generates alternative derivation trees. Interactive SVG GSS graph visualizer with Dagre layout, step trace log, node inspection drawer (origins, LR items, merge notices), and synchronized subtree highlighting in the derivation tree.
 
 ### 5.3 Recursive Descent & Symbol Table (see `docs/REVIEW.md` §24–26)
 - **Code generation** for LL(1) grammars: PL/0 (compiled by our PL/0 compiler, run on the P-code VM, link to the course interpreter), Oberon-07, C99, Python 3, JavaScript. All print the same output (left parse, then OK or ERR); `rdLanguages.test.ts` checks it. The generated programs check the syntax only.

@@ -1099,6 +1099,11 @@ export const App: React.FC = () => {
                     onLayoutChange={setLrLayout}
                     onAttemptLR={() => applyWholeGrammar('lr')}
                     onShowInfo={setInfoKey}
+                    lr0Automaton={analysisData.lr0Automaton}
+                    slr1Automaton={analysisData.slr1Automaton}
+                    lalr1Automaton={analysisData.lalr1Automaton}
+                    ielr1Automaton={analysisData.ielr1Automaton}
+                    lr1Automaton={analysisData.lr1Automaton}
                   />
                 )}
 

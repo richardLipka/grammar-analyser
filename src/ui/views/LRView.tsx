@@ -6,7 +6,7 @@ import { simulateGLRParse, GLRSimulationResult, GLRParseStep } from '../../core/
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { GSSGraphVisualizer } from '../visualizer/GSSGraphVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles, ExternalLink, GitFork, Network, Layers } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles, ExternalLink, GitFork, Network, Layers, X } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
@@ -16,6 +16,7 @@ import { tokenizeInput } from '../../core/parser/inputTokenizer';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
+import { LRAutomaton } from '../../core/lr/lrAutomaton';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
@@ -136,6 +137,11 @@ interface LRViewProps {
   onLayoutChange: (layout: LRLayout) => void;
   onAttemptLR?: () => void;
   onShowInfo?: (key: InfoKey) => void;
+  lr0Automaton?: LRAutomaton;
+  slr1Automaton?: LRAutomaton;
+  lalr1Automaton?: LRAutomaton;
+  ielr1Automaton?: LRAutomaton;
+  lr1Automaton?: LRAutomaton;
 }
 
 export const LRView: React.FC<LRViewProps> = ({
@@ -153,7 +159,12 @@ export const LRView: React.FC<LRViewProps> = ({
   layout,
   onLayoutChange,
   onAttemptLR,
-  onShowInfo
+  onShowInfo,
+  lr0Automaton,
+  slr1Automaton,
+  lalr1Automaton,
+  ielr1Automaton,
+  lr1Automaton
 }) => {
   const t = TRANSLATIONS[lang];
   const [internalVariant, setInternalVariant] = useState<LRVariantName>('SLR(1)');
@@ -211,15 +222,19 @@ export const LRView: React.FC<LRViewProps> = ({
   const [glrPlaySpeed, setGLRPlaySpeed] = useState<number>(700);
   const glrTraceRef = useRef<HTMLDivElement>(null);
 
+  const activeAutomaton = (selectedVariant === 'LR(0)' ? lr0Automaton : selectedVariant === 'LR(1)' ? lr1Automaton : lalr1Automaton) || slr1Automaton || lr0Automaton;
+  const [selectedGSSNodeId, setSelectedGSSNodeId] = useState<number | null>(null);
+
   const glrSimulation: GLRSimulationResult = useMemo(
-    () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout),
-    [tokenized, grammar, activeTable, layout]
+    () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout, 300, 25, activeAutomaton),
+    [tokenized, grammar, activeTable, layout, activeAutomaton]
   );
 
   useEffect(() => {
     setCurrentGLRStepIdx(0);
     setIsGLRPlaying(false);
     setSelectedTreeIdx(0);
+    setSelectedGSSNodeId(null);
   }, [glrSimulation]);
 
   useAutoPlay(isGLRPlaying, currentGLRStepIdx, glrSimulation.steps.length, glrPlaySpeed, setCurrentGLRStepIdx, () => setIsGLRPlaying(false));
@@ -231,6 +246,14 @@ export const LRView: React.FC<LRViewProps> = ({
 
   const currentGLRStep: GLRParseStep | undefined = glrSimulation.steps[currentGLRStepIdx];
   const glrActiveTree = glrSimulation.trees.length > 0 ? glrSimulation.trees[Math.min(selectedTreeIdx, glrSimulation.trees.length - 1)] : undefined;
+  const currentSnapshot = currentGLRStep ? currentGLRStep.gssSnapshot : glrSimulation.gssFinal;
+  const selectedGSSNode = selectedGSSNodeId !== null ? currentSnapshot.nodes.find(n => n.id === selectedGSSNodeId) : null;
+  const incomingGSSEdges = selectedGSSNodeId !== null ? currentSnapshot.edges.filter(e => e.fromId === selectedGSSNodeId) : [];
+  const outgoingGSSEdges = selectedGSSNodeId !== null ? currentSnapshot.edges.filter(e => e.toId === selectedGSSNodeId) : [];
+  const gssHighlightedTreeIds = useMemo(() => {
+    if (!selectedGSSNode) return undefined;
+    return new Set(incomingGSSEdges.flatMap(e => e.treeIds));
+  }, [selectedGSSNode, incomingGSSEdges]);
 
   const currentStep: LRParseStep | undefined = simulation.steps[currentStepIdx];
   const actionText = (s: LRParseStep) => (lang === 'cz' ? s.actionCz || s.action : s.action);
@@ -934,12 +957,202 @@ export const LRView: React.FC<LRViewProps> = ({
                 <div>
                   <span style={{ fontSize: '13px', fontWeight: 700 }}>Graph-Structured Stack (GSS)</span>
                   <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
-                    {cz ? '(Vrcholy se značkou HEAD představují aktivní zásobníkové hlavy)' : '(HEAD badges indicate active frontier heads)'}
+                    {cz ? '(Vrcholy se značkou HEAD představují aktivní zásobníkové hlavy; kliknutím na vrchol zobrazíte detail)' : '(HEAD badges indicate active frontier heads; click any node to inspect)'}
                   </span>
                 </div>
               </div>
-              <GSSGraphVisualizer snapshot={currentGLRStep ? currentGLRStep.gssSnapshot : glrSimulation.gssFinal} lang={lang} filename="glr_gss_graph" />
+              <GSSGraphVisualizer
+                snapshot={currentSnapshot}
+                selectedNodeId={selectedGSSNodeId}
+                onSelectNode={setSelectedGSSNodeId}
+                lang={lang}
+                filename="glr_gss_graph"
+              />
             </div>
+
+            {/* Selected GSS Node Inspection Drawer */}
+            {selectedGSSNode && (
+              <div className="card" style={{
+                marginBottom: '16px',
+                backgroundColor: 'var(--color-bg-base)',
+                border: '1.5px solid var(--color-primary)',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px 18px',
+                boxShadow: 'var(--shadow-sm)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid var(--color-border)', paddingBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--color-primary)' }}>
+                      {cz ? `Inspekce vrcholu GSS #${selectedGSSNode.id}` : `GSS Node Inspection #${selectedGSSNode.id}`}
+                    </span>
+                    <span className="badge badge-primary" style={{ fontWeight: 700, fontSize: '12px' }}>
+                      {cz ? `Stav ${selectedGSSNode.label}` : `State ${selectedGSSNode.label}`}
+                    </span>
+                    <span className="badge badge-secondary" style={{ fontSize: '11px' }}>
+                      {cz ? `Úroveň vstupu: ${selectedGSSNode.level}` : `Input level: ${selectedGSSNode.level}`}
+                    </span>
+                    {selectedGSSNode.isHead && (
+                      <span className="badge chip-top-stack">HEAD</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary"
+                    onClick={() => setSelectedGSSNodeId(null)}
+                    title={cz ? 'Zavřít detail' : 'Close inspection'}
+                    style={{ padding: '2px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <X size={13} />
+                    <span>{cz ? 'Zavřít' : 'Close'}</span>
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  {/* Column 1: Creation & Stack Evolution */}
+                  <div style={{ padding: '10px 12px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Sparkles size={14} color="var(--color-primary)" />
+                      <span>{cz ? 'Jak vrchol v GSS vznikl' : 'Creation & Stack Origin'}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', lineHeight: '1.5', color: 'var(--color-text)' }}>
+                      {selectedGSSNode.creationKind === 'init' && (
+                        <p style={{ margin: 0 }}>
+                          {cz
+                            ? `Počáteční kořenový vrchol zásobníku (stav ${selectedGSSNode.label}) vytvořený při startu syntaktické analýzy před čtením jakéhokoliv symbolu.`
+                            : `Initial root stack node (state ${selectedGSSNode.label}) created at the start of parsing before reading any tokens.`}
+                        </p>
+                      )}
+                      {selectedGSSNode.creationKind === 'shift' && (
+                        <p style={{ margin: 0 }}>
+                          {cz ? (
+                            <>
+                              Vznikl operací <strong>Přesun (Shift)</strong>: načtením terminálního symbolu{' '}
+                              <code style={{ fontWeight: 700, color: 'var(--color-success)' }}>{selectedGSSNode.creationSymbol}</code> ze stavu{' '}
+                              <strong>{selectedGSSNode.creationFromStateLabel}</strong>.
+                            </>
+                          ) : (
+                            <>
+                              Created by a <strong>Shift</strong> action: consuming terminal token{' '}
+                              <code style={{ fontWeight: 700, color: 'var(--color-success)' }}>{selectedGSSNode.creationSymbol}</code> from predecessor state{' '}
+                              <strong>{selectedGSSNode.creationFromStateLabel}</strong>.
+                            </>
+                          )}
+                        </p>
+                      )}
+                      {selectedGSSNode.creationKind === 'reduce' && (
+                        <p style={{ margin: 0 }}>
+                          {cz ? (
+                            <>
+                              Vznikl <strong>redukcí pravidla</strong>{' '}
+                              <code style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{selectedGSSNode.creationProduction}</code> a následným přechodem{' '}
+                              <strong>GOTO</strong> na neterminál <code>{selectedGSSNode.creationSymbol}</code> ze stavu{' '}
+                              <strong>{selectedGSSNode.creationFromStateLabel}</strong>.
+                            </>
+                          ) : (
+                            <>
+                              Created after <strong>reducing production</strong>{' '}
+                              <code style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{selectedGSSNode.creationProduction}</code> followed by a{' '}
+                              <strong>GOTO</strong> transition on <code>{selectedGSSNode.creationSymbol}</code> from state{' '}
+                              <strong>{selectedGSSNode.creationFromStateLabel}</strong>.
+                            </>
+                          )}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Branch Merging Notice */}
+                    {incomingGSSEdges.length > 1 && (
+                      <div style={{ marginTop: '8px', padding: '6px 8px', backgroundColor: 'var(--color-primary-subtle)', borderRadius: '4px', fontSize: '11px', color: 'var(--color-text)' }}>
+                        <strong>{cz ? '⚡ Sloučení větví (Tomita Merge):' : '⚡ Branch Merging (Tomita Merge):'}</strong>{' '}
+                        {cz
+                          ? `Do tohoto vrcholu se spojilo ${incomingGSSEdges.length} různých větví syntaktické analýzy, které dospěly do stejného stavu na stejné pozici vstupu. Tím GSS zabraňuje exponenciálnímu větvení zásobníku.`
+                          : `${incomingGSSEdges.length} distinct parsing paths converged into this state at the same input position, merging to eliminate redundant stack explorations.`}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--color-text-muted)' }}>
+                      <strong>{cz ? 'Přečtený prefix:' : 'Consumed prefix:'}</strong>{' '}
+                      {selectedGSSNode.consumedPrefix.length > 0 ? (
+                        <code>{selectedGSSNode.consumedPrefix.join(' ')}</code>
+                      ) : (
+                        <em>{cz ? '(začátek vstupu)' : '(input start)'}</em>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Column 2: LR Items & Active Grammar Context */}
+                  <div style={{ padding: '10px 12px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Network size={14} color="var(--color-primary)" />
+                      <span>{cz ? 'Položky gramatiky v tomto stavu' : 'Active LR Items in State'}</span>
+                    </div>
+                    {selectedGSSNode.items && selectedGSSNode.items.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '140px', overflowY: 'auto' }}>
+                        {selectedGSSNode.items.map((it, idx) => (
+                          <div key={idx} style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', padding: '2px 6px', backgroundColor: 'var(--color-bg-base)', borderRadius: '3px', border: '1px solid var(--color-border)' }}>
+                            {it}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                        {cz ? 'Položky automatu jsou shodné se stavem v LR tabulce výše.' : 'Items correspond to the canonical state in the table above.'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 3: Link to Derivation Tree Below */}
+                  <div style={{ padding: '10px 12px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Layers size={14} color="var(--color-accent, #8b5cf6)" />
+                      <span>{cz ? 'Propojení s derivačním stromem' : 'Connection to Derivation Tree'}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--color-text)' }}>
+                      {incomingGSSEdges.length > 0 ? (
+                        <div>
+                          <p style={{ margin: '0 0 6px 0', fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                            {cz
+                              ? 'Hrany vstupující do tohoto vrcholu nesou podstromy derivačního rozkladu. Níže ve stromu jsou tyto uzly zvýrazněny fialovým obrysem.'
+                              : 'Edges leading into this node carry derivation subtrees. Matching subtrees are highlighted with a purple halo in the tree below.'}
+                          </p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {incomingGSSEdges.map((edge, idx) => {
+                              const parentNode = currentSnapshot.nodes.find(n => n.id === edge.toId);
+                              const parentLabel = parentNode ? parentNode.label : `#${edge.toId}`;
+                              return (
+                                <div key={idx} style={{ padding: '4px 6px', backgroundColor: 'var(--color-bg-base)', borderRadius: '4px', border: '1px solid var(--color-border)', fontSize: '11px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span>
+                                      {cz ? 'Hrana ze stavu' : 'Edge from'} <strong>{parentLabel}</strong> přes symbol{' '}
+                                      <code style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{edge.symbol}</code>
+                                      {edge.count > 1 && (
+                                        <span className="badge badge-warning" style={{ marginLeft: '4px', fontSize: '9px' }}>
+                                          {edge.count} {cz ? 'varianty' : 'variants'}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {edge.treeYields && edge.treeYields.length > 0 && (
+                                    <div style={{ marginTop: '2px', color: 'var(--color-text-muted)', fontSize: '10.5px' }}>
+                                      {cz ? 'Rozklad (yield):' : 'Subtree yield:'}{' '}
+                                      <strong style={{ color: 'var(--color-text)' }}>"{edge.treeYields.join(' / ')}"</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                          {cz ? 'Počáteční kořen nemá žádné vstupující hrany (spodní dno zásobníku).' : 'Initial root has no incoming edges (bottom of stack).'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="two-column-grid">
               <div>
@@ -1015,7 +1228,7 @@ export const LRView: React.FC<LRViewProps> = ({
                     />
                   )}
                 </div>
-                <DerivationTreeVisualizer rootNode={glrActiveTree} height="360px" filename="parse_tree_glr" lang={lang} />
+                <DerivationTreeVisualizer rootNode={glrActiveTree} height="360px" filename="parse_tree_glr" lang={lang} highlightNodeIds={gssHighlightedTreeIds} />
               </div>
             </div>
           </div>

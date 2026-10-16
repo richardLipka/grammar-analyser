@@ -21,6 +21,8 @@
 import { Grammar, Production, END_MARKER, formatProduction } from '../ast/grammar';
 import { LRTable, LRLayout, LR0_ACTION_COLUMN, stateLabel } from './lrTable';
 import { DerivationNode, cloneTree } from '../generator/wordGenerator';
+import { LRAutomaton } from './lrAutomaton';
+import { formatLR0Item } from './lrItem';
 
 export interface GSSSnapshotNode {
   id: number;
@@ -28,6 +30,13 @@ export interface GSSSnapshotNode {
   label: string;
   level: number;
   isHead: boolean;
+  creationKind: 'init' | 'shift' | 'reduce';
+  creationSymbol?: string;
+  creationProduction?: string;
+  creationFromState?: number;
+  creationFromStateLabel?: string;
+  items?: string[];
+  consumedPrefix: string[];
 }
 
 export interface GSSSnapshotEdge {
@@ -35,6 +44,8 @@ export interface GSSSnapshotEdge {
   toId: number;   // parent (predecessor in stack)
   symbol: string;
   count: number;  // number of alternative trees
+  treeIds: string[];
+  treeYields?: string[];
 }
 
 export interface GSSSnapshot {
@@ -72,6 +83,11 @@ interface InternalGSSNode {
   id: number;
   state: number;
   level: number;
+  creationKind: 'init' | 'shift' | 'reduce';
+  creationSymbol?: string;
+  creationProduction?: string;
+  creationFromState?: number;
+  consumedPrefix: string[];
   // Edges from this child node to its predecessor parents in stack
   predecessors: InternalGSSEdge[];
 }
@@ -80,6 +96,28 @@ interface InternalGSSEdge {
   parent: InternalGSSNode;
   symbol: string;
   trees: DerivationNode[];
+}
+
+/**
+ * Collects all tree node IDs recursively within a derivation tree.
+ */
+export function collectTreeIds(node: DerivationNode): string[] {
+  const ids: string[] = [node.id];
+  if (node.children) {
+    for (const c of node.children) {
+      ids.push(...collectTreeIds(c));
+    }
+  }
+  return ids;
+}
+
+/**
+ * Computes the yield (terminal leaves) of a derivation tree.
+ */
+export function getTreeYield(node: DerivationNode): string {
+  if (node.isTerminal) return node.symbol === 'ε' ? 'ε' : node.symbol;
+  if (!node.children || node.children.length === 0) return node.symbol;
+  return node.children.map(getTreeYield).filter(s => s !== 'ε').join(' ');
 }
 
 /**
@@ -102,7 +140,8 @@ export function simulateGLRParse(
   table: LRTable,
   layout: LRLayout = 'dragon',
   maxSteps: number = 300,
-  maxTrees: number = 25
+  maxTrees: number = 25,
+  automaton?: LRAutomaton
 ): GLRSimulationResult {
   const steps: GLRParseStep[] = [];
   const input = [...inputTokens, END_MARKER];
@@ -117,11 +156,24 @@ export function simulateGLRParse(
 
   const allNodes: InternalGSSNode[] = [];
 
-  function createGSSNode(state: number, level: number): InternalGSSNode {
+  function createGSSNode(
+    state: number,
+    level: number,
+    creationKind: 'init' | 'shift' | 'reduce' = 'init',
+    creationSymbol?: string,
+    creationProduction?: string,
+    creationFromState?: number,
+    consumedPrefix: string[] = []
+  ): InternalGSSNode {
     const node: InternalGSSNode = {
       id: gssIdCounter++,
       state,
       level,
+      creationKind,
+      creationSymbol,
+      creationProduction,
+      creationFromState,
+      consumedPrefix,
       predecessors: []
     };
     allNodes.push(node);
@@ -146,13 +198,26 @@ export function simulateGLRParse(
 
   function makeSnapshot(activeHeads: InternalGSSNode[]): GSSSnapshot {
     const headSet = new Set(activeHeads.map(h => h.id));
-    const snapshotNodes: GSSSnapshotNode[] = allNodes.map(n => ({
-      id: n.id,
-      state: n.state,
-      label: name(n.state),
-      level: n.level,
-      isHead: headSet.has(n.id)
-    }));
+    const snapshotNodes: GSSSnapshotNode[] = allNodes.map(n => {
+      const items = automaton?.states[n.state]
+        ? automaton.states[n.state].items0.map(formatLR0Item)
+        : undefined;
+
+      return {
+        id: n.id,
+        state: n.state,
+        label: name(n.state),
+        level: n.level,
+        isHead: headSet.has(n.id),
+        creationKind: n.creationKind,
+        creationSymbol: n.creationSymbol,
+        creationProduction: n.creationProduction,
+        creationFromState: n.creationFromState,
+        creationFromStateLabel: n.creationFromState !== undefined ? name(n.creationFromState) : undefined,
+        items,
+        consumedPrefix: n.consumedPrefix
+      };
+    });
 
     const snapshotEdges: GSSSnapshotEdge[] = [];
     for (const n of allNodes) {
@@ -161,7 +226,9 @@ export function simulateGLRParse(
           fromId: n.id,
           toId: e.parent.id,
           symbol: e.symbol,
-          count: e.trees.length
+          count: e.trees.length,
+          treeIds: e.trees.flatMap(t => collectTreeIds(t)),
+          treeYields: e.trees.map(t => getTreeYield(t))
         });
       }
     }
@@ -169,7 +236,7 @@ export function simulateGLRParse(
   }
 
   // Initial root GSS node (state 0, level 0)
-  const rootNode = createGSSNode(0, 0);
+  const rootNode = createGSSNode(0, 0, 'init', undefined, undefined, undefined, []);
   let activeHeads: InternalGSSNode[] = [rootNode];
 
   steps.push({
@@ -337,7 +404,15 @@ export function simulateGLRParse(
               }
             } else {
               // CREATE: New head
-              targetHead = createGSSNode(gotoState, inputPtr);
+              targetHead = createGSSNode(
+                gotoState,
+                inputPtr,
+                'reduce',
+                prod.lhs,
+                formatProduction(prod),
+                path.baseNode.state,
+                inputTokens.slice(0, inputPtr)
+              );
               addGSSEdge(targetHead, path.baseNode, prod.lhs, newTree);
               activeHeads.push(targetHead);
               if (activeHeads.length > maxSimultaneousHeads) {
@@ -402,7 +477,15 @@ export function simulateGLRParse(
           // Merge on shift
           addGSSEdge(nextHead, head, lookahead, termTree);
         } else {
-          nextHead = createGSSNode(targetState, inputPtr + 1);
+          nextHead = createGSSNode(
+            targetState,
+            inputPtr + 1,
+            'shift',
+            lookahead,
+            undefined,
+            head.state,
+            inputTokens.slice(0, inputPtr + 1)
+          );
           addGSSEdge(nextHead, head, lookahead, termTree);
           nextHeads.push(nextHead);
         }

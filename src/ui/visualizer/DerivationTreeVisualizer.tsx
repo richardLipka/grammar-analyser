@@ -20,6 +20,7 @@ interface DerivationTreeVisualizerProps {
   height?: string;
   filename?: string;
   lang?: Language;
+  highlightNodeIds?: Set<string> | string[];
 }
 
 interface PlacedNode {
@@ -152,13 +153,19 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
   rootNode,
   height = '380px',
   filename = 'parse_tree',
-  lang = 'en'
+  lang = 'en',
+  highlightNodeIds
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [alignLeaves, setAlignLeaves] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const isCz = lang === 'cz';
+
+  const highlightSet = useMemo(() => {
+    if (!highlightNodeIds) return null;
+    return highlightNodeIds instanceof Set ? highlightNodeIds : new Set(highlightNodeIds);
+  }, [highlightNodeIds]);
 
   const layout = useMemo(() => (rootNode ? layoutTree(rootNode, alignLeaves) : null), [rootNode, alignLeaves]);
   const content = { width: layout?.width ?? 0, height: layout?.height ?? 0 };
@@ -227,30 +234,38 @@ export const DerivationTreeVisualizer: React.FC<DerivationTreeVisualizerProps> =
 
       <svg ref={svgRef} width="100%" height="100%">
         <g data-viewport="" transform={`translate(${view.x}, ${view.y}) scale(${view.k})`}>
-          {layout.edges.map(({ from, to }) => (
-            <line
-              key={`e_${from.id}_${to.id}`}
-              className={`t-edge ${alignLeaves && to.isLeaf && to.y - from.y > LEVEL_GAP ? 'to-leaf-row' : ''} ${to.mark ? `mark-${to.mark}` : ''}`}
-              x1={from.x}
-              y1={from.y + NODE_H}
-              x2={to.x}
-              y2={to.y}
-            />
-          ))}
+          {layout.edges.map(({ from, to }) => {
+            const isEdgeHighlighted = highlightSet?.has(to.id);
+            const edgeMark = isEdgeHighlighted ? 'mark-current' : to.mark ? `mark-${to.mark}` : '';
+
+            return (
+              <line
+                key={`e_${from.id}_${to.id}`}
+                className={`t-edge ${alignLeaves && to.isLeaf && to.y - from.y > LEVEL_GAP ? 'to-leaf-row' : ''} ${edgeMark}`}
+                x1={from.x}
+                y1={from.y + NODE_H}
+                x2={to.x}
+                y2={to.y}
+              />
+            );
+          })}
 
           {layout.nodes.map(n => {
             const isEps = n.symbol === 'ε';
             const kind = isEps ? 'eps' : n.isTerminal ? 't' : 'nt';
             const unexpanded = !n.isTerminal && n.isLeaf;
+            const isHighlighted = highlightSet?.has(n.id);
+            const markClass = isHighlighted ? 'mark-current' : n.mark ? `mark-${n.mark}` : '';
+
             return (
               <g key={`n_${n.id}`} transform={`translate(${n.x - n.width / 2}, ${n.y})`}>
                 <rect
-                  className={`t-node-${kind} ${unexpanded ? 'unexpanded' : ''} ${n.mark ? `mark-${n.mark}` : ''}`}
+                  className={`t-node-${kind} ${unexpanded ? 'unexpanded' : ''} ${markClass}`}
                   width={n.width}
                   height={NODE_H}
                   rx={n.isTerminal ? NODE_H / 2 : 6}
                 />
-                <text className={`t-text-${kind} ${n.mark ? `mark-${n.mark}` : ''}`} x={n.width / 2} y={NODE_H / 2 + 4.5} textAnchor="middle">
+                <text className={`t-text-${kind} ${markClass}`} x={n.width / 2} y={NODE_H / 2 + 4.5} textAnchor="middle">
                   {n.symbol}
                 </text>
               </g>
