@@ -56,7 +56,7 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
   const t = TRANSLATIONS[lang];
 
   const [selectedId, setSelectedId] = useState<string>('reduce');
-  const [grammarSource, setGrammarSource] = useState<'preset' | 'custom'>('preset');
+  const [grammarSource, setGrammarSource] = useState<'editor' | 'preset' | 'custom'>('preset');
   const [customText, setCustomText] = useState<string>('');
   const [stepIndex, setStepIndex] = useState<number>(0);
   const [maxLength, setMaxLength] = useState<number>(10);
@@ -69,21 +69,34 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
     [selectedId]
   );
 
-  // Initialize custom grammar text when technique changes
-  useEffect(() => {
+  // Synchronously update customText and reset stepper on technique change
+  const [prevTechniqueId, setPrevTechniqueId] = useState(technique.id);
+  if (prevTechniqueId !== technique.id) {
+    setPrevTechniqueId(technique.id);
     setCustomText(technique.exampleGrammarText);
-  }, [technique]);
-
-  // Active grammar text according to mode
-  const activeGrammarText = grammarSource === 'preset' ? technique.exampleGrammarText : customText;
-
-  // Reset steps and verification results whenever active grammar text changes
-  useEffect(() => {
     setStepIndex(0);
     setCompResult(null);
     setSelectedWordIndex(0);
     runner.stop();
-  }, [activeGrammarText]);
+  }
+
+  // Active grammar text according to mode
+  const activeGrammarText =
+    grammarSource === 'editor'
+      ? (mainGrammarText || technique.exampleGrammarText)
+      : grammarSource === 'preset'
+        ? technique.exampleGrammarText
+        : customText;
+
+  // Synchronously reset step and verification results whenever active grammar text changes
+  const [prevActiveText, setPrevActiveText] = useState(activeGrammarText);
+  if (prevActiveText !== activeGrammarText) {
+    setPrevActiveText(activeGrammarText);
+    setStepIndex(0);
+    setCompResult(null);
+    setSelectedWordIndex(0);
+    runner.stop();
+  }
 
   // Parse active grammar
   const parsedActive = useMemo(
@@ -275,6 +288,15 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
             <div className="button-group" style={{ display: 'inline-flex' }}>
               <button
                 type="button"
+                className={`btn ${grammarSource === 'editor' ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: '12px', padding: '4px 12px' }}
+                onClick={() => setGrammarSource('editor')}
+              >
+                <FileCode size={12} style={{ marginRight: '4px' }} />
+                {t.teachingSourceEditor}
+              </button>
+              <button
+                type="button"
                 className={`btn ${grammarSource === 'preset' ? 'btn-primary' : 'btn-secondary'}`}
                 style={{ fontSize: '12px', padding: '4px 12px' }}
                 onClick={() => setGrammarSource('preset')}
@@ -285,7 +307,10 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
                 type="button"
                 className={`btn ${grammarSource === 'custom' ? 'btn-primary' : 'btn-secondary'}`}
                 style={{ fontSize: '12px', padding: '4px 12px' }}
-                onClick={() => setGrammarSource('custom')}
+                onClick={() => {
+                  setCustomText(activeGrammarText);
+                  setGrammarSource('custom');
+                }}
               >
                 <Edit3 size={12} style={{ marginRight: '4px' }} />
                 {t.teachingSourceCustom}
@@ -322,7 +347,27 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
           </div>
         </div>
 
-        {grammarSource === 'custom' ? (
+        {grammarSource === 'editor' ? (
+          <div>
+            <p className="hint-text" style={{ margin: '0 0 6px' }}>
+              {cz
+                ? 'Je aktivní gramatika z hlavního editoru. Jakékoliv změny v editoru se v demonstraci ihned projeví.'
+                : 'Grammar from the main editor is active. Any changes in the editor are immediately reflected in the demonstration.'}
+            </p>
+            <pre className="protocol-grammar" style={{ margin: 0, maxHeight: '130px', overflowY: 'auto' }}>
+              {activeGrammarText}
+            </pre>
+            {parsedActive && parsedActive.errors.length > 0 && (
+              <div className="report-box danger" style={{ marginTop: '6px' }}>
+                {parsedActive.errors.map((e, i) => (
+                  <div key={i}>
+                    {cz ? `Řádek ${e.line}: ${e.messageCz || e.message}` : `Line ${e.line}: ${e.message}`}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : grammarSource === 'custom' ? (
           <div>
             <p className="hint-text" style={{ margin: '0 0 6px' }}>
               {t.teachingCustomGrammarHint}

@@ -121,6 +121,35 @@ describe('Teaching Guide Techniques', () => {
       expect(res.steps.length).toBeGreaterThan(0);
       expect(res.transformedGrammar.productions.some(p => p.lhs.includes('Sub') || p.rhs.some(s => s.includes('Sub')))).toBe(true);
     });
+
+    it('dynamically adapts precedenceStrat mathExplanation and removedRules when grammar changes', () => {
+      const g = parseGrammar('Expr -> Expr - Expr | Expr / Expr | num').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'precedenceStrat')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBe(1);
+      const step = res.steps[0];
+      // Math explanation must use the actual operators '-' and '/' and terminal 'num'
+      expect(step.mathExplanation).toContain('-');
+      expect(step.mathExplanation).toContain('/');
+      expect(step.mathExplanation).toContain('num');
+      expect(step.mathExplanation).not.toContain('+');
+      expect(step.mathExplanation).not.toContain('*');
+      expect(step.mathExplanation).not.toContain('id');
+      // Removed rules must include both binary operator rules and base alternative
+      expect(step.removedRules).toContain('Expr -> Expr - Expr');
+      expect(step.removedRules).toContain('Expr -> Expr / Expr');
+      expect(step.removedRules).toContain('Expr -> num');
+    });
+
+    it('dynamically adapts danglingElse mathExplanation and removedRules for custom base rules', () => {
+      const g = parseGrammar('Stmt -> "if" Cond "then" Stmt "else" Stmt | "if" Cond "then" Stmt | "assign"\nCond -> "c"').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'danglingElse')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBe(1);
+      const step = res.steps[0];
+      expect(step.mathExplanation).toContain('assign');
+      expect(step.removedRules).toContain('Stmt -> assign');
+    });
   });
 });
 

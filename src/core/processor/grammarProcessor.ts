@@ -2303,6 +2303,8 @@ export function disambiguateDanglingElse(g: Grammar): TransformationResult {
   const result = table.toGrammar();
   const prefixStr = prefix.join(' ');
   const elseStr = elseSep.join(' ');
+  const otherRhsStr = otherAlts.length > 0 ? otherAlts.map(a => a.join(' ')).join(' | ') : (prefixStr.includes('if') ? 'other' : '...');
+  const otherRhsStrCz = otherAlts.length > 0 ? otherAlts.map(a => a.join(' ')).join(' | ') : (prefixStr.includes('if') ? 'ostatní' : '...');
 
   return {
     transformedGrammar: result,
@@ -2311,15 +2313,15 @@ export function disambiguateDanglingElse(g: Grammar): TransformationResult {
       titleCz: `Rozdělení ${s} na úplné (matched) a neúplné (open) podmínky`,
       description: `Disambiguated the dangling-else Shift/Reduce conflict on '${elseStr}' by splitting '${s}' into '${matchedNt}' (where every '${prefixStr}' has a matching '${elseStr}') and '${openNt}' (where the trailing conditional is unclosed).`,
       descriptionCz: `Odstraněna nejednoznačnost dangling-else a Shift/Reduce kolize na symbolu '${elseStr}' rozdělením '${s}' na '${matchedNt}' (kde každé '${prefixStr}' má odpovídající '${elseStr}') a '${openNt}' (kde koncová podmínka zůstává neuzavřená).`,
-      mathExplanation: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | other,  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
-      mathExplanationCz: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | ostatní,  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
+      mathExplanation: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | ${otherRhsStr},  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
+      mathExplanationCz: `${s} -> ${matchedNt} | ${openNt},  ${matchedNt} -> ${prefixStr} ${matchedNt} ${elseStr} ${matchedNt} | ${otherRhsStrCz},  ${openNt} -> ${prefixStr} ${s} | ${prefixStr} ${matchedNt} ${elseStr} ${openNt}`,
       addedRules: [
         fmtRule(s, [matchedNt]),
         fmtRule(s, [openNt]),
         ...table.get(matchedNt).map(r => fmtRule(matchedNt, r)),
         ...table.get(openNt).map(r => fmtRule(openNt, r))
       ],
-      removedRules: [fmtRule(s, unclosedAlt), fmtRule(s, closedAlt)],
+      removedRules: originalAlts.map(a => fmtRule(s, a)),
       intermediateGrammar: cloneGrammar(result)
     }]
   };
@@ -2362,6 +2364,8 @@ export function stratifyPrecedence(g: Grammar): TransformationResult {
   }
 
   const e = targetNt;
+  const originalRules = table.get(e).map(r => fmtRule(e, r));
+
   const highPriorityOps = new Set(['*', '/', '%', '^', '**']);
   const lowTier = binRules.filter(r => !r.op.some(s => highPriorityOps.has(s)));
   const highTier = binRules.filter(r => r.op.some(s => highPriorityOps.has(s)));
@@ -2377,43 +2381,70 @@ export function stratifyPrecedence(g: Grammar): TransformationResult {
     tier1 = tier1.slice(0, -1);
   }
 
+  const hasTier2 = tier2.length > 0;
   const termNt = table.addAfter(e, 'T', []);
-  const factorNt = table.addAfter(termNt, 'F', []);
+  const factorNt = hasTier2 ? table.addAfter(termNt, 'F', []) : null;
 
-  // Level 0 (Additive / Low): E -> E op T | T
+  // Level 0: E -> E op T | T
+  const nextNt = termNt;
   const eRules: string[][] = [
-    ...tier1.map(r => [e, ...r.op, termNt]),
-    [termNt]
+    ...tier1.map(r => [e, ...r.op, nextNt]),
+    [nextNt]
   ];
   table.set(e, eRules);
 
-  // Level 1 (Multiplicative / High): T -> T op F | F
-  const tRules: string[][] = [
-    ...tier2.map(r => [termNt, ...r.op, factorNt]),
-    [factorNt]
-  ];
-  table.set(termNt, tRules);
-
-  // Level 2 (Base Factor): F -> base rules (parenthesized, identifiers, numbers)
-  table.set(factorNt, baseAlts.length > 0 ? baseAlts : [['id']]);
+  let tRules: string[][] = [];
+  if (hasTier2 && factorNt) {
+    // Level 1: T -> T op F | F
+    tRules = [
+      ...tier2.map(r => [termNt, ...r.op, factorNt]),
+      [factorNt]
+    ];
+    table.set(termNt, tRules);
+    // Level 2: F -> base rules (parenthesized, identifiers, numbers)
+    table.set(factorNt, baseAlts.length > 0 ? baseAlts : [['id']]);
+  } else {
+    // Single operator level: T -> base rules
+    tRules = baseAlts.length > 0 ? baseAlts : [['id']];
+    table.set(termNt, tRules);
+  }
 
   const result = table.toGrammar();
+
+  const eRhsStr = eRules.map(r => r.slice(1).join(' ')).join(' | ');
+  const tRhsStr = tRules.map(r => (r.length >= 2 && r[0] === termNt ? r.slice(1).join(' ') : r.join(' '))).join(' | ');
+  const fRhsStr = factorNt ? table.get(factorNt).map(r => r.join(' ')).join(' | ') : null;
+  const mathFormula = factorNt
+    ? `${e} -> ${eRhsStr},  ${termNt} -> ${tRhsStr},  ${factorNt} -> ${fRhsStr}`
+    : `${e} -> ${eRhsStr},  ${termNt} -> ${tRhsStr}`;
+
+  const tier1OpsStr = tier1.map(r => r.op.join(' ')).join(', ');
+  const tier2OpsStr = tier2.map(r => r.op.join(' ')).join(', ');
+  const ntsList = factorNt ? `(${e}, ${termNt}, ${factorNt})` : `(${e}, ${termNt})`;
+
+  const descEn = factorNt
+    ? `Transformed ambiguous flat operator productions of '${e}' into a stratified hierarchy: '${e}' handles lower-precedence operators (${tier1OpsStr || 'level 1'}) (left-associative), '${termNt}' handles higher-precedence operators (${tier2OpsStr || 'level 2'}), and '${factorNt}' encapsulates base atomic values and parenthesized expressions.`
+    : `Transformed ambiguous flat operator productions of '${e}' into a stratified hierarchy: '${e}' handles operator productions (${tier1OpsStr}) (left-associative), and '${termNt}' encapsulates base atomic values and parenthesized expressions.`;
+
+  const descCz = factorNt
+    ? `Převedena nejednoznačná pravidla '${e}' do hierarchického žebříčku: '${e}' vyhodnocuje operátory s nižší prioritou (${tier1OpsStr || '1. úroveň'}, zleva asociativní), '${termNt}' operátory s vyšší prioritou (${tier2OpsStr || '2. úroveň'}) a '${factorNt}' atomické hodnoty a závorky.`
+    : `Převedena nejednoznačná pravidla '${e}' do hierarchického žebříčku: '${e}' vyhodnocuje operátory (${tier1OpsStr}, zleva asociativní) a '${termNt}' atomické hodnoty a závorky.`;
 
   return {
     transformedGrammar: result,
     steps: [{
-      title: `Stratify ${e} into Operator Precedence Hierarchy (${e}, ${termNt}, ${factorNt})`,
-      titleCz: `Rozklad ${e} do hierarchie priorit operátorů (${e}, ${termNt}, ${factorNt})`,
-      description: `Transformed ambiguous flat operator productions of '${e}' into a stratified hierarchy: '${e}' handles additive operators (left-associative), '${termNt}' handles multiplicative operators, and '${factorNt}' encapsulates base atomic values and parenthesized expressions.`,
-      descriptionCz: `Převedena nejednoznačná pravidla '${e}' do hierarchického žebříčku: '${e}' vyhodnocuje aditivní operátory (zleva asociativní), '${termNt}' multiplikativní operátory a '${factorNt}' atomické hodnoty a závorky.`,
-      mathExplanation: `${e} -> ${e} + ${termNt} | ${termNt},  ${termNt} -> ${termNt} * ${factorNt} | ${factorNt},  ${factorNt} -> ( ${e} ) | id`,
-      mathExplanationCz: `${e} -> ${e} + ${termNt} | ${termNt},  ${termNt} -> ${termNt} * ${factorNt} | ${factorNt},  ${factorNt} -> ( ${e} ) | id`,
+      title: `Stratify ${e} into Operator Precedence Hierarchy ${ntsList}`,
+      titleCz: `Rozklad ${e} do hierarchie priorit operátorů ${ntsList}`,
+      description: descEn,
+      descriptionCz: descCz,
+      mathExplanation: mathFormula,
+      mathExplanationCz: mathFormula,
       addedRules: [
         ...table.get(e).map(r => fmtRule(e, r)),
         ...table.get(termNt).map(r => fmtRule(termNt, r)),
-        ...table.get(factorNt).map(r => fmtRule(factorNt, r))
+        ...(factorNt ? table.get(factorNt).map(r => fmtRule(factorNt, r)) : [])
       ],
-      removedRules: binRules.map(r => fmtRule(e, r.alt)),
+      removedRules: originalRules,
       intermediateGrammar: cloneGrammar(result)
     }]
   };
@@ -2501,14 +2532,20 @@ export function splitNonTerminalLRContext(g: Grammar): TransformationResult {
     table.set(lhs, updated);
   }
 
+  const origTargetRules = table.get(targetNt);
+  const origPartnerRules = partner ? table.get(partner[0]) : [];
+
   // Remove original unspecialized non-terminals if no longer referenced
   const intermediate = table.toGrammar();
   const reachable = computeReachable(intermediate);
+  const removedRules: string[] = [];
   if (!reachable.has(targetNt)) {
     table.set(targetNt, []);
+    removedRules.push(...origTargetRules.map(r => fmtRule(targetNt, r)));
   }
   if (partner && !reachable.has(partner[0])) {
     table.set(partner[0], []);
+    removedRules.push(...origPartnerRules.map(r => fmtRule(partner[0], r)));
   }
 
   const result = table.toGrammar();
@@ -2524,9 +2561,11 @@ export function splitNonTerminalLRContext(g: Grammar): TransformationResult {
       mathExplanationCz: `${targetNt} ⟹ ${nt1} (kontext ${p1}),  ${nt2} (kontext ${p2})`,
       addedRules: [
         ...table.get(nt1).map(r => fmtRule(nt1, r)),
-        ...table.get(nt2).map(r => fmtRule(nt2, r))
+        ...table.get(nt2).map(r => fmtRule(nt2, r)),
+        ...(b1 ? table.get(b1).map(r => fmtRule(b1!, r)) : []),
+        ...(b2 ? table.get(b2).map(r => fmtRule(b2!, r)) : [])
       ],
-      removedRules: table.get(targetNt).map(r => fmtRule(targetNt, r)),
+      removedRules,
       intermediateGrammar: cloneGrammar(result)
     }]
   };

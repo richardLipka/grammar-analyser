@@ -387,7 +387,7 @@ export function analyzeTechniqueOnGrammar(
       for (const nt of g.nonTerminals) {
         const alts = g.productions.filter(p => p.lhs === nt).map(p => p.rhs);
         const selfBin = alts.filter(a => a.length >= 3 && a[0] === nt && a[a.length - 1] === nt);
-        if (selfBin.length >= 2) {
+        if (selfBin.length >= 2 || (selfBin.length >= 1 && alts.length > selfBin.length)) {
           flatNt = nt;
           binCount = selfBin.length;
           break;
