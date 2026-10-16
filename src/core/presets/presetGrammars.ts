@@ -41,6 +41,18 @@ F -> "(" E ")" | "id"`,
     sampleInput: 'id + id * id'
   },
   {
+    id: 'allstar_arbitrary_lookahead',
+    nameEn: 'Arbitrary Lookahead (Separating LL(k) from ALL(*))',
+    nameCz: 'Libovolná hloubka pohledu (rozlišení LL(k) od ALL(*))',
+    descriptionEn: 'Classic grammar requiring arbitrary lookahead tokens: S -> A "x" | B "y", where both A and B derive arbitrary sequences of "a" followed by "b". For any fixed k, static LL(k) cannot decide between A and B when reading an input longer than k. The adaptive ALL(*) algorithm (ANTLR v4) dynamically explores the ATN and constructs a Lookahead DFA of depth proportional to input length.',
+    descriptionCz: 'Klasická gramatika vyžadující neomezenou hloubku pohledu dopředu: S -> A "x" | B "y", kde A i B generují libovolně dlouhé posloupnosti "a" zakončené "b". Pro žádné pevné k nedokáže statický analyzátor LL(k) rozhodnout mezi A a B, pokud je slovo delší než k. Adaptivní algoritmus ALL(*) (ANTLR v4) dynamicky prochází síť ATN a staví Lookahead DFA s hloubkou úměrnou délce vstupu.',
+    category: 'LL',
+    grammarText: `S -> A "x" | B "y"
+A -> "a" A | "b"
+B -> "a" B | "b"`,
+    sampleInput: 'a a a b x'
+  },
+  {
     id: 'ambiguous_expr_precedence',
     nameEn: 'Ambiguous Expressions with Precedence (%left, %right)',
     nameCz: 'Nejednoznačné výrazy s prioritami (%left, %right)',

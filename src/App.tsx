@@ -18,6 +18,7 @@ import { LRView } from './ui/views/LRView';
 import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
+import { ALLView } from './ui/views/ALLView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
 import { EquivalenceView } from './ui/views/EquivalenceView';
 import { TeachingGuideView } from './ui/views/TeachingGuideView';
@@ -498,13 +499,14 @@ export const App: React.FC = () => {
     { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR, title: t.tabLRTitle },
     { id: 'graph', icon: <Network size={15} />, label: t.tabGraph, title: t.tabGraphTitle },
     { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership, title: t.tabMembershipTitle },
+    { id: 'all', icon: <Network size={15} />, label: t.tabAll, title: t.tabAllTitle },
     { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
   // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
   const TAB_ROWS: TabId[][] = [
-    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership'],
+    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all'],
     ['transformations', 'teaching', 'check', 'rd', 'latex']
   ];
 
@@ -1128,6 +1130,16 @@ export const App: React.FC = () => {
                     defaultInput={demoWord}
                     lang={lang}
                     onConvertToCNF={!isStale && canAnalyse ? () => applyWholeGrammar('cnf') : undefined}
+                  />
+                )}
+
+                {activeTab === 'all' && (
+                  <ALLView
+                    grammar={analyzedGrammar}
+                    analysis={analysisData.analysis}
+                    defaultInput={demoWord}
+                    lang={lang}
+                    onAttemptLeftRecursionRemoval={!isStale && canAnalyse ? () => applyWholeGrammar('removeLeftRec') : undefined}
                   />
                 )}
 

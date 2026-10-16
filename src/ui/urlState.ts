@@ -9,7 +9,7 @@
  * - Rules can be separated by encoded new lines (%0A) or by ';' (S->aAS|b;A->a|bSA).
  */
 
-export type UrlTab = 'overview' | 'firstFollow' | 'transformations' | 'teaching' | 'check' | 'll' | 'lr' | 'graph' | 'membership' | 'rd' | 'words' | 'latex';
+export type UrlTab = 'overview' | 'firstFollow' | 'transformations' | 'teaching' | 'check' | 'll' | 'lr' | 'graph' | 'membership' | 'all' | 'rd' | 'words' | 'latex';
 
 export interface UrlState {
   grammar?: string;
@@ -33,6 +33,7 @@ const TAB_ALIASES: Record<string, UrlTab> = {
   ll: 'll', lr: 'lr',
   graph: 'graph', automaton: 'graph',
   membership: 'membership', cyk: 'membership', word: 'membership', parse: 'membership',
+  all: 'all', antlr: 'all', 'all-star': 'all', allstar: 'all',
   rd: 'rd', descent: 'rd', 'recursive-descent': 'rd', pl0: 'rd', oberon: 'rd',
   words: 'words', derivations: 'words',
   latex: 'latex'
