@@ -285,13 +285,14 @@ function hasUnexpanded(node: DerivationNode): boolean {
 }
 
 /** Compute node count and maximum depth of a derivation tree. */
-export function getTreeMetrics(node?: DerivationNode | null): { nodes: number; depth: number } {
-  if (!node) return { nodes: 0, depth: 0 };
+export function getTreeMetrics(node?: DerivationNode | null, visited = new Set<DerivationNode>()): { nodes: number; depth: number } {
+  if (!node || visited.has(node)) return { nodes: 0, depth: 0 };
+  visited.add(node);
   let nodes = 1;
   let maxChildDepth = 0;
   if (node.children) {
     for (const child of node.children) {
-      const childMetrics = getTreeMetrics(child);
+      const childMetrics = getTreeMetrics(child, visited);
       nodes += childMetrics.nodes;
       maxChildDepth = Math.max(maxChildDepth, childMetrics.depth);
     }
@@ -300,14 +301,21 @@ export function getTreeMetrics(node?: DerivationNode | null): { nodes: number; d
 }
 
 /** Determine if two derivation trees differ in their syntactic structure. */
-export function treeStructuresDiffer(t1: DerivationNode | null, t2: DerivationNode | null): boolean {
+export function treeStructuresDiffer(
+  t1: DerivationNode | null,
+  t2: DerivationNode | null,
+  visited = new Set<string>()
+): boolean {
   if (!t1 || !t2) return t1 !== t2;
   if (t1.symbol !== t2.symbol) return true;
+  const pairKey = `${t1.id}:${t2.id}`;
+  if (visited.has(pairKey)) return false;
+  visited.add(pairKey);
   const k1 = t1.children || [];
   const k2 = t2.children || [];
   if (k1.length !== k2.length) return true;
   for (let i = 0; i < k1.length; i++) {
-    if (treeStructuresDiffer(k1[i], k2[i])) return true;
+    if (treeStructuresDiffer(k1[i], k2[i], visited)) return true;
   }
   return false;
 }

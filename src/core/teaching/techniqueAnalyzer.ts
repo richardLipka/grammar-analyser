@@ -332,6 +332,7 @@ export function analyzeTechniqueOnGrammar(
 /** Check if a derivation node uses any production not present in original grammar. */
 function treeUsesChangedRules(node: DerivationNode, g1Rules: Set<string>): boolean {
   if (node.isTerminal || !node.children) return false;
+  if (node.isForestRoot) return (node.children || []).some(c => treeUsesChangedRules(c, g1Rules));
   const rhs = node.children.map(c => c.symbol).filter(s => s !== 'ε');
   const sig = `${node.symbol}->${rhs.join(' ')}`;
   if (!g1Rules.has(sig)) return true;
@@ -376,7 +377,7 @@ export function findComparisonWords(
 
   // 2. Also test short common combinations if pool is small
   if (candidatePool.length < 5) {
-    const terms = [...new Set([...g1.terminals, ...g2.terminals])];
+    const terms = [...new Set([...g1.terminals, ...g2.terminals])].slice(0, 10);
     for (const t of terms) addWord([t]);
     for (const t1 of terms) {
       for (const t2 of terms) addWord([t1, t2]);
