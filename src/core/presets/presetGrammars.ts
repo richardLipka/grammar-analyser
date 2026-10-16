@@ -91,15 +91,27 @@ R -> L`,
   },
   {
     id: 'lalr1_vs_lr1',
-    nameEn: 'Distinguishing LALR(1) from LR(1)',
-    nameCz: 'Rozlišení LALR(1) a LR(1)',
-    descriptionEn: 'Grammar that is strictly LR(1), but NOT LALR(1) because merging identical LR(0) cores produces a Reduce/Reduce conflict.',
-    descriptionCz: 'Gramatika, která je LR(1), ale není LALR(1): sloučením stavů se stejným jádrem vznikne konflikt redukce-redukce.',
+    nameEn: 'Distinguishing LALR(1) from IELR(1) and LR(1) (Symmetric)',
+    nameCz: 'Rozlišení LALR(1) od IELR(1) a LR(1) (symetrická)',
+    descriptionEn: 'Classic Dragon Book grammar that is LR(1) and IELR(1), but NOT LALR(1). Merging identical LR(0) cores produces a Reduce/Reduce conflict on both "d" and "e". IELR(1) detects the spurious conflict and isolates lookaheads by keeping the context states split, producing a 14-state conflict-free parser identical in power to canonical LR(1).',
+    descriptionCz: 'Klasická gramatika z Dračí knihy, která je LR(1) i IELR(1), ale NENÍ LALR(1). Sloučením stavů se stejným LR(0) jádrem vznikne konflikt redukce-redukce na symbolech "d" a "e". IELR(1) detekuje parazitní konflikt a izoluje symboly dopředu rozdělením stavů podle kontextu, čímž vytvoří bezkolizní tabulku o 14 stavech se silou kanonického LR(1).',
     category: 'LR',
     grammarText: `S -> "a" A "d" | "b" B "d" | "a" B "e" | "b" A "e"
 A -> "c"
 B -> "c"`,
     sampleInput: 'a c d'
+  },
+  {
+    id: 'print_vs_expr_ielr',
+    nameEn: 'Distinguishing LALR(1) from IELR(1) (Print vs Expression Statements)',
+    nameCz: 'Rozlišení LALR(1) od IELR(1) (příkazy print a výrazy)',
+    descriptionEn: 'Realistic compiler construct that is LR(1) and IELR(1), but NOT LALR(1). Identifiers in "print" statements (followed by ";" or "=") and in "expr" statements (followed by "=" or ";") have identical LR(0) cores. Merging them in LALR(1) creates spurious Reduce/Reduce conflicts on both ";" and "=". IELR(1) segregates the lookaheads by keeping the context states separate, eliminating all conflicts.',
+    descriptionCz: 'Realistická konstrukce překladače, která je LR(1) i IELR(1), ale NENÍ LALR(1). Identifikátory v příkazech "print" (následované ";" nebo "=") a v příkazech "expr" (následované "=" nebo ";") mají stejné LR(0) jádro. Jejich sloučení v LALR(1) vytvoří parazitní konflikty redukce-redukce na obou symbolech ";" i "=". IELR(1) izoluje symboly dopředu rozdělením stavů podle kontextu a všechny kolize odstraní.',
+    category: 'LR',
+    grammarText: `S -> "print" E ";" | "expr" E "=" | "print" F "=" | "expr" F ";"
+E -> "id"
+F -> "id"`,
+    sampleInput: 'print id ;'
   },
   {
     id: 'palindromes',

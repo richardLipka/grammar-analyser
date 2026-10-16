@@ -15,7 +15,36 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
 
-type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
+
+/** Primary literature references for each LR automaton & parsing algorithm */
+export const LR_PRIMARY_REFERENCES: Record<LRVariantName, { authorYear: string; citation: string; url?: string }> = {
+  'LR(0)': {
+    authorYear: 'Knuth (1965)',
+    citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
+    url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
+  },
+  'SLR(1)': {
+    authorYear: 'DeRemer (1969, 1971)',
+    citation: 'DeRemer, F. L.: Simple LR(k) grammars. Communications of the ACM 14(7), 453–460, 1971.',
+    url: 'https://doi.org/10.1145/362619.362625'
+  },
+  'LALR(1)': {
+    authorYear: 'DeRemer (1969), Aho & Ullman (1972)',
+    citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, MIT, 1969; Dragon Book (Alg. 4.62 & 4.63).',
+    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+  },
+  'IELR(1)': {
+    authorYear: 'Denny & Malloy (2008, 2010)',
+    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
+    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+  },
+  'LR(1)': {
+    authorYear: 'Knuth (1965)',
+    citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
+    url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
+  }
+};
 
 /** Rows of the parsing table shown before "show all". */
 const TABLE_ROW_LIMIT = 300;
@@ -25,6 +54,7 @@ interface LRViewProps {
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
+  ielr1Table?: LRTable;
   /** Missing when the computation was stopped before it */
   lr1Table?: LRTable;
   /** The tables without the precedence declarations (only when the grammar has some) */
@@ -44,6 +74,7 @@ export const LRView: React.FC<LRViewProps> = ({
   lr0Table,
   slr1Table,
   lalr1Table,
+  ielr1Table,
   lr1Table,
   rawTables,
   defaultInput = '',
@@ -72,7 +103,13 @@ export const LRView: React.FC<LRViewProps> = ({
   // Precedence declarations resolve conflicts (as in Yacc); switched off, the raw table is shown
   const [usePrecedence, setUsePrecedence] = useState(true);
   const hasPrecedence = !!rawTables && Object.keys(rawTables).length > 0;
-  const tables: Record<LRVariantName, LRTable | undefined> = { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table };
+  const tables: Record<LRVariantName, LRTable | undefined> = {
+    'LR(0)': lr0Table,
+    'SLR(1)': slr1Table,
+    'LALR(1)': lalr1Table,
+    'IELR(1)': ielr1Table,
+    'LR(1)': lr1Table
+  };
   const resolvedTable = tables[selectedVariant];
   const missing = resolvedTable === undefined;
   const activeTable: LRTable = (!usePrecedence && rawTables?.[selectedVariant]) || resolvedTable || lalr1Table;
@@ -135,7 +172,7 @@ export const LRView: React.FC<LRViewProps> = ({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} role="group" aria-label={t.variant}>
-              {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
+              {(['LR(0)', 'SLR(1)', 'LALR(1)', 'IELR(1)', 'LR(1)'] as const).map(v => (
                 <button
                   key={v}
                   type="button"
@@ -159,7 +196,16 @@ export const LRView: React.FC<LRViewProps> = ({
             />
           </div>
         </div>
-        <p className="hint-text" style={{ marginBottom: '12px' }}>{t.lrVariantHints[selectedVariant]}</p>
+        <p className="hint-text" style={{ marginBottom: '6px' }}>{t.lrVariantHints[selectedVariant]}</p>
+        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{cz ? 'Primární literatura:' : 'Primary literature:'}</span>
+          <span>{LR_PRIMARY_REFERENCES[selectedVariant].citation}</span>
+          {LR_PRIMARY_REFERENCES[selectedVariant].url && (
+            <a href={LR_PRIMARY_REFERENCES[selectedVariant].url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+              [DOI/Link]
+            </a>
+          )}
+        </div>
 
         {missing && (
           <div className="notice-box warning" style={{ marginBottom: '12px' }}>

@@ -238,6 +238,7 @@ export const TRANSLATIONS = {
     isLR0: 'LR(0) grammar',
     isSLR1: 'SLR(1) grammar',
     isLALR1: 'LALR(1) grammar',
+    isIELR1: 'IELR(1) grammar',
     isLR1: 'LR(1) grammar',
     passZeroConflicts: 'Yes (no conflicts)',
     conflictsCountSuffix: 'conflict(s)',
@@ -450,7 +451,8 @@ export const TRANSLATIONS = {
       'LR(0)': "LR(0): the action depends on the state alone (the top of the stack): shift, reduce by its only complete item, or accept for S' → S•. A state with a complete item and another complete item or an item with a terminal after the dot has a conflict; S' → S• counts as a complete item, so an LR(0) language is prefix-free.",
       'SLR(1)': 'SLR(1): reduce by A → α• only on the symbols of FOLLOW₁(A); the states are the same as for LR(0).',
       'LALR(1)': 'LALR(1): LR(1) states with equal cores are merged and the reductions use the merged lookaheads. Merging can create reduce-reduce conflicts, never new shift-reduce ones.',
-      'LR(1)': 'LR(1): canonical collection of LR(1) items [A → α•β, a]; reduce only on the lookahead a. The strongest of the four methods, with the most states.'
+      'IELR(1)': 'IELR(1): Inadequacy Elimination LR(1) (Denny & Malloy 2008, 2010; GNU Bison 3.0+). Starts from LALR(1) cores and selectively splits only the states with spurious conflicts, isolating lookahead tokens while keeping the state count minimal.',
+      'LR(1)': 'LR(1): canonical collection of LR(1) items [A → α•β, a]; reduce only on the lookahead a. The strongest of the standard methods, with the most states.'
     },
     shiftTo: 'shift to state',
     lrLegend: 'sN = shift and go to state N, rN = reduce by rule N, acc = accept. Rules:',
@@ -723,6 +725,7 @@ export const TRANSLATIONS = {
     isLR0: 'LR(0) gramatika',
     isSLR1: 'SLR(1) gramatika',
     isLALR1: 'LALR(1) gramatika',
+    isIELR1: 'IELR(1) gramatika',
     isLR1: 'LR(1) gramatika',
     passZeroConflicts: 'Ano (bez konfliktů)',
     conflictsCountSuffix: 'konfliktů',
@@ -935,7 +938,8 @@ export const TRANSLATIONS = {
       'LR(0)': "LR(0): akce závisí jen na stavu (vrcholu zásobníku): přesun, redukce podle jeho jediné úplné položky, nebo přijetí pro S' → S•. Stav s úplnou položkou a další úplnou položkou nebo položkou s terminálem za tečkou je konfliktní; S' → S• je také úplná položka, proto je jazyk LR(0) gramatiky bezprefixový.",
       'SLR(1)': 'SLR(1): redukce podle A → α• jen pro symboly z FOLLOW₁(A); stavy jsou stejné jako u LR(0).',
       'LALR(1)': 'LALR(1): stavy LR(1) se stejným jádrem se sloučí a redukce používají sjednocené dopředu prohlížené symboly. Sloučením mohou vzniknout konflikty redukce-redukce, nikdy nové konflikty přesun-redukce.',
-      'LR(1)': 'LR(1): kanonický soubor množin LR(1) položek [A → α•β, a]; redukce jen pro dopředu prohlížený symbol a. Nejsilnější ze čtyř metod, ale s nejvíce stavy.'
+      'IELR(1)': 'IELR(1): Inadequacy Elimination LR(1) (Denny & Malloy 2008, 2010; GNU Bison 3.0+). Vychází z jader LALR(1) a cíleně dělí pouze stavy s parazitními kolizemi, čímž izoluje symboly dopředu při zachování minimálního počtu stavů.',
+      'LR(1)': 'LR(1): kanonický soubor množin LR(1) položek [A → α•β, a]; redukce jen pro dopředu prohlížený symbol a. Nejsilnější ze standardních metod, ale s nejvíce stavy.'
     },
     shiftTo: 'přesun do stavu',
     lrLegend: 'sN = přesun a přechod do stavu N, rN = redukce podle pravidla N, acc = přijetí. Pravidla:',

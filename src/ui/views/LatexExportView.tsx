@@ -12,14 +12,14 @@ import {
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { FileText, Copy, Check, Download } from 'lucide-react';
 
-type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 interface LatexExportViewProps {
   grammar: Grammar;
   analysis: GrammarAnalysis;
   llTable: LLTable;
-  /** LR(1) is missing when the computation was stopped */
-  lrTables: Record<Exclude<LRVariantName, 'LR(1)'>, LRTable> & { 'LR(1)'?: LRTable };
+  /** LR(1) and IELR(1) are missing when the computation was stopped */
+  lrTables: Record<Exclude<LRVariantName, 'LR(1)' | 'IELR(1)'>, LRTable> & { 'IELR(1)'?: LRTable; 'LR(1)'?: LRTable };
   lang: Language;
   lrLayout: LRLayout;
   onLrLayoutChange: (layout: LRLayout) => void;
@@ -140,7 +140,7 @@ export const LatexExportView: React.FC<LatexExportViewProps> = ({ grammar, analy
         {(section === 'all' || section === 'lrTable') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
             <span className="hint-text">{t.lrTableVariant}</span>
-            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
+            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'IELR(1)', 'LR(1)'] as const).map(v => (
               <button
                 key={v}
                 className={`btn ${lrVariant === v ? 'btn-primary' : 'btn-secondary'}`}

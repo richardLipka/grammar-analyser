@@ -46,7 +46,7 @@ type EChoice = 'epsilon' | 'terminal';
 // Course notation: is bxc one terminal ('whole') or b x c ('split')?
 type WordsChoice = 'split' | 'whole';
 type Theme = 'dark' | 'light' | 'projector';
-type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 /** Per-viewer conveniences only; the app works the same when storage is unavailable. */
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -1023,6 +1023,7 @@ export const App: React.FC = () => {
                     lr0Table={analysisData.lr0Table}
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
+                    ielr1Table={analysisData.ielr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
                     lrLayout={lrLayout}
@@ -1085,6 +1086,7 @@ export const App: React.FC = () => {
                     lr0Table={analysisData.lr0Table}
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
+                    ielr1Table={analysisData.ielr1Table}
                     lr1Table={analysisData.lr1Table}
                     rawTables={analysisData.rawTables}
                     defaultInput={demoWord}
@@ -1105,10 +1107,12 @@ export const App: React.FC = () => {
                     lr0Automaton={analysisData.lr0Automaton}
                     slr1Automaton={analysisData.slr1Automaton}
                     lalr1Automaton={analysisData.lalr1Automaton}
+                    ielr1Automaton={analysisData.ielr1Automaton}
                     lr1Automaton={analysisData.lr1Automaton}
                     lr0Table={analysisData.lr0Table}
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
+                    ielr1Table={analysisData.ielr1Table}
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
                     selectedVariant={lrVariant}
@@ -1150,6 +1154,7 @@ export const App: React.FC = () => {
                       'LR(0)': analysisData.lr0Table,
                       'SLR(1)': analysisData.slr1Table,
                       'LALR(1)': analysisData.lalr1Table,
+                      'IELR(1)': analysisData.ielr1Table,
                       'LR(1)': analysisData.lr1Table
                     }}
                     lang={lang}

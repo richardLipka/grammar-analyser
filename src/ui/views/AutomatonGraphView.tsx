@@ -13,7 +13,7 @@ import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReas
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Network, Info, ArrowRight, AlertTriangle } from 'lucide-react';
 
-type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 /** Automata with more states are drawn only on request. */
 const GRAPH_STATE_LIMIT = 150;
@@ -24,11 +24,13 @@ interface AutomatonGraphViewProps {
   lr0Automaton: LRAutomaton;
   slr1Automaton: LRAutomaton;
   lalr1Automaton: LRAutomaton;
+  ielr1Automaton?: LRAutomaton;
   /** Missing when the computation was stopped before it */
   lr1Automaton?: LRAutomaton;
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
+  ielr1Table?: LRTable;
   lr1Table?: LRTable;
   lang: Language;
   selectedVariant?: LRVariantName;
@@ -43,10 +45,12 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   lr0Automaton,
   slr1Automaton,
   lalr1Automaton,
+  ielr1Automaton,
   lr1Automaton,
   lr0Table,
   slr1Table,
   lalr1Table,
+  ielr1Table,
   lr1Table,
   lang,
   selectedVariant: controlledVariant,
@@ -55,6 +59,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   onLayoutChange
 }) => {
   const t = TRANSLATIONS[lang];
+  const cz = lang === 'cz';
   const [internalVariant, setInternalVariant] = useState<LRVariantName>('SLR(1)');
   const selectedVariant = controlledVariant ?? internalVariant;
   const [selectedStateId, setSelectedStateId] = useState<number | null>(0);
@@ -64,10 +69,19 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
     else setInternalVariant(v);
   };
 
-  // LR(1) is missing when the computation was stopped: LALR(1) is shown instead
-  const lr1Missing = selectedVariant === 'LR(1)' && (!lr1Automaton || !lr1Table);
-  const activeAutomaton = lr1Missing ? lalr1Automaton : { 'LR(0)': lr0Automaton, 'SLR(1)': slr1Automaton, 'LALR(1)': lalr1Automaton, 'LR(1)': lr1Automaton! }[selectedVariant];
-  const activeTable = lr1Missing ? lalr1Table : { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'LR(1)': lr1Table! }[selectedVariant];
+  // Missing when the computation was stopped before it: fallback to LALR(1)
+  const isMissing = (selectedVariant === 'IELR(1)' && (!ielr1Automaton || !ielr1Table)) ||
+                    (selectedVariant === 'LR(1)' && (!lr1Automaton || !lr1Table));
+  const activeAutomaton = (selectedVariant === 'IELR(1)' && ielr1Automaton)
+    ? ielr1Automaton
+    : (selectedVariant === 'LR(1)' && lr1Automaton)
+    ? lr1Automaton
+    : { 'LR(0)': lr0Automaton, 'SLR(1)': slr1Automaton, 'LALR(1)': lalr1Automaton, 'IELR(1)': lalr1Automaton, 'LR(1)': lalr1Automaton }[selectedVariant];
+  const activeTable = (selectedVariant === 'IELR(1)' && ielr1Table)
+    ? ielr1Table
+    : (selectedVariant === 'LR(1)' && lr1Table)
+    ? lr1Table
+    : { 'LR(0)': lr0Table, 'SLR(1)': slr1Table, 'LALR(1)': lalr1Table, 'IELR(1)': lalr1Table, 'LR(1)': lalr1Table }[selectedVariant];
 
   useEffect(() => setSelectedStateId(0), [activeAutomaton]);
 
@@ -117,7 +131,6 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const actColumns = lecture ? activeTable.fColumns : activeTable.terminals;
   const actTable = lecture ? activeTable.fTable : activeTable.actionTable;
   const nodeTitles = activeAutomaton.states.map(s => (lecture ? name(s.id) : `${t.stateLabel} ${s.id}`));
-  const cz = lang === 'cz';
 
   // Explanations: where a state comes from, why an item and a lookahead are in it
   const [tip, setTip] = useState<{ anchor: DOMRect; content: React.ReactNode } | null>(null);
@@ -172,12 +185,16 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
     </button>
   );
 
-  // LR(0) and SLR(1) share the canonical LR(0) collection; LALR(1) has the same states with lookaheads.
+  const splitCount = activeAutomaton.states.filter(s => s.isSplit).length;
   const sameStatesNote = selectedVariant === 'SLR(1)' || selectedVariant === 'LR(0)'
     ? t.graphSharedLR0
     : selectedVariant === 'LALR(1)'
       ? t.graphLALRStates + (lr1Automaton ? ' ' + t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString()) : '')
-      : '';
+      : selectedVariant === 'IELR(1)'
+        ? (cz
+            ? `IELR(1) má ${activeAutomaton.states.length} stavů (LALR(1) má ${lalr1Automaton.states.length}, LR(1) má ${lr1Automaton?.states.length ?? '?'}). ${splitCount > 0 ? `Rozděleno ${splitCount} stavů pro izolaci parazitních kolizí.` : 'Žádné stavy nemusely být děleny (shodné s LALR).'}`
+            : `IELR(1) has ${activeAutomaton.states.length} states (LALR(1) has ${lalr1Automaton.states.length}, LR(1) has ${lr1Automaton?.states.length ?? '?'}). ${splitCount > 0 ? `${splitCount} states split to isolate spurious conflicts.` : 'No states needed splitting (identical to LALR).'}`)
+        : '';
 
   return (
     <div>
@@ -191,7 +208,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
           </div>
 
           <div style={{ display: 'flex', gap: '6px' }} role="group" aria-label={t.variant}>
-            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'LR(1)'] as const).map(v => (
+            {(['LR(0)', 'SLR(1)', 'LALR(1)', 'IELR(1)', 'LR(1)'] as const).map(v => (
               <button
                 key={v}
                 className={`btn ${selectedVariant === v ? 'btn-primary' : 'btn-secondary'}`}
@@ -287,14 +304,14 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
         )}
       </div>
 
-      {lr1Missing && (
+      {isMissing && (
         <div className="notice-box warning" style={{ marginBottom: '12px' }}>
           <div className="notice-title">
             <AlertTriangle size={15} />
             <span>
               {cz
-                ? 'Automat LR(1) nebyl spočten: výpočet byl zastaven. Zobrazen je automat LALR(1); úplnou analýzu spustí tlačítko Přepočítat.'
-                : 'The LR(1) automaton was not computed: the computation was stopped. The LALR(1) automaton is shown; the Recalculate button starts the full analysis.'}
+                ? `Automat ${selectedVariant} nebyl spočten: výpočet byl zastaven. Zobrazen je automat LALR(1); úplnou analýzu spustí tlačítko Přepočítat.`
+                : `The ${selectedVariant} automaton was not computed: the computation was stopped. The LALR(1) automaton is shown; the Recalculate button starts the full analysis.`}
             </span>
           </div>
         </div>
@@ -349,8 +366,24 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               <Info size={16} color="var(--color-primary)" />
               <span>{t.inspectingState.replace('{id}', name(selectedState.id))} {selectedState.id === 0 ? t.startState : ''}</span>
             </div>
-            <span className="badge badge-primary">{selectedVariant}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="badge badge-primary">{selectedVariant}</span>
+              {selectedState?.isSplit && (
+                <span className="badge badge-warning" title={selectedState.ielrAnnotation?.[cz ? 'cz' : 'en']}>
+                  {cz ? 'IELR rozdělený stav' : 'IELR Split State'}
+                </span>
+              )}
+            </div>
           </div>
+
+          {selectedState?.isSplit && selectedState.ielrAnnotation && (
+            <div className="notice-box info" style={{ marginBottom: '12px' }}>
+              <div className="notice-title">
+                <Info size={14} />
+                <span>{selectedState.ielrAnnotation[cz ? 'cz' : 'en']}</span>
+              </div>
+            </div>
+          )}
 
           {/* How the state arises: GOTO of the creating predecessor, then the closure */}
           <div className="lr-origin-box">

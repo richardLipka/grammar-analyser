@@ -29,6 +29,24 @@ interface LLViewProps {
 const fmtLa = (la: string) => (la === '' ? EPSILON : la);
 const rhsText = (p: Production) => (p.rhs.length === 0 ? EPSILON : p.rhs.join(' '));
 
+export const LL_PRIMARY_REFERENCES = [
+  {
+    authorYear: 'Lewis & Stearns (1968)',
+    citation: 'Lewis, P. M., Stearns, R. E.: Syntax-directed transduction. Journal of the ACM 15(3), 465–488, 1968.',
+    url: 'https://doi.org/10.1145/321466.321477'
+  },
+  {
+    authorYear: 'Knuth (1971)',
+    citation: 'Knuth, D. E.: Top-down syntax analysis. Acta Informatica 1(2), 79–110, 1971.',
+    url: 'https://doi.org/10.1007/BF00289517'
+  },
+  {
+    authorYear: 'Rosenkrantz & Stearns (1970)',
+    citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17(3), 226–256, 1970.',
+    url: 'https://doi.org/10.1016/S0019-9958(70)90446-8'
+  }
+];
+
 export const LLView: React.FC<LLViewProps> = ({
   grammar,
   llTable,
@@ -39,6 +57,7 @@ export const LLView: React.FC<LLViewProps> = ({
   onShowInfo
 }) => {
   const t = TRANSLATIONS[lang];
+  const cz = lang === 'cz';
   const [inputText, setInputText] = useState(defaultInput);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -108,7 +127,21 @@ export const LLView: React.FC<LLViewProps> = ({
             )}
           </div>
         </div>
-        <p className="hint-text" style={{ marginBottom: '12px' }}>{t.llTableHint}</p>
+        <p className="hint-text" style={{ marginBottom: '6px' }}>{t.llTableHint}</p>
+        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{cz ? 'Primární literatura:' : 'Primary literature:'}</span>
+          {LL_PRIMARY_REFERENCES.map((ref, idx) => (
+            <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span>{ref.authorYear}</span>
+              {ref.url && (
+                <a href={ref.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                  [DOI]
+                </a>
+              )}
+              {idx < LL_PRIMARY_REFERENCES.length - 1 && <span style={{ opacity: 0.5 }}>·</span>}
+            </span>
+          ))}
+        </div>
 
         {llTable.conflicts.length > 0 ? (
           <div className="notice-box error" style={{ marginBottom: '14px' }}>

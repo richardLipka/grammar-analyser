@@ -85,6 +85,40 @@ export const REFERENCES: Record<string, Reference> = {
   denny10: {
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
     url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+  },
+  knuth65: {
+    citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
+    url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
+  },
+  deremer69: {
+    citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, Department of Electrical Engineering, MIT, Cambridge, MA, 1969.',
+    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+  },
+  deremer71: {
+    citation: 'DeRemer, F. L.: Simple LR(k) grammars. Communications of the ACM 14(7), 453–460, 1971.',
+    url: 'https://doi.org/10.1145/362619.362625'
+  },
+  pager77: {
+    citation: 'Pager, D.: A practical general method for constructing LR(k) parsers. Acta Informatica 7(3), 249–268, 1977.',
+    url: 'https://doi.org/10.1007/BF00290336'
+  },
+  denny08: {
+    citation: 'Denny, J. E., Malloy, B. A.: IELR(1): Practical LR(1) parser table generation for Bison. Proceedings of the 2008 ACM SIGPLAN Symposium on Partial Evaluation and Semantics-based Program Manipulation (PEPM \'08), 201–210, 2008.',
+    url: 'https://doi.org/10.1145/1328408.1328435'
+  },
+  lewis68: {
+    citation: 'Lewis, P. M., Stearns, R. E.: Syntax-directed transduction. Journal of the ACM 15(3), 465–488, 1968.',
+    url: 'https://doi.org/10.1145/321466.321477'
+  },
+  knuth71: {
+    citation: 'Knuth, D. E.: Top-down syntax analysis. Acta Informatica 1(2), 79–110, 1971.',
+    url: 'https://doi.org/10.1007/BF00289517'
+  },
+  lucas61: {
+    citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3, 159–167, 1961.'
+  },
+  wirth76: {
+    citation: 'Wirth, N.: Algorithms + Data Structures = Programs. Prentice-Hall, Englewood Cliffs, NJ, 1976.'
   }
 };
 

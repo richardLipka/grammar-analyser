@@ -18,7 +18,8 @@ import {
   attachMergedLR1States,
   buildLALR1AutomatonSteps,
   buildLR0AutomatonSteps,
-  buildLR1AutomatonSteps
+  buildLR1AutomatonSteps,
+  buildIELR1AutomatonSteps
 } from './lr/lrAutomaton';
 import { LRTable, buildLRTable } from './lr/lrTable';
 import { Job, JobControl, runJob, runToEnd } from './jobs/job';
@@ -31,12 +32,14 @@ export interface AnalysisDataResult {
   lalr1Automaton: LRAutomaton;
   /** Missing when the computation was stopped before the LR(1) automaton was finished */
   lr1Automaton?: LRAutomaton;
+  ielr1Automaton?: LRAutomaton;
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
+  ielr1Table?: LRTable;
   lr1Table?: LRTable;
   /** The tables without the precedence declarations, only when the grammar declares precedence */
-  rawTables?: { 'SLR(1)': LRTable; 'LALR(1)': LRTable; 'LR(1)'?: LRTable };
+  rawTables?: { 'SLR(1)': LRTable; 'LALR(1)': LRTable; 'IELR(1)'?: LRTable; 'LR(1)'?: LRTable };
   /** Search for a word with two derivation trees (only when no LL(1)/LR(1) table proves the grammar unambiguous) */
   ambiguity?: AmbiguityResult;
   /** The grammar is unambiguous because its LL(1) or LR(1) table has no conflict */
@@ -95,6 +98,16 @@ export function* analyzeAllSteps(grammar: Grammar, control: JobControl): Job<Ana
   attachMergedLR1States(lalr1Automaton, lr1Automaton);
   result.lr1Automaton = lr1Automaton;
   result.lr1Table = buildLRTable(lr1Automaton, grammar, analysis);
+
+  // IELR(1) (Inadequacy Elimination LR(1) - Denny & Malloy 2008, 2010)
+  const ielr1Automaton = yield* buildIELR1AutomatonSteps(grammar, analysis, control, lr1Automaton);
+  if (ielr1Automaton) {
+    result.ielr1Automaton = ielr1Automaton;
+    result.ielr1Table = buildLRTable(ielr1Automaton, grammar, analysis);
+    if (hasPrecedence && result.rawTables) {
+      result.rawTables['IELR(1)'] = buildLRTable(ielr1Automaton, grammar, analysis, { usePrecedence: false });
+    }
+  }
 
   // Ambiguity: an LL(1) or LR(1) grammar is unambiguous; otherwise look for a witness
   const lr1Raw = hasPrecedence ? buildLRTable(lr1Automaton, grammar, analysis, { usePrecedence: false }) : result.lr1Table!;

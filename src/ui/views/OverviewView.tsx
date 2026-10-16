@@ -12,7 +12,7 @@ import { ProductionText } from '../components/Symbols';
 import { exportGrammarToLatex } from '../../core/export/latexExport';
 
 type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
-type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 interface OverviewViewProps {
   grammar: Grammar;
@@ -21,6 +21,7 @@ interface OverviewViewProps {
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
+  ielr1Table?: LRTable;
   /** Missing when the computation was stopped before it */
   lr1Table?: LRTable;
   lang: Language;
@@ -45,6 +46,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   lr0Table,
   slr1Table,
   lalr1Table,
+  ielr1Table,
   lr1Table,
   lang,
   lrLayout,
@@ -73,6 +75,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     { variant: 'LR(0)', label: t.isLR0, table: lr0Table },
     { variant: 'SLR(1)', label: t.isSLR1, table: slr1Table },
     { variant: 'LALR(1)', label: t.isLALR1, table: lalr1Table },
+    { variant: 'IELR(1)', label: t.isIELR1, table: ielr1Table },
     { variant: 'LR(1)', label: t.isLR1, table: lr1Table }
   ] as { variant: LRVariantName; label: string; table?: LRTable }[]).map(b => ({
     ...b,

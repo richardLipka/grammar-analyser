@@ -36,7 +36,7 @@ describe('example word of the grammar', () => {
       expect(word, preset.id).not.toBeNull();
       checkWord(g, word!);
       // the languages of these presets are finite, with words of at most 4 symbols; the others give 6 or more
-      const finite = ['lalr1_vs_lr1', 'll1_not_slr1', 'll2_not_strong'].includes(preset.id);
+      const finite = ['lalr1_vs_lr1', 'print_vs_expr_ielr', 'll1_not_slr1', 'll2_not_strong'].includes(preset.id);
       expect(word!.length, `${preset.id}: ${word!.join(' ')}`).toBeGreaterThanOrEqual(finite ? 2 : 6);
     }
   });

@@ -94,6 +94,7 @@ export interface GrammarLRClassification {
   isLR0: boolean;
   isSLR1: boolean;
   isLALR1: boolean;
+  isIELR1: boolean;
   isLR1: boolean;
 }
 

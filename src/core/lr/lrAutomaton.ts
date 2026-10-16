@@ -20,7 +20,7 @@ import { GrammarAnalysis, first1OfString } from '../analyser/grammarAnalyser';
 import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 import { LR0Item, LR1Item, lr0ItemKey, lr1ItemKey, nextSymbolAfterDot } from './lrItem';
 
-export type LRVariant = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'LR(1)';
+export type LRVariant = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 export interface LRState {
   id: number;
@@ -28,8 +28,12 @@ export interface LRState {
   items1?: LR1Item[];
   transitions: Map<string, number>; // symbol -> targetStateId
   isAccepting?: boolean;
-  /** LALR(1): ids of the LR(1) states with the same core (set by attachMergedLR1States) */
+  /** LALR(1) / IELR(1): ids of the LR(1) states with the same core (set by attachMergedLR1States) */
   mergedFrom?: number[];
+  /** IELR(1): true if this state was split from an LALR core to isolate lookaheads and eliminate spurious conflicts */
+  isSplit?: boolean;
+  /** IELR(1): educational explanation of lookahead isolation */
+  ielrAnnotation?: { en: string; cz: string };
 }
 
 /**
@@ -442,4 +446,279 @@ export function attachMergedLR1States(lalr: LRAutomaton, lr1: LRAutomaton): void
   const byCore = new Map(lalr.states.map(s => [core(s), s] as const));
   for (const s of lalr.states) s.mergedFrom = [];
   for (const s of lr1.states) byCore.get(core(s))?.mergedFrom!.push(s.id);
+}
+
+/**
+ * Build the IELR(1) automaton (Inadequacy Elimination LR(1) - Denny & Malloy 2008, 2010).
+ *
+ * Starts from the canonical LR(1) automaton. Partitions the LR(1) states by their LR(0) core.
+ * Detects whether merging the core group introduces any spurious conflicts (inadequacies that do
+ * not exist in any constituent LR(1) state).
+ * If spurious conflicts exist, splits only the necessary states so that conflicting lookaheads
+ * are segregated into distinct sub-states, propagating splits backward only where needed to preserve
+ * deterministic transitions.
+ *
+ * If the grammar has no spurious conflicts, produces the exact same number of states as LALR(1).
+ * If the grammar is LR(1) but not LALR(1), eliminates all spurious conflicts without the state explosion
+ * of canonical LR(1).
+ */
+export function buildIELR1Automaton(
+  g: Grammar,
+  analysis: GrammarAnalysis,
+  lr1Given?: LRAutomaton
+): LRAutomaton {
+  return runJob(buildIELR1AutomatonSteps(g, analysis, runToEnd(), lr1Given))!;
+}
+
+export function* buildIELR1AutomatonSteps(
+  g: Grammar,
+  analysis: GrammarAnalysis,
+  control: JobControl,
+  lr1Given?: LRAutomaton
+): Job<LRAutomaton | null> {
+  const lr1 = lr1Given ?? (yield* buildLR1AutomatonSteps(g, analysis, control));
+  if (!lr1) return null;
+
+  yield { en: 'IELR(1): analyzing spurious conflicts and state partitioning', cz: 'IELR(1): analýza parazitních kolizí a dělení stavů' };
+  if (control.stop) return null;
+
+  const coreKeyOf = (s: LRState) => [...new Set(s.items0.filter(isKernel).map(lr0ItemKey))].sort().join('|');
+
+  // 1. Initial partition: group LR(1) states by LR(0) core
+  const coreMap = new Map<string, number[]>();
+  for (const s of lr1.states) {
+    const k = coreKeyOf(s);
+    if (!coreMap.has(k)) coreMap.set(k, []);
+    coreMap.get(k)!.push(s.id);
+  }
+
+  // A partition is a list of blocks, where each block is an array of LR(1) state IDs
+  let partition: number[][] = Array.from(coreMap.values());
+
+  // Helper: actions of an individual LR(1) state
+  const stateActions = (sId: number): Map<string, Set<string>> => {
+    const s = lr1.states[sId];
+    const acts = new Map<string, Set<string>>();
+    const addAct = (sym: string, desc: string) => {
+      if (!acts.has(sym)) acts.set(sym, new Set());
+      acts.get(sym)!.add(desc);
+    };
+    if (s.items1) {
+      for (const it of s.items1) {
+        if (it.dotIndex === it.production.rhs.length) {
+          if (it.production.id === 0 && it.lookahead === END_MARKER) {
+            addAct(END_MARKER, 'accept');
+          } else if (it.production.id !== 0) {
+            addAct(it.lookahead, `r${it.production.id}`);
+          }
+        } else {
+          const X = it.production.rhs[it.dotIndex];
+          if (g.terminals.has(X)) {
+            addAct(X, 'shift');
+          }
+        }
+      }
+    }
+    return acts;
+  };
+
+  // Precompute actions of individual canonical LR(1) states
+  const individualActions = new Map<number, Map<string, Set<string>>>();
+  for (const s of lr1.states) {
+    individualActions.set(s.id, stateActions(s.id));
+  }
+
+  const hasIndividualConflict = (sId: number, t: string, actA: string, actB: string) => {
+    const acts = individualActions.get(sId)?.get(t);
+    return acts ? acts.has(actA) && acts.has(actB) : false;
+  };
+
+  // Partition refinement loop:
+  // Iterate until no block has spurious conflicts, and transitions between blocks are deterministic.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    yield undefined;
+    if (control.stop) return null;
+
+    // Map each LR(1) state ID to its current block index
+    const stateToBlock = new Map<number, number>();
+    for (let bIdx = 0; bIdx < partition.length; bIdx++) {
+      for (const sId of partition[bIdx]) stateToBlock.set(sId, bIdx);
+    }
+
+    const nextPartition: number[][] = [];
+
+    for (const block of partition) {
+      if (block.length <= 1) {
+        nextPartition.push(block);
+        continue;
+      }
+
+      // Check for spurious conflicts within block
+      const blockActions = new Map<string, Set<string>>();
+      for (const sId of block) {
+        const sActs = individualActions.get(sId)!;
+        for (const [t, acts] of sActs.entries()) {
+          if (!blockActions.has(t)) blockActions.set(t, new Set());
+          for (const a of acts) blockActions.get(t)!.add(a);
+        }
+      }
+
+      let spuriousToken: string | null = null;
+      for (const [t, acts] of blockActions.entries()) {
+        if (acts.size > 1) {
+          const actArr = Array.from(acts);
+          for (let i = 0; i < actArr.length; i++) {
+            for (let j = i + 1; j < actArr.length; j++) {
+              const a1 = actArr[i];
+              const a2 = actArr[j];
+              const genuine = block.some(sId => hasIndividualConflict(sId, t, a1, a2));
+              if (!genuine) {
+                spuriousToken = t;
+                break;
+              }
+            }
+            if (spuriousToken) break;
+          }
+        }
+        if (spuriousToken) break;
+      }
+
+      if (spuriousToken) {
+        // Split block by action on spuriousToken
+        const subBlocks = new Map<string, number[]>();
+        for (const sId of block) {
+          const sActs = individualActions.get(sId)?.get(spuriousToken) || new Set();
+          const key = Array.from(sActs).sort().join(',') || '<none>';
+          if (!subBlocks.has(key)) subBlocks.set(key, []);
+          subBlocks.get(key)!.push(sId);
+        }
+        for (const sub of subBlocks.values()) nextPartition.push(sub);
+        changed = true;
+        continue;
+      }
+
+      // Transition consistency check
+      let transitionSplitSymbol: string | null = null;
+      for (const sym of lr1.symbols) {
+        const targetBlocks = new Set<number>();
+        for (const sId of block) {
+          const s = lr1.states[sId];
+          const tgt = s.transitions.get(sym);
+          if (tgt !== undefined) targetBlocks.add(stateToBlock.get(tgt)!);
+        }
+        if (targetBlocks.size > 1) {
+          transitionSplitSymbol = sym;
+          break;
+        }
+      }
+
+      if (transitionSplitSymbol) {
+        const sym = transitionSplitSymbol;
+        const subBlocks = new Map<string, number[]>();
+        for (const sId of block) {
+          const s = lr1.states[sId];
+          const tgt = s.transitions.get(sym);
+          const key = tgt !== undefined ? String(stateToBlock.get(tgt)!) : 'none';
+          if (!subBlocks.has(key)) subBlocks.set(key, []);
+          subBlocks.get(key)!.push(sId);
+        }
+        for (const sub of subBlocks.values()) nextPartition.push(sub);
+        changed = true;
+        continue;
+      }
+
+      nextPartition.push(block);
+    }
+
+    partition = nextPartition;
+  }
+
+  // Ensure block containing initial state (0) is at index 0
+  const initBlockIdx = partition.findIndex(b => b.includes(0));
+  if (initBlockIdx > 0) {
+    const initBlock = partition.splice(initBlockIdx, 1)[0];
+    partition.unshift(initBlock);
+  }
+
+  const stateToFinalBlock = new Map<number, number>();
+  for (let bIdx = 0; bIdx < partition.length; bIdx++) {
+    for (const sId of partition[bIdx]) stateToFinalBlock.set(sId, bIdx);
+  }
+
+  const coreSplitCounts = new Map<string, number>();
+  for (const block of partition) {
+    const k = coreKeyOf(lr1.states[block[0]]);
+    coreSplitCounts.set(k, (coreSplitCounts.get(k) || 0) + 1);
+  }
+
+  const states: LRState[] = partition.map((block, id) => {
+    const repState = lr1.states[block[0]];
+    const coreKey = coreKeyOf(repState);
+    const isSplit = (coreSplitCounts.get(coreKey) || 0) > 1;
+
+    const itemsByCore = new Map<string, { prod: Production; dot: number; lookaheads: Set<string> }>();
+    for (const sId of block) {
+      const s = lr1.states[sId];
+      if (s.items1) {
+        for (const it of s.items1) {
+          const k = lr0ItemKey(it);
+          if (!itemsByCore.has(k)) {
+            itemsByCore.set(k, { prod: it.production, dot: it.dotIndex, lookaheads: new Set() });
+          }
+          itemsByCore.get(k)!.lookaheads.add(it.lookahead);
+        }
+      }
+    }
+
+    const items1: LR1Item[] = [];
+    for (const it0 of repState.items0) {
+      const entry = itemsByCore.get(lr0ItemKey(it0));
+      if (entry) {
+        for (const la of Array.from(entry.lookaheads).sort()) {
+          items1.push({ production: entry.prod, dotIndex: entry.dot, lookahead: la });
+        }
+      }
+    }
+
+    const transitions = new Map<string, number>();
+    for (const sId of block) {
+      const s = lr1.states[sId];
+      for (const [sym, tgt] of s.transitions.entries()) {
+        const finalTgt = stateToFinalBlock.get(tgt)!;
+        transitions.set(sym, finalTgt);
+      }
+    }
+
+    const isAccepting = block.some(sId => lr1.states[sId].isAccepting);
+
+    let ielrAnnotation: { en: string; cz: string } | undefined = undefined;
+    if (isSplit) {
+      ielrAnnotation = {
+        en: `IELR(1) split state (from LR(1) states: ${block.join(', ')}). Lookaheads are segregated to eliminate spurious LALR(1) conflicts while maintaining minimal state count.`,
+        cz: `IELR(1) rozdělený stav (z LR(1) stavů: ${block.join(', ')}). Symboly dopředu jsou izolovány, aby eliminovaly parazitní LALR(1) kolize při zachování minimálního počtu stavů.`
+      };
+    }
+
+    return {
+      id,
+      items0: repState.items0,
+      items1,
+      transitions,
+      isAccepting,
+      mergedFrom: block,
+      isSplit,
+      ielrAnnotation
+    };
+  });
+
+  return {
+    variant: 'IELR(1)',
+    states,
+    augmentedStartSymbol: lr1.augmentedStartSymbol,
+    augmentedProduction: lr1.augmentedProduction,
+    symbols: lr1.symbols,
+    stateNames: nameStates(states)
+  };
 }
