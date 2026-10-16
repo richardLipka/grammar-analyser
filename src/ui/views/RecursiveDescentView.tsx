@@ -62,6 +62,30 @@ export function pl0InterpreterUrl(page: string = window.location.href): string {
   return url.hostname === 'home.zcu.cz' ? new URL('../pl0/', url).href : PL0_INTERPRETER_URL;
 }
 
+export const RECURSIVE_DESCENT_PRIMARY_REFERENCES = [
+  {
+    authorYear: 'Lucas (1961)',
+    topicEn: 'Recursive Descent Formulation',
+    topicCz: 'První formulace rekurzivního sestupu',
+    citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3(4), 159–167, 1961.',
+    url: 'https://doi.org/10.1524/itit.1961.3.14.159'
+  },
+  {
+    authorYear: 'Conway (1963)',
+    topicEn: 'Separable Transition-Diagram Compiler',
+    topicCz: 'Překladač s přechodovými diagramy',
+    citation: 'Conway, M. E.: Design of a separable transition-diagram compiler. Communications of the ACM 6(7), 396–408, 1963.',
+    url: 'https://doi.org/10.1145/366663.366704'
+  },
+  {
+    authorYear: 'Wirth (1976)',
+    topicEn: 'PL/0 Compiler & P-code Architecture',
+    topicCz: 'Překladač PL/0 a architektura P-kódu',
+    citation: 'Wirth, N.: Algorithms + Data Structures = Programs. Prentice-Hall, 1976.',
+    url: 'https://en.wikipedia.org/wiki/Algorithms_%2B_Data_Structures_%3D_Programs'
+  }
+];
+
 type CodeLang = 'pl0' | 'oberon' | 'c' | 'python' | 'js' | 'pcode';
 type SubTab = 'sim' | 'code' | 'symtab';
 type ActionType = RuleActionDefinition['actionType'];
@@ -725,6 +749,28 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
             ? 'Každý neterminál má proceduru. Ta podle aktuálního symbolu vstupu (množiny řídicích symbolů z tabulky LL(1)) vybere pravidlo, vypíše jeho číslo (vzniká levý rozklad) a pak pro každý symbol pravé strany zavolá proceduru neterminálu, nebo zkontroluje a přečte terminál. Krokování ukazuje zásobník volání, rozkladový strom a tabulku symbolů (zásobník rozsahů, v každém jeho jména); záložka Generovaný kód obsahuje tentýž analyzátor v šesti jazycích.'
             : 'Every non-terminal has a procedure. It chooses the rule by the current input symbol (the director sets of the LL(1) table), prints the rule number (giving the left parse), and then for every symbol of the right-hand side calls the procedure of a non-terminal or checks and reads a terminal. The step simulator shows the call stack, the parse tree and the symbol table (a stack of scopes, each with its names); the tab Generated code holds the same parser in six languages.'}
         </p>
+
+        {/* Primary Literature Reference Bar */}
+        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (rekurzivní sestup a architektura překladače):' : 'Primary literature (recursive descent & compiler architecture):'}</span>
+          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
+            {RECURSIVE_DESCENT_PRIMARY_REFERENCES.map((ref, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={ref.citation}
+                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <strong>{ref.authorYear}</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                  <ExternalLink size={10} />
+                </a>
+              </span>
+            ))}
+          </div>
+        </div>
 
         {/* Subtabs selector */}
         <div className="rd-subtabs" style={{ marginTop: '12px' }}>

@@ -4,7 +4,7 @@ import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, sta
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles, ExternalLink } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
@@ -45,6 +45,59 @@ export const LR_PRIMARY_REFERENCES: Record<LRVariantName, { authorYear: string; 
     url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
   }
 };
+
+/** Primary literature references for all LR algorithms, automata and conflict resolution techniques */
+export const LR_TECHNIQUE_REFERENCES = [
+  {
+    authorYear: 'Knuth (1965)',
+    topicEn: 'LR(0) / LR(1) Foundations',
+    topicCz: 'Základy LR(0) a LR(1)',
+    citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
+    url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
+  },
+  {
+    authorYear: 'DeRemer (1971)',
+    topicEn: 'SLR(1) Grammars',
+    topicCz: 'SLR(1) gramatiky',
+    citation: 'DeRemer, F. L.: Simple LR(k) grammars. Communications of the ACM 14(7), 453–460, 1971.',
+    url: 'https://doi.org/10.1145/362619.362625'
+  },
+  {
+    authorYear: 'DeRemer (1969), DeRemer & Pennello (1982)',
+    topicEn: 'LALR(1) Lookahead Sets',
+    topicCz: 'Výpočet symbolů dopředu pro LALR(1)',
+    citation: 'DeRemer, F. L., Pennello, T. J.: Efficient computation of LALR(1) look-ahead sets. ACM TOPLAS 4(4), 615–649, 1982.',
+    url: 'https://doi.org/10.1145/69622.357187'
+  },
+  {
+    authorYear: 'Aho, Johnson & Ullman (1975)',
+    topicEn: 'Precedence & Associativity Resolution',
+    topicCz: 'Řešení konfliktů prioritami a asociativitou',
+    citation: 'Aho, A. V., Johnson, S. C., Ullman, J. D.: Deterministic parsing of ambiguous grammars. Communications of the ACM 18(8), 441–452, 1975.',
+    url: 'https://doi.org/10.1145/360933.360969'
+  },
+  {
+    authorYear: 'Denny & Malloy (2010)',
+    topicEn: 'IELR(1) Inadequacy Elimination',
+    topicCz: 'IELR(1) eliminace nejednoznačností',
+    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
+    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+  },
+  {
+    authorYear: 'Pager (1977)',
+    topicEn: 'Weak Compatibility & Minimal LR(1)',
+    topicCz: 'Slabá kompatibilita a minimální LR(1)',
+    citation: 'Pager, D.: A practical general method for constructing LR(k) parsers. Acta Informatica 7(3), 249–268, 1977.',
+    url: 'https://doi.org/10.1007/BF00290336'
+  },
+  {
+    authorYear: 'Aho & Johnson (1974)',
+    topicEn: 'Shift-Reduce Parsing Algorithm',
+    topicCz: 'Algoritmus analýzy přesun-redukce',
+    citation: 'Aho, A. V., Johnson, S. C.: LR parsing. ACM Computing Surveys 6(2), 99–124, 1974.',
+    url: 'https://doi.org/10.1145/356625.356629'
+  }
+];
 
 /** Rows of the parsing table shown before "show all". */
 const TABLE_ROW_LIMIT = 300;
@@ -226,6 +279,13 @@ export const LRView: React.FC<LRViewProps> = ({
               <input type="checkbox" checked={usePrecedence} onChange={e => setUsePrecedence(e.target.checked)} />
               <span>{cz ? 'Použít priority a asociativitu (%left, %right, %nonassoc, %prec)' : 'Use precedence and associativity (%left, %right, %nonassoc, %prec)'}</span>
             </label>
+            {usePrecedence && (
+              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginTop: '4px' }}>
+                <span style={{ fontWeight: 600 }}>{cz ? 'Teoretický základ (primární literatura): ' : 'Theoretical foundation (primary literature): '}</span>
+                <span>Aho, Johnson & Ullman (1975): Deterministic parsing of ambiguous grammars (CACM 18(8), pp. 441–452). </span>
+                <a href="https://doi.org/10.1145/360933.360969" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>[DOI]</a>
+              </div>
+            )}
             {usePrecedence && activeTable.resolvedConflicts.length > 0 && (
               <details className="resolved-list">
                 <summary>
@@ -433,6 +493,30 @@ export const LRView: React.FC<LRViewProps> = ({
             </React.Fragment>
           ))}
         </div>
+
+        {/* Primary Literature Reference Bar */}
+        <div style={{ marginTop: '16px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <div style={{ fontWeight: 600, marginBottom: '6px' }}>
+            {cz ? 'Primární vědecká literatura pro LR analyzátory a techniky:' : 'Primary literature for LR parsers & techniques:'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px' }}>
+            {LR_TECHNIQUE_REFERENCES.map((ref, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={ref.citation}
+                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <strong>{ref.authorYear}</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                  <ExternalLink size={10} />
+                </a>
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Bottom-Up Parsing Simulator */}
@@ -440,6 +524,18 @@ export const LRView: React.FC<LRViewProps> = ({
         <div className="card-title">
           <span>{t.parsingSimulator} ({t.bottomUpLR})</span>
           <Cpu size={18} color="var(--color-primary)" />
+        </div>
+        <p className="hint-text" style={{ marginBottom: '6px' }}>
+          {cz
+            ? 'Deterministická syntaktická analýza zdola nahoru řízená tabulkou přechodů a akcí (přesun/redukce). Používá zásobník stavů a symbolů; výsledkem úspěšné analýzy je pravý rozklad.'
+            : 'Deterministic table-driven bottom-up syntax analysis using shift/reduce actions, state and symbol stacks. A successful parse yields the right parse.'}
+        </p>
+        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{cz ? 'Teoretický základ (primární literatura):' : 'Theoretical foundation (primary literature):'}</span>
+          <span>Aho & Johnson (1974): LR Parsing (ACM Computing Surveys 6(2), pp. 99–124)</span>
+          <a href="https://doi.org/10.1145/356625.356629" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+            [DOI]
+          </a>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>

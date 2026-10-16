@@ -10,7 +10,42 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { Language } from '../../i18n/translations';
-import { CheckCircle2, XCircle, ChevronLeft, ChevronRight, Grid3x3, SearchCheck } from 'lucide-react';
+import { CheckCircle2, XCircle, ChevronLeft, ChevronRight, Grid3x3, SearchCheck, ExternalLink } from 'lucide-react';
+
+export const MEMBERSHIP_PRIMARY_REFERENCES = {
+  general: [
+    {
+      authorYear: 'Earley (1970)',
+      topicEn: 'Context-Free Parsing & Dynamic Programming',
+      topicCz: 'Syntaktická analýza BKG a dynamické programování',
+      citation: 'Earley, J.: An efficient context-free parsing algorithm. Communications of the ACM 13(2), 94–102, 1970.',
+      url: 'https://doi.org/10.1145/362007.362035'
+    }
+  ],
+  cyk: [
+    {
+      authorYear: 'Cocke (1969), Cocke & Schwartz (1970)',
+      topicEn: 'CYK Parsing Algorithm',
+      topicCz: 'Algoritmus CYK',
+      citation: 'Cocke, J., Schwartz, J. T.: Programming Languages and Their Compilers: Preliminary Notes. Courant Institute of Mathematical Sciences, New York University, 1970.',
+      url: 'https://archive.org/details/programminglangu00cock'
+    },
+    {
+      authorYear: 'Younger (1967)',
+      topicEn: 'Recognition in Time O(n³)',
+      topicCz: 'Rozpoznávání BKG v čase O(n³)',
+      citation: 'Younger, D. H.: Recognition and parsing of context-free languages in time n³. Information and Control 10(2), 189–208, 1967.',
+      url: 'https://doi.org/10.1016/S0019-9958(67)80007-X'
+    },
+    {
+      authorYear: 'Kasami (1965)',
+      topicEn: 'Efficient Syntax-Analysis Algorithm',
+      topicCz: 'Efektivní syntaktická analýza BKG',
+      citation: 'Kasami, T.: An efficient recognition and syntax-analysis algorithm for context-free languages. Air Force Cambridge Research Lab, Technical Report AFCRL-65-758, 1965.',
+      url: 'https://apps.dtic.mil/sti/citations/AD0630131'
+    }
+  ]
+};
 
 interface MembershipViewProps {
   grammar: Grammar;
@@ -133,6 +168,28 @@ export const MembershipView: React.FC<MembershipViewProps> = ({ grammar, default
             <DerivationTreeVisualizer rootNode={result.trees[treeIdx].tree} height="340px" filename={`parse_tree_${treeIdx + 1}`} lang={lang} />
           </div>
         )}
+
+        {/* Primary Literature Reference Bar */}
+        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (obecná syntaktická analýza BKG):' : 'Primary literature (general CFG parsing):'}</span>
+          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
+            {MEMBERSHIP_PRIMARY_REFERENCES.general.map((ref, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={ref.citation}
+                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <strong>{ref.authorYear}</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                  <ExternalLink size={10} />
+                </a>
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       <CykCard grammar={grammar} tokens={tooLong ? null : tokenized.tokens} lang={lang} onConvertToCNF={onConvertToCNF} />
@@ -288,6 +345,28 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
           </>
         )
       )}
+
+      {/* Primary Literature Reference Bar */}
+      <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+        <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (algoritmus CYK):' : 'Primary literature (CYK algorithm):'}</span>
+        <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
+          {MEMBERSHIP_PRIMARY_REFERENCES.cyk.map((ref, i) => (
+            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <a
+                href={ref.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={ref.citation}
+                style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+              >
+                <strong>{ref.authorYear}</strong>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                <ExternalLink size={10} />
+              </a>
+            </span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };

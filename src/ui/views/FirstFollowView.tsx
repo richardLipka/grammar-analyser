@@ -5,6 +5,24 @@ import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText, formatLookaheadSet } from '../components/Symbols';
 import { exportSetsToLatex } from '../../core/export/latexExport';
+import { ExternalLink } from 'lucide-react';
+
+export const FIRST_FOLLOW_PRIMARY_REFERENCES = [
+  {
+    authorYear: 'Lewis & Stearns (1968)',
+    topicEn: 'FIRST & FOLLOW Sets in Syntax-Directed Transduction',
+    topicCz: 'Množiny FIRST a FOLLOW v syntaxí řízeném překladu',
+    citation: 'Lewis, P. M., Stearns, R. E.: Syntax-directed transduction. Journal of the ACM 15(3), 465–488, 1968.',
+    url: 'https://doi.org/10.1145/321466.321477'
+  },
+  {
+    authorYear: 'Knuth (1971)',
+    topicEn: 'Fixed-Point Lookahead Computation',
+    topicCz: 'Výpočet dopředného pohledu pevným bodem',
+    citation: 'Knuth, D. E.: Top-down syntax analysis. Acta Informatica 1(2), 79–110, 1971.',
+    url: 'https://doi.org/10.1007/BF00289517'
+  }
+];
 
 interface FirstFollowViewProps {
   grammar: Grammar;
@@ -21,6 +39,7 @@ function fmtFirst1(set: Set<string>): string {
 
 export const FirstFollowView: React.FC<FirstFollowViewProps> = ({ grammar, analysis, lang }) => {
   const t = TRANSLATIONS[lang];
+  const cz = lang === 'cz';
 
   return (
     <div>
@@ -63,6 +82,28 @@ export const FirstFollowView: React.FC<FirstFollowViewProps> = ({ grammar, analy
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Primary Literature Reference Bar */}
+        <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární vědecká literatura (FIRST & FOLLOW):' : 'Primary literature (FIRST & FOLLOW sets):'}</span>
+          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: '4px' }}>
+            {FIRST_FOLLOW_PRIMARY_REFERENCES.map((ref, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={ref.citation}
+                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <strong>{ref.authorYear}</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                  <ExternalLink size={10} />
+                </a>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -45,6 +45,10 @@ export const REFERENCES: Record<string, Reference> = {
   au72: {
     citation: 'Aho, A. V., Ullman, J. D.: The Theory of Parsing, Translation, and Compiling. Vol. I: Parsing. Prentice-Hall, 1972.'
   },
+  barhillel61: {
+    citation: 'Bar-Hillel, Y., Perles, M., Shamir, E.: On formal properties of simple phrase structure grammars. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961.',
+    url: 'https://doi.org/10.1515/9783112613764-007'
+  },
   chomsky59: {
     citation: 'Chomsky, N.: On certain formal properties of grammars. Information and Control 2(2), 137–167, 1959.'
   },
@@ -154,9 +158,10 @@ export const TRANSFORMATION_INFO: Record<InfoKey, TransformationInfo> = {
       cz: 'První krok před ostatními úpravami; LL(1) transformace v přednáškách předpokládají gramatiku bez zbytečných symbolů.'
     },
     refs: [
-      { ref: 'jezek8', where: { en: '"Odstranění zbytečných symbolů"', cz: '„Odstranění zbytečných symbolů“' } },
+      { ref: 'barhillel61', where: { en: 'Reduction of CFGs (generating & reachable symbols)', cz: 'Redukce BKG (normované a dosažitelné symboly)' } },
       { ref: 'hmu', where: { en: '§7.1.1–7.1.2', cz: '§7.1.1–7.1.2' } },
-      { ref: 'au72', where: { en: '§2.4', cz: '§2.4' } }
+      { ref: 'au72', where: { en: '§2.4', cz: '§2.4' } },
+      { ref: 'jezek8', where: { en: '"Odstranění zbytečných symbolů"', cz: '„Odstranění zbytečných symbolů“' } }
     ]
   },
   eps: {
@@ -175,6 +180,7 @@ export const TRANSFORMATION_INFO: Record<InfoKey, TransformationInfo> = {
       cz: 'Potřebné pro CNF/GNF a před odstraněním levé rekurze (jinak se skrývá za prefixem, z něhož lze odvodit ε). Pro LL(1) je to poslední možnost: přesune kolizi FIRST-FOLLOW do pravidel, která A používají (Cockett: „epsilon separation“).'
     },
     refs: [
+      { ref: 'chomsky59', where: { en: 'Elimination of null/empty productions', cz: 'Eliminace prázdných pravidel' } },
       { ref: 'hmu', where: { en: '§7.1.3', cz: '§7.1.3' } },
       { ref: 'jezek8', where: { en: '"Upravená gramatika" (proper grammar)', cz: '„Upravená gramatika“' } },
       { ref: 'cockett', where: { en: 'epsilon separation', cz: 'epsilon separation' } }
@@ -196,8 +202,9 @@ export const TRANSFORMATION_INFO: Record<InfoKey, TransformationInfo> = {
       cz: 'Pro CNF a pro upravenou (vlastní) gramatiku; odstraní cykly, kvůli nimž je gramatika nejednoznačná.'
     },
     refs: [
-      { ref: 'jezek8', where: { en: '"Odstranění jednoduchých pravidel"', cz: '„Odstranění jednoduchých pravidel“' } },
-      { ref: 'hmu', where: { en: '§7.1.4', cz: '§7.1.4' } }
+      { ref: 'barhillel61', where: { en: 'Elimination of unit rules and cycles', cz: 'Eliminace jednoduchých pravidel a cyklů' } },
+      { ref: 'hmu', where: { en: '§7.1.4', cz: '§7.1.4' } },
+      { ref: 'jezek8', where: { en: '"Odstranění jednoduchých pravidel"', cz: '„Odstranění jednoduchých pravidel“' } }
     ]
   },
   leftrec: {
@@ -271,9 +278,10 @@ export const TRANSFORMATION_INFO: Record<InfoKey, TransformationInfo> = {
       cz: 'Odstraní kolize FIRST-FIRST způsobené společným prefixem: volba se odloží až za přečtení α.'
     },
     refs: [
+      { ref: 'foster68', where: { en: 'Left factoring algorithm in syntax improving program', cz: 'Algoritmus levé faktorizace v syntax improving program' } },
+      { ref: 'dragon', where: { en: '§4.3.4 Left factoring', cz: '§4.3.4 Left factoring' } },
       { ref: 'jezek910', where: { en: 'p. 20, FIRST-FIRST conflict', cz: 's. 20, kolize FIRST-FIRST' } },
       { ref: 'vavreckova', where: { en: '"Postup faktorizace pravidel"', cz: '„Postup faktorizace pravidel“' } },
-      { ref: 'dragon', where: { en: '§4.3.4 Left factoring', cz: '§4.3.4 Left factoring' } },
       { ref: 'cockett', where: { en: 'step 3', cz: 'krok 3' } }
     ]
   },

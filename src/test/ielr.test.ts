@@ -6,8 +6,13 @@ import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { computeAnalysis } from '../core/analysisJob';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
-import { LR_PRIMARY_REFERENCES } from '../ui/views/LRView';
+import { LR_PRIMARY_REFERENCES, LR_TECHNIQUE_REFERENCES } from '../ui/views/LRView';
 import { LL_PRIMARY_REFERENCES } from '../ui/views/LLView';
+import { LR_GRAPH_PRIMARY_REFERENCES } from '../ui/views/AutomatonGraphView';
+import { FIRST_FOLLOW_PRIMARY_REFERENCES } from '../ui/views/FirstFollowView';
+import { MEMBERSHIP_PRIMARY_REFERENCES } from '../ui/views/MembershipView';
+import { RECURSIVE_DESCENT_PRIMARY_REFERENCES } from '../ui/views/RecursiveDescentView';
+import { REFERENCES, TRANSFORMATION_INFO } from '../core/processor/transformationInfo';
 
 describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
   describe('Preset 1: Symmetric Separating Grammar (Classic Aho & Ullman / Dragon Book)', () => {
@@ -156,6 +161,26 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       }
     });
 
+    it('provides primary literature references for LR algorithms and techniques', () => {
+      expect(LR_TECHNIQUE_REFERENCES.length).toBeGreaterThanOrEqual(6);
+      for (const ref of LR_TECHNIQUE_REFERENCES) {
+        expect(ref.citation.length).toBeGreaterThan(15);
+        expect(ref.authorYear.length).toBeGreaterThan(5);
+        expect(ref.topicEn).toBeDefined();
+        expect(ref.topicCz).toBeDefined();
+        expect(ref.url).toBeDefined();
+      }
+    });
+
+    it('provides primary literature references for LR automata graphs', () => {
+      expect(LR_GRAPH_PRIMARY_REFERENCES.length).toBeGreaterThanOrEqual(4);
+      for (const ref of LR_GRAPH_PRIMARY_REFERENCES) {
+        expect(ref.citation.length).toBeGreaterThan(15);
+        expect(ref.authorYear.length).toBeGreaterThan(5);
+        expect(ref.url).toBeDefined();
+      }
+    });
+
     it('provides primary literature references for LL parsing', () => {
       expect(LL_PRIMARY_REFERENCES.length).toBeGreaterThanOrEqual(3);
       for (const ref of LL_PRIMARY_REFERENCES) {
@@ -163,6 +188,44 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
         expect(ref.authorYear.length).toBeGreaterThan(5);
         expect(ref.url).toBeDefined();
       }
+    });
+
+    it('provides primary literature references for FIRST and FOLLOW sets', () => {
+      expect(FIRST_FOLLOW_PRIMARY_REFERENCES.length).toBeGreaterThanOrEqual(2);
+      for (const ref of FIRST_FOLLOW_PRIMARY_REFERENCES) {
+        expect(ref.citation.length).toBeGreaterThan(15);
+        expect(ref.url).toBeDefined();
+      }
+    });
+
+    it('provides primary literature references for general CFG parsing and CYK', () => {
+      expect(MEMBERSHIP_PRIMARY_REFERENCES.general.length).toBeGreaterThanOrEqual(1);
+      expect(MEMBERSHIP_PRIMARY_REFERENCES.cyk.length).toBeGreaterThanOrEqual(3);
+      for (const ref of [...MEMBERSHIP_PRIMARY_REFERENCES.general, ...MEMBERSHIP_PRIMARY_REFERENCES.cyk]) {
+        expect(ref.citation.length).toBeGreaterThan(15);
+        expect(ref.url).toBeDefined();
+      }
+    });
+
+    it('provides primary literature references for recursive descent', () => {
+      expect(RECURSIVE_DESCENT_PRIMARY_REFERENCES.length).toBeGreaterThanOrEqual(3);
+      for (const ref of RECURSIVE_DESCENT_PRIMARY_REFERENCES) {
+        expect(ref.citation.length).toBeGreaterThan(15);
+        expect(ref.authorYear.length).toBeGreaterThan(5);
+      }
+    });
+
+    it('provides primary literature references for grammar transformations', () => {
+      expect(REFERENCES.barhillel61).toBeDefined();
+      expect(REFERENCES.chomsky59).toBeDefined();
+      expect(REFERENCES.greibach65).toBeDefined();
+      expect(REFERENCES.foster68).toBeDefined();
+      expect(REFERENCES.denny10).toBeDefined();
+      expect(REFERENCES.floyd63).toBeDefined();
+      expect(TRANSFORMATION_INFO.reduce.refs.some(r => r.ref === 'barhillel61')).toBe(true);
+      expect(TRANSFORMATION_INFO.eps.refs.some(r => r.ref === 'chomsky59')).toBe(true);
+      expect(TRANSFORMATION_INFO.units.refs.some(r => r.ref === 'barhillel61')).toBe(true);
+      expect(TRANSFORMATION_INFO.factor.refs.some(r => r.ref === 'foster68')).toBe(true);
     });
   });
 });

@@ -11,7 +11,38 @@ import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls'
 import { AutomatonGraphVisualizer, DisplayItem, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
 import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReason, formatItem } from '../components/LRExplanation';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { Network, Info, ArrowRight, AlertTriangle } from 'lucide-react';
+import { Network, Info, ArrowRight, AlertTriangle, ExternalLink } from 'lucide-react';
+
+export const LR_GRAPH_PRIMARY_REFERENCES = [
+  {
+    authorYear: 'Knuth (1965)',
+    topicEn: 'LR Automaton & Item Closure',
+    topicCz: 'LR automat a uzávěr položek',
+    citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
+    url: 'https://doi.org/10.1016/S0019-9958(65)90426-2'
+  },
+  {
+    authorYear: 'DeRemer (1969)',
+    topicEn: 'LALR(1) State Merging',
+    topicCz: 'Slučování stavů v LALR(1)',
+    citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, MIT, 1969.',
+    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+  },
+  {
+    authorYear: 'Denny & Malloy (2010)',
+    topicEn: 'IELR(1) State Splitting',
+    topicCz: 'Štěpení stavů v IELR(1)',
+    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables. Science of Computer Programming 75(11), 943–979, 2010.',
+    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+  },
+  {
+    authorYear: 'Pager (1977)',
+    topicEn: 'Lane-Tracing & Weak Compatibility',
+    topicCz: 'Lane-tracing a slabá kompatibilita',
+    citation: 'Pager, D.: A practical general method for constructing LR(k) parsers. Acta Informatica 7(3), 249–268, 1977.',
+    url: 'https://doi.org/10.1007/BF00290336'
+  }
+];
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
@@ -241,6 +272,28 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             </span>
           )}
         </p>
+
+        {/* Primary Literature Reference Bar */}
+        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--color-border)', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+          <span style={{ fontWeight: 600, marginRight: '8px' }}>{cz ? 'Primární literatura (automaty a grafy):' : 'Primary literature (automata & graphs):'}</span>
+          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '8px 14px', marginTop: '4px' }}>
+            {LR_GRAPH_PRIMARY_REFERENCES.map((ref, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={ref.citation}
+                  style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                >
+                  <strong>{ref.authorYear}</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                  <ExternalLink size={10} />
+                </a>
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="card construction-card">

@@ -5,7 +5,7 @@ import { LLTable } from '../../core/ll/llTable';
 import { simulateLLParse, LLParseStep, LLSimulationResult, LLParseMode } from '../../core/ll/llParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Layers, XCircle, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Layers, XCircle, Sparkles, ExternalLink } from 'lucide-react';
 import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
 import { LatexExportButton } from '../components/LatexExportButton';
@@ -32,16 +32,22 @@ const rhsText = (p: Production) => (p.rhs.length === 0 ? EPSILON : p.rhs.join(' 
 export const LL_PRIMARY_REFERENCES = [
   {
     authorYear: 'Lewis & Stearns (1968)',
+    topicEn: 'LL(k) Grammar Foundations',
+    topicCz: 'Základy LL(k) gramatik',
     citation: 'Lewis, P. M., Stearns, R. E.: Syntax-directed transduction. Journal of the ACM 15(3), 465–488, 1968.',
     url: 'https://doi.org/10.1145/321466.321477'
   },
   {
     authorYear: 'Knuth (1971)',
+    topicEn: 'Top-Down Syntax Analysis & LL(1) Tables',
+    topicCz: 'Syntaktická analýza shora dolů a tabulky LL(1)',
     citation: 'Knuth, D. E.: Top-down syntax analysis. Acta Informatica 1(2), 79–110, 1971.',
     url: 'https://doi.org/10.1007/BF00289517'
   },
   {
     authorYear: 'Rosenkrantz & Stearns (1970)',
+    topicEn: 'Deterministic Top-Down Grammars & Lookahead',
+    topicCz: 'Deterministické gramatiky shora dolů a dopředný pohled',
     citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17(3), 226–256, 1970.',
     url: 'https://doi.org/10.1016/S0019-9958(70)90446-8'
   }
@@ -128,17 +134,21 @@ export const LLView: React.FC<LLViewProps> = ({
           </div>
         </div>
         <p className="hint-text" style={{ marginBottom: '6px' }}>{t.llTableHint}</p>
-        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 600 }}>{cz ? 'Primární literatura:' : 'Primary literature:'}</span>
+        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px 14px', flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600 }}>{cz ? 'Primární literatura (LL analyzátory a tabulky):' : 'Primary literature (LL parsers & tables):'}</span>
           {LL_PRIMARY_REFERENCES.map((ref, idx) => (
             <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-              <span>{ref.authorYear}</span>
-              {ref.url && (
-                <a href={ref.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
-                  [DOI]
-                </a>
-              )}
-              {idx < LL_PRIMARY_REFERENCES.length - 1 && <span style={{ opacity: 0.5 }}>·</span>}
+              <a
+                href={ref.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={ref.citation}
+                style={{ color: 'var(--color-primary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+              >
+                <strong>{ref.authorYear}</strong>
+                <span style={{ color: 'var(--color-text-muted)', fontSize: '11px' }}>({cz ? ref.topicCz : ref.topicEn})</span>
+                <ExternalLink size={10} />
+              </a>
             </span>
           ))}
         </div>
