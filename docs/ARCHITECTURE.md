@@ -100,7 +100,9 @@ Transformations preserve language equivalence $L(G) = L(G')$ and yield step-by-s
 - **Table Layouts**: Dual mode support:
   - University Lecture Layout (states named by entry symbol $E_1$, $f$ for reduce/shift, $g$ transition table).
   - Classical Dragon Book ACTION/GOTO layout.
-- **Bottom-Up Simulator**: Stack visualization ($[\$, E, +]$), item matching, and reduction logs.
+- **Bottom-Up Simulators**:
+  - **Standard Deterministic LR**: Stack visualization ($[\$, E, +]$), item matching, and reduction logs.
+  - **Generalized LR (GLR)** (`glrParser.ts`): Implements Tomita's algorithm and RNGLR (Scott & Johnstone 2006). Uses a Graph-Structured Stack (GSS) to explore non-deterministic and ambiguous parsing paths concurrently, merging states at shared frontiers and enumerating all valid parse trees. Interactive SVG visualization via `GSSGraphVisualizer.tsx`.
 
 #### ALL(*) Adaptive Top-Down Parser (`all/`)
 - Based on Parr, Harwell, & Fisher (2014) (*ANTLR 4* foundation).

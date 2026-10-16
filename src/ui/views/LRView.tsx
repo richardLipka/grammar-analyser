@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
+import { simulateGLRParse, GLRSimulationResult, GLRParseStep } from '../../core/lr/glrParser';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
+import { GSSGraphVisualizer } from '../visualizer/GSSGraphVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
-import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles, ExternalLink } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Cpu, XCircle, Sparkles, ExternalLink, GitFork, Network, Layers } from 'lucide-react';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
@@ -96,6 +98,20 @@ export const LR_TECHNIQUE_REFERENCES = [
     topicCz: 'Algoritmus analýzy přesun-redukce',
     citation: 'Aho, A. V., Johnson, S. C.: LR parsing. ACM Computing Surveys 6(2), 99–124, 1974.',
     url: 'https://doi.org/10.1145/356628.356629'
+  },
+  {
+    authorYear: 'Tomita (1985)',
+    topicEn: 'Generalized LR (GLR) & Graph-Structured Stack',
+    topicCz: 'Zobecněný LR (GLR) a Graph-Structured Stack',
+    citation: 'Tomita, M.: Efficient Parsing for Natural Language: A Generalized LR Parser. Kluwer Academic Publishers, Boston, 1985.',
+    url: 'https://doi.org/10.1007/978-1-4613-2575-8'
+  },
+  {
+    authorYear: 'Scott & Johnstone (2006)',
+    topicEn: 'Right Nulled GLR (RNGLR) Parsing',
+    topicCz: 'Algoritmus RNGLR pro obecné bezkontextové gramatiky',
+    citation: 'Scott, E., Johnstone, A.: Right Nulled Generalized LR Parsers. ACM Transactions on Programming Languages and Systems (TOPLAS) 28(4), 577–618, 2006.',
+    url: 'https://doi.org/10.1145/1146809.1146810'
   }
 ];
 
@@ -186,6 +202,35 @@ export const LRView: React.FC<LRViewProps> = ({
     const row = traceRef.current?.querySelector('.trace-row-active') as HTMLElement | null;
     row?.scrollIntoView({ block: 'nearest' });
   }, [currentStepIdx]);
+
+  // GLR Simulator State
+  const [parserMode, setParserMode] = useState<'standard' | 'glr'>('standard');
+  const [selectedTreeIdx, setSelectedTreeIdx] = useState<number>(0);
+  const [currentGLRStepIdx, setCurrentGLRStepIdx] = useState<number>(0);
+  const [isGLRPlaying, setIsGLRPlaying] = useState<boolean>(false);
+  const [glrPlaySpeed, setGLRPlaySpeed] = useState<number>(700);
+  const glrTraceRef = useRef<HTMLDivElement>(null);
+
+  const glrSimulation: GLRSimulationResult = useMemo(
+    () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout),
+    [tokenized, grammar, activeTable, layout]
+  );
+
+  useEffect(() => {
+    setCurrentGLRStepIdx(0);
+    setIsGLRPlaying(false);
+    setSelectedTreeIdx(0);
+  }, [glrSimulation]);
+
+  useAutoPlay(isGLRPlaying, currentGLRStepIdx, glrSimulation.steps.length, glrPlaySpeed, setCurrentGLRStepIdx, () => setIsGLRPlaying(false));
+
+  useEffect(() => {
+    const row = glrTraceRef.current?.querySelector('.trace-row-active') as HTMLElement | null;
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [currentGLRStepIdx]);
+
+  const currentGLRStep: GLRParseStep | undefined = glrSimulation.steps[currentGLRStepIdx];
+  const glrActiveTree = glrSimulation.trees.length > 0 ? glrSimulation.trees[Math.min(selectedTreeIdx, glrSimulation.trees.length - 1)] : undefined;
 
   const currentStep: LRParseStep | undefined = simulation.steps[currentStepIdx];
   const actionText = (s: LRParseStep) => (lang === 'cz' ? s.actionCz || s.action : s.action);
@@ -551,150 +596,430 @@ export const LRView: React.FC<LRViewProps> = ({
         </div>
         <TokenizedInputNote tokenized={tokenized} lang={lang} />
 
-        {simulation.steps.length > 0 && (
-          <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            {simulation.accepted ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
-            <span>
-              {simulation.accepted
-                ? t.wordAccepted.replace('{n}', simulation.steps.length.toString())
-                : `${t.wordRejected}: ${lang === 'cz' ? simulation.errorMessageCz || simulation.errorMessage : simulation.errorMessage}`}
-            </span>
-          </div>
-        )}
-        {!activeTable.isConflictFree && <div className="conflict-pick-note" style={{ marginBottom: '10px' }}>{t.simulatorConflictWarning}</div>}
+        {/* Simulator Mode Switch */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 16px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: '12px' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${parserMode === 'standard' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setParserMode('standard')}
+            style={{ fontWeight: 600 }}
+          >
+            {cz ? 'Standardní deterministický LR' : 'Standard Deterministic LR'}
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${parserMode === 'glr' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setParserMode('glr')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+          >
+            <GitFork size={14} />
+            <span>{cz ? 'Zobecněný LR (GLR / GSS)' : 'Generalized LR (GLR / GSS)'}</span>
+            {!activeTable.isConflictFree && (
+              <span className="badge badge-warning" style={{ fontSize: '10px', padding: '1px 6px', fontWeight: 700 }}>
+                {cz ? 'Řeší kolize' : 'Resolves conflicts'}
+              </span>
+            )}
+          </button>
+        </div>
 
-        <SimulatorControls
-          stepIdx={currentStepIdx}
-          total={simulation.steps.length}
-          isPlaying={isPlaying}
-          speed={playSpeed}
-          lang={lang}
-          onStep={(i) => { setIsPlaying(false); setCurrentStepIdx(i); }}
-          onTogglePlay={() => {
-            if (!isPlaying && currentStepIdx >= simulation.steps.length - 1) setCurrentStepIdx(0);
-            setIsPlaying(p => !p);
-          }}
-          onSpeed={setPlaySpeed}
-        />
+        {parserMode === 'standard' ? (
+          <>
+            {simulation.steps.length > 0 && (
+              <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {simulation.accepted ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
+                <span>
+                  {simulation.accepted
+                    ? t.wordAccepted.replace('{n}', simulation.steps.length.toString())
+                    : `${t.wordRejected}: ${lang === 'cz' ? simulation.errorMessageCz || simulation.errorMessage : simulation.errorMessage}`}
+                </span>
+              </div>
+            )}
+            {!activeTable.isConflictFree && (
+              <div className="conflict-pick-note" style={{ marginBottom: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div>{t.simulatorConflictWarning}</div>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-warning"
+                    onClick={() => setParserMode('glr')}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', padding: '3px 8px' }}
+                  >
+                    <GitFork size={13} />
+                    {cz ? 'Spustit v GLR analyzátoru s Graph-Structured Stack (řeší všechny větve)' : 'Run in Generalized LR (GLR) with Graph-Structured Stack (explores all branches)'}
+                  </button>
+                </div>
+              </div>
+            )}
 
-        {currentStep && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
-            <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.stateStack} {t.topOnRight}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {currentStep.stateStack.map((st, idx) => {
-                  const isTop = idx === currentStep.stateStack.length - 1;
-                  return (
-                    <span key={idx} className={`badge ${isTop ? 'chip-top-stack' : 'badge-primary'}`}>
-                      {name(st)}
-                      {isTop && <span className="chip-tag-top">{t.topOfStackBadge}</span>}
-                    </span>
-                  );
-                })}
+            <SimulatorControls
+              stepIdx={currentStepIdx}
+              total={simulation.steps.length}
+              isPlaying={isPlaying}
+              speed={playSpeed}
+              lang={lang}
+              onStep={(i) => { setIsPlaying(false); setCurrentStepIdx(i); }}
+              onTogglePlay={() => {
+                if (!isPlaying && currentStepIdx >= simulation.steps.length - 1) setCurrentStepIdx(0);
+                setIsPlaying(p => !p);
+              }}
+              onSpeed={setPlaySpeed}
+            />
+
+            {currentStep && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.stateStack} {t.topOnRight}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {currentStep.stateStack.map((st, idx) => {
+                      const isTop = idx === currentStep.stateStack.length - 1;
+                      return (
+                        <span key={idx} className={`badge ${isTop ? 'chip-top-stack' : 'badge-primary'}`}>
+                          {name(st)}
+                          {isTop && <span className="chip-tag-top">{t.topOfStackBadge}</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {!lecture && (
+                  <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.symbolStack}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {currentStep.symbolStack.map((sym, idx) => (
+                        <span key={idx} className={`badge ${grammar.nonTerminals.has(sym) ? 'badge-primary' : 'badge-success'}`}>{sym}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.remainingInput}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {currentStep.remainingInput.map((sym, idx) => (
+                      <span key={idx} className={`badge ${idx === 0 ? 'chip-decision-input' : 'badge-success'}`}>
+                        {sym}
+                        {idx === 0 && <span className="chip-tag-decision">{t.decisionSymbolBadge}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: currentStep.isAccepted ? 'var(--color-success-subtle)' : currentStep.isError ? 'var(--color-danger-subtle)' : 'var(--color-bg-base)',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${currentStep.isAccepted ? 'var(--color-success)' : currentStep.isError ? 'var(--color-danger)' : 'var(--color-border)'}`
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.action}</div>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    marginTop: '6px',
+                    color: currentStep.isAccepted ? 'var(--color-success)' : currentStep.isError ? 'var(--color-danger)' : 'var(--color-primary)'
+                  }}>
+                    {actionText(currentStep)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="two-column-grid">
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.traceTitle}</div>
+                <div className="trace-table-container" ref={traceRef} style={{ maxHeight: '360px' }}>
+                  <table className="trace-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{t.stack}</th>
+                        <th style={{ textAlign: 'right' }}>{t.remainingInput}</th>
+                        <th>{t.action}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {simulation.steps.map((s, i) => (
+                        <tr
+                          key={i}
+                          onClick={() => { setIsPlaying(false); setCurrentStepIdx(i); }}
+                          className={[
+                            i === currentStepIdx ? 'trace-row-active' : '',
+                            i > currentStepIdx ? 'trace-row-future' : '',
+                            s.isError ? 'trace-row-error' : '',
+                            s.isAccepted ? 'trace-row-accept' : ''
+                          ].join(' ')}
+                        >
+                          <td className="trace-num">{i + 1}</td>
+                          <td>{stackText(s)}</td>
+                          <td className="trace-input">{s.remainingInput.join(' ')}</td>
+                          <td className="trace-action">{actionText(s)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {currentStep && (
+                  <div className="hint-text" style={{ marginTop: '8px', fontFamily: 'var(--font-mono)' }}>
+                    <strong>{t.rightParse}:</strong> {currentStep.rightParse.length > 0 ? currentStep.rightParse.join(' ') : 'ε'}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700 }}>{t.bottomUpTreeLabel} <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>({t.treeAfterStep})</span></div>
+                  {currentStep?.tree && (
+                    <LatexExportButton
+                      getLatex={() => exportParseTreeToTikz(currentStep.tree!)}
+                      filename="parse_tree_lr.tex"
+                      label="LaTeX (forest)"
+                      lang={lang}
+                      title={lang === 'cz' ? 'Exportovat strom do LaTeXu (forest)' : 'Export tree to LaTeX (forest)'}
+                    />
+                  )}
+                </div>
+                <DerivationTreeVisualizer rootNode={currentStep?.tree} height="360px" filename="parse_tree_lr" lang={lang} />
               </div>
             </div>
+          </>
+        ) : (
+          /* GLR Mode */
+          <div>
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600 }}>{cz ? 'Teoretický základ (GLR & GSS):' : 'Theoretical foundation (GLR & GSS):'}</span>
+              <span>Tomita (1985): Generalized LR Parser; Scott & Johnstone (2006): RNGLR Parsing</span>
+              <a href="https://doi.org/10.1145/1146809.1146810" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+                [DOI]
+              </a>
+            </div>
 
-            {/* The named states already spell the symbols; the Dragon Book layout keeps a separate symbol stack */}
-            {!lecture && (
-              <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.symbolStack}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {currentStep.symbolStack.map((sym, idx) => (
-                    <span key={idx} className={`badge ${grammar.nonTerminals.has(sym) ? 'badge-primary' : 'badge-success'}`}>{sym}</span>
+            {glrSimulation.steps.length > 0 && (
+              <div className={`report-box ${glrSimulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {glrSimulation.accepted ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+                  <span style={{ fontWeight: 600 }}>
+                    {glrSimulation.accepted
+                      ? (cz
+                          ? `Slovo přijato: nalezeno ${glrSimulation.totalTrees} derivačních stromů ${glrSimulation.totalTrees > 1 ? '(nejednoznačná gramatika)' : '(jednoznačné)'}`
+                          : `Word accepted: found ${glrSimulation.totalTrees} derivation tree(s) ${glrSimulation.totalTrees > 1 ? '(ambiguous grammar)' : '(unambiguous)'}`)
+                      : (cz ? (glrSimulation.errorMessageCz || glrSimulation.errorMessage) : glrSimulation.errorMessage)}
+                  </span>
+                </div>
+                {glrSimulation.accepted && (
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    <span>{cz ? `Zpracováno kolizí:` : `Conflicts handled:`} <strong>{glrSimulation.conflictsEncountered}</strong></span>
+                    <span>{cz ? `Max. souběžných vrcholů GSS:` : `Max concurrent GSS heads:`} <strong>{glrSimulation.maxSimultaneousHeads}</strong></span>
+                    <span>{cz ? `Kroků simulace:` : `Simulation steps:`} <strong>{glrSimulation.steps.length}</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {glrSimulation.totalTrees > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', padding: '8px 12px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text)' }}>
+                  {cz ? 'Alternativní stromy rozkladu (nejednoznačnost):' : 'Alternative Derivation Trees (Ambiguity):'}
+                </span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {glrSimulation.trees.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={`btn btn-sm ${selectedTreeIdx === idx ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setSelectedTreeIdx(idx)}
+                      style={{ padding: '2px 10px', fontSize: '11px', fontWeight: 600 }}
+                    >
+                      {cz ? `Strom ${idx + 1}` : `Tree ${idx + 1}`}
+                    </button>
                   ))}
                 </div>
               </div>
             )}
 
-            <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.remainingInput}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {currentStep.remainingInput.map((sym, idx) => (
-                  <span key={idx} className={`badge ${idx === 0 ? 'chip-decision-input' : 'badge-success'}`}>
-                    {sym}
-                    {idx === 0 && <span className="chip-tag-decision">{t.decisionSymbolBadge}</span>}
-                  </span>
-                ))}
+            <SimulatorControls
+              stepIdx={currentGLRStepIdx}
+              total={glrSimulation.steps.length}
+              isPlaying={isGLRPlaying}
+              speed={glrPlaySpeed}
+              lang={lang}
+              onStep={(i) => { setIsGLRPlaying(false); setCurrentGLRStepIdx(i); }}
+              onTogglePlay={() => {
+                if (!isGLRPlaying && currentGLRStepIdx >= glrSimulation.steps.length - 1) setCurrentGLRStepIdx(0);
+                setIsGLRPlaying(p => !p);
+              }}
+              onSpeed={setGLRPlaySpeed}
+            />
+
+            {currentGLRStep && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>
+                    {cz ? 'Aktivní vrcholy GSS (HEAD)' : 'Active GSS Heads'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {currentGLRStep.activeHeadStates.map((st, idx) => (
+                      <span key={idx} className="badge chip-top-stack">
+                        {name(st)}
+                        <span className="chip-tag-top">HEAD</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600, marginBottom: '6px' }}>{t.remainingInput}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {currentGLRStep.remainingInput.map((sym, idx) => (
+                      <span key={idx} className={`badge ${idx === 0 ? 'chip-decision-input' : 'badge-success'}`}>
+                        {sym}
+                        {idx === 0 && <span className="chip-tag-decision">{t.decisionSymbolBadge}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: currentGLRStep.actionType === 'accept'
+                    ? 'var(--color-success-subtle)'
+                    : currentGLRStep.actionType === 'error'
+                      ? 'var(--color-danger-subtle)'
+                      : currentGLRStep.actionType === 'fork'
+                        ? 'var(--color-warning-subtle, rgba(234, 179, 8, 0.15))'
+                        : 'var(--color-bg-base)',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${
+                    currentGLRStep.actionType === 'accept'
+                      ? 'var(--color-success)'
+                      : currentGLRStep.actionType === 'error'
+                        ? 'var(--color-danger)'
+                        : currentGLRStep.actionType === 'fork'
+                          ? 'var(--color-warning, #eab308)'
+                          : 'var(--color-border)'
+                  }`
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.action}</div>
+                    <span className={`badge ${
+                      currentGLRStep.actionType === 'fork'
+                        ? 'badge-warning'
+                        : currentGLRStep.actionType === 'merge'
+                          ? 'badge-primary'
+                          : currentGLRStep.actionType === 'accept'
+                            ? 'badge-success'
+                            : currentGLRStep.actionType === 'error'
+                              ? 'badge-danger'
+                              : 'badge-secondary'
+                    }`} style={{ fontSize: '9px', fontWeight: 700 }}>
+                      {currentGLRStep.actionType.toUpperCase()}
+                    </span>
+                  </div>
+                  <div style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    marginTop: '6px',
+                    color: currentGLRStep.actionType === 'accept' ? 'var(--color-success)' : currentGLRStep.actionType === 'error' ? 'var(--color-danger)' : 'var(--color-text)'
+                  }}>
+                    {cz ? currentGLRStep.actionDescriptionCz : currentGLRStep.actionDescription}
+                  </div>
+                </div>
               </div>
+            )}
+
+            {/* GSS Visualizer */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div>
+                  <span style={{ fontSize: '13px', fontWeight: 700 }}>Graph-Structured Stack (GSS)</span>
+                  <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginLeft: '8px' }}>
+                    {cz ? '(Vrcholy se značkou HEAD představují aktivní zásobníkové hlavy)' : '(HEAD badges indicate active frontier heads)'}
+                  </span>
+                </div>
+              </div>
+              <GSSGraphVisualizer snapshot={currentGLRStep ? currentGLRStep.gssSnapshot : glrSimulation.gssFinal} lang={lang} filename="glr_gss_graph" />
             </div>
 
-            <div style={{
-              padding: '10px 14px',
-              backgroundColor: currentStep.isAccepted ? 'var(--color-success-subtle)' : currentStep.isError ? 'var(--color-danger-subtle)' : 'var(--color-bg-base)',
-              borderRadius: 'var(--radius-md)',
-              border: `1px solid ${currentStep.isAccepted ? 'var(--color-success)' : currentStep.isError ? 'var(--color-danger)' : 'var(--color-border)'}`
-            }}>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: 600 }}>{t.action}</div>
-              <div style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '13px',
-                fontWeight: 700,
-                marginTop: '6px',
-                color: currentStep.isAccepted ? 'var(--color-success)' : currentStep.isError ? 'var(--color-danger)' : 'var(--color-primary)'
-              }}>
-                {actionText(currentStep)}
+            <div className="two-column-grid">
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>
+                  {cz ? 'Protokol kroků GLR analýzy' : 'GLR Trace Log'}
+                </div>
+                <div className="trace-table-container" ref={glrTraceRef} style={{ maxHeight: '360px' }}>
+                  <table className="trace-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>{cz ? 'Typ' : 'Type'}</th>
+                        <th>{cz ? 'Symbol' : 'Token'}</th>
+                        <th>{t.action}</th>
+                        <th style={{ textAlign: 'right' }}>{cz ? 'Hlavy' : 'Heads'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {glrSimulation.steps.map((s, i) => (
+                        <tr
+                          key={i}
+                          onClick={() => { setIsGLRPlaying(false); setCurrentGLRStepIdx(i); }}
+                          className={[
+                            i === currentGLRStepIdx ? 'trace-row-active' : '',
+                            i > currentGLRStepIdx ? 'trace-row-future' : '',
+                            s.actionType === 'error' ? 'trace-row-error' : '',
+                            s.actionType === 'accept' ? 'trace-row-accept' : ''
+                          ].join(' ')}
+                        >
+                          <td className="trace-num">{i + 1}</td>
+                          <td>
+                            <span className={`badge ${
+                              s.actionType === 'fork'
+                                ? 'badge-warning'
+                                : s.actionType === 'merge'
+                                  ? 'badge-primary'
+                                  : s.actionType === 'accept'
+                                    ? 'badge-success'
+                                    : s.actionType === 'error'
+                                      ? 'badge-danger'
+                                      : 'badge-secondary'
+                            }`} style={{ fontSize: '9px' }}>
+                              {s.actionType}
+                            </span>
+                          </td>
+                          <td className="trace-input">{s.inputToken}</td>
+                          <td className="trace-action">{cz ? s.actionDescriptionCz : s.actionDescription}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{s.activeHeadCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700 }}>
+                    {cz ? 'Derivační strom' : 'Derivation Tree'}
+                    {glrSimulation.totalTrees > 1 && (
+                      <span style={{ fontWeight: 400, color: 'var(--color-text-muted)', marginLeft: '6px' }}>
+                        ({cz ? `Strom ${selectedTreeIdx + 1} z ${glrSimulation.totalTrees}` : `Tree ${selectedTreeIdx + 1} of ${glrSimulation.totalTrees}`})
+                      </span>
+                    )}
+                  </div>
+                  {glrActiveTree && (
+                    <LatexExportButton
+                      getLatex={() => exportParseTreeToTikz(glrActiveTree)}
+                      filename="parse_tree_glr.tex"
+                      label="LaTeX (forest)"
+                      lang={lang}
+                      title={lang === 'cz' ? 'Exportovat strom do LaTeXu (forest)' : 'Export tree to LaTeX (forest)'}
+                    />
+                  )}
+                </div>
+                <DerivationTreeVisualizer rootNode={glrActiveTree} height="360px" filename="parse_tree_glr" lang={lang} />
               </div>
             </div>
           </div>
         )}
-
-        <div className="two-column-grid">
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{t.traceTitle}</div>
-            <div className="trace-table-container" ref={traceRef} style={{ maxHeight: '360px' }}>
-              <table className="trace-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>{t.stack}</th>
-                    <th style={{ textAlign: 'right' }}>{t.remainingInput}</th>
-                    <th>{t.action}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {simulation.steps.map((s, i) => (
-                    <tr
-                      key={i}
-                      onClick={() => { setIsPlaying(false); setCurrentStepIdx(i); }}
-                      className={[
-                        i === currentStepIdx ? 'trace-row-active' : '',
-                        i > currentStepIdx ? 'trace-row-future' : '',
-                        s.isError ? 'trace-row-error' : '',
-                        s.isAccepted ? 'trace-row-accept' : ''
-                      ].join(' ')}
-                    >
-                      <td className="trace-num">{i + 1}</td>
-                      <td>{stackText(s)}</td>
-                      <td className="trace-input">{s.remainingInput.join(' ')}</td>
-                      <td className="trace-action">{actionText(s)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {currentStep && (
-              <div className="hint-text" style={{ marginTop: '8px', fontFamily: 'var(--font-mono)' }}>
-                <strong>{t.rightParse}:</strong> {currentStep.rightParse.length > 0 ? currentStep.rightParse.join(' ') : 'ε'}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700 }}>{t.bottomUpTreeLabel} <span style={{ fontWeight: 400, color: 'var(--color-text-muted)' }}>({t.treeAfterStep})</span></div>
-              {currentStep?.tree && (
-                <LatexExportButton
-                  getLatex={() => exportParseTreeToTikz(currentStep.tree!)}
-                  filename="parse_tree_lr.tex"
-                  label="LaTeX (forest)"
-                  lang={lang}
-                  title={lang === 'cz' ? 'Exportovat strom do LaTeXu (forest)' : 'Export tree to LaTeX (forest)'}
-                />
-              )}
-            </div>
-            <DerivationTreeVisualizer rootNode={currentStep?.tree} height="360px" filename="parse_tree_lr" lang={lang} />
-          </div>
-        </div>
       </div>
     </div>
   );

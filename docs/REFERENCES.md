@@ -128,6 +128,30 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** Comprehensive tutorial and reference on table-driven shift-reduce LR parsing algorithms, dual state/symbol stacks, and error recovery.
 - **Referenced In:** `LRView.tsx`.
 
+### Tomita (1985)
+- **Author:** Masaru Tomita
+- **Title:** *Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems*
+- **Venue:** The Kluwer International Series in Engineering and Computer Science, Vol. 8, Kluwer Academic Publishers, Boston, 1985.
+- **Identifier / Link:** [https://doi.org/10.1007/978-1-4613-2575-8](https://doi.org/10.1007/978-1-4613-2575-8)
+- **App Usage:** Foundational algorithm for Generalized LR (GLR) parsing using the Graph-Structured Stack (GSS) to explore non-deterministic and ambiguous LR paths in parallel.
+- **Referenced In:** `glrParser.ts`, `GSSGraphVisualizer.tsx`, `LRView.tsx`.
+
+### Rekers (1992)
+- **Author:** Jan Rekers
+- **Title:** *Parser Generation for Interactive Environments*
+- **Venue:** Ph.D. thesis, University of Amsterdam, 1992.
+- **Identifier / Link:** [https://hdl.handle.net/11245/1.103006](https://hdl.handle.net/11245/1.103006)
+- **App Usage:** Subtree sharing and packing algorithms for GLR Shared Packed Parse Forests (SPPF) and interactive GSS manipulation.
+- **Referenced In:** `glrParser.ts`.
+
+### Scott & Johnstone (2006)
+- **Authors:** Elizabeth Scott, Adrian Johnstone
+- **Title:** *Right Nulled Generalized LR Parsers*
+- **Venue:** ACM Transactions on Programming Languages and Systems (TOPLAS), Vol. 28, No. 4, pp. 577–618, July 2006.
+- **Identifier / Link:** [https://doi.org/10.1145/1146809.1146810](https://doi.org/10.1145/1146809.1146810)
+- **App Usage:** General context-free parsing with RNGLR, guaranteeing polynomial-time parsing and correct GSS termination over arbitrary CFGs including cyclic and nullable rules.
+- **Referenced In:** `glrParser.ts`, `LRView.tsx`.
+
 ---
 
 ## 4. Recursive Descent Parsing & Architecture

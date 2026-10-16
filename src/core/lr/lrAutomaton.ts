@@ -157,6 +157,10 @@ export function buildLR0Automaton(g: Grammar, variant: 'LR(0)' | 'SLR(1)' = 'LR(
   return runJob(buildLR0AutomatonSteps(g, variant, runToEnd()))!;
 }
 
+export function buildSLR1Automaton(g: Grammar, _analysis?: GrammarAnalysis): LRAutomaton {
+  return buildLR0Automaton(g, 'SLR(1)');
+}
+
 export function* buildLR0AutomatonSteps(g: Grammar, variant: 'LR(0)' | 'SLR(1)', control: JobControl): Job<LRAutomaton | null> {
   const { grammar: augGrammar, augmentedProd } = augmentGrammar(g);
   const byLhs = rulesByLhs(augGrammar);

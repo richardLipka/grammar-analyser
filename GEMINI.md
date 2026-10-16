@@ -34,7 +34,7 @@ src/
 │   ├── generator/          # Word generation, example words, derivation trees (cloneTree, createTreeNode)
 │   ├── jobs/               # Long computations as resumable generator jobs
 │   ├── ll/                 # llTable.ts (LL(1), LL(2) tables), llParser.ts (LL simulator)
-│   ├── lr/                 # lrItem, lrAutomaton (LR(0), LALR(1) by propagation, LR(1)), lrTable, lrParser, lrConstruction, lrExplain
+│   ├── lr/                 # lrItem, lrAutomaton (LR(0), LALR(1) by propagation, LR(1)), lrTable, lrParser, glrParser (GLR/GSS), lrConstruction, lrExplain
 │   ├── all/                # allAtn.ts (ATN network), allPredictor.ts (Lookahead DFA & ATN simulation), allParser.ts (ALL simulator)
 │   ├── codegen/            # Recursive descent: generators (PL/0, Oberon, C, Python, JS), PL/0 compiler, P-code VM, step simulator, symbol table
 │   ├── export/             # LaTeX and graph export (graphExport.ts, latexExport.ts)
@@ -42,7 +42,7 @@ src/
 ├── i18n/                   # Czech and English texts (keys must exist in both)
 ├── ui/
 │   ├── components/         # Shared widgets (simulator controls, symbols, LaTeX button, explanations, ReferenceBar)
-│   ├── visualizer/         # SVG visualizers (AutomatonGraph, DerivationTree, LookaheadDFAGraph, GraphToolbar, graphUtils, usePanZoom)
+│   ├── visualizer/         # SVG visualizers (AutomatonGraph, DerivationTree, LookaheadDFAGraph, GSSGraphVisualizer, GraphToolbar, graphUtils, usePanZoom)
 │   ├── views/              # One view per tab (Overview, FirstFollow, LL, LR, AutomatonGraph, RecursiveDescent, ALL, etc.)
 │   └── urlState.ts, useGrammarHistory.ts, useSteppedJob.ts
 ├── styles/                 # CSS with theme variables (light default, dark, projector)
@@ -151,9 +151,9 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
 - **Automaton State Graph**:
   - Interactive SVG node-link diagram with Dagre layout, displaying states (item sets) and transitions (shifts & gotos).
   - Pan, zoom, node drag, node highlight, and state inspection drawer.
-- **Interactive Bottom-Up Simulator**:
-  - Dual stack display: State stack $[0, 2, 5]$ and Symbol stack $[\$, E, +]$.
-  - Trace log showing every shift, reduction, and final acceptance.
+- **Interactive Bottom-Up Simulators**:
+  - **Deterministic LR Simulator**: Dual stack display (State stack $[0, 2, 5]$ and Symbol stack $[\$, E, +]$), trace log showing shift, reduce, and accept steps.
+  - **Generalized LR (GLR) Simulator (Tomita 1985, Scott & Johnstone 2006)**: Uses Graph-Structured Stack (GSS) to parse non-deterministic and ambiguous grammars with conflicts. Forks on S/R and R/R conflicts, merges states on identical frontiers, and generates alternative derivation trees. Interactive SVG GSS graph visualizer with Dagre layout and step trace log.
 
 ### 5.3 Recursive Descent & Symbol Table (see `docs/REVIEW.md` §24–26)
 - **Code generation** for LL(1) grammars: PL/0 (compiled by our PL/0 compiler, run on the P-code VM, link to the course interpreter), Oberon-07, C99, Python 3, JavaScript. All print the same output (left parse, then OK or ERR); `rdLanguages.test.ts` checks it. The generated programs check the syntax only.

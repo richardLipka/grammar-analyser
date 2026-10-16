@@ -126,6 +126,29 @@ F -> "id"`,
     sampleInput: 'print id ;'
   },
   {
+    id: 'glr_ambiguous_arithmetic',
+    nameEn: 'Ambiguous Arithmetic Expressions (GLR / GSS Demo)',
+    nameCz: 'Nejednoznačné aritmetické výrazy (demonstrace GLR / GSS)',
+    descriptionEn: 'Classic ambiguous expression grammar without precedence declarations. Standard deterministic LR fails with Shift/Reduce conflicts on operators. Generalized LR (GLR / Tomita) forks parsing branches using a Graph-Structured Stack (GSS) and discovers both left-associative and right-associative derivation trees for inputs like "id + id * id".',
+    descriptionCz: 'Klasická nejednoznačná gramatika výrazů bez deklarací priorit. Standardní deterministický LR analyzátor selže na konfliktech přesun/redukce. Zobecněný analyzátor GLR (Tomita) větví zásobník pomocí Graph-Structured Stack (GSS) a pro vstup "id + id * id" nalezne oba derivační stromy (levou i pravou asociativitu).',
+    category: 'LR',
+    grammarText: `E -> E "+" E | E "*" E | "id" | "(" E ")"`,
+    sampleInput: 'id + id * id'
+  },
+  {
+    id: 'glr_natural_language_pp',
+    nameEn: 'Natural Language PP-Attachment (GLR / GSS Demo)',
+    nameCz: 'Nejednoznačnost vazby předložky v přirozeném jazyce (GLR / GSS)',
+    descriptionEn: 'The famous "I saw the man with the telescope" ambiguity in natural language syntax. The prepositional phrase (PP) can attach either to the verb phrase (VP) or the noun phrase (NP). GLR parses both interpretations concurrently via GSS branching and yields two distinct syntax trees.',
+    descriptionCz: 'Slavná nejednoznačnost vazby předložkové fráze ("Viděl jsem muže s dalekohledem"). Předložková fráze (PP) se může vázat na sloveso (VP) nebo na podstatné jméno (NP). Analyzátor GLR rozloží obě interpretace současně pomocí GSS a vytvoří dva derivační stromy.',
+    category: 'LR',
+    grammarText: `S -> NP VP
+VP -> VP PP | "verb" NP
+NP -> "det" "noun" | NP PP
+PP -> "prep" NP`,
+    sampleInput: 'det noun verb det noun prep det noun'
+  },
+  {
     id: 'palindromes',
     nameEn: 'Even & Odd Palindromes',
     nameCz: 'Palindromy (liché a sudé)',
