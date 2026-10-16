@@ -17,7 +17,7 @@ import {
 import { buildLLTable } from '../ll/llTable';
 import { cnfViolations } from '../parser/cyk';
 import { explainWord } from '../parser/derivationAttempt';
-import { generateWords, DerivationNode } from '../generator/wordGenerator';
+import { generateWords, DerivationNode, treeStructuresDiffer } from '../generator/wordGenerator';
 import { Language } from '../../i18n/translations';
 
 export interface DynamicAnalysisResult {
@@ -336,19 +336,6 @@ function treeUsesChangedRules(node: DerivationNode, g1Rules: Set<string>): boole
   const sig = `${node.symbol}->${rhs.join(' ')}`;
   if (!g1Rules.has(sig)) return true;
   return node.children.some(c => treeUsesChangedRules(c, g1Rules));
-}
-
-/** Compute structural tree difference metric between two trees. */
-function treeStructuresDiffer(t1: DerivationNode | null, t2: DerivationNode | null): boolean {
-  if (!t1 || !t2) return false;
-  if (t1.symbol !== t2.symbol) return true;
-  const k1 = t1.children || [];
-  const k2 = t2.children || [];
-  if (k1.length !== k2.length) return true;
-  for (let i = 0; i < k1.length; i++) {
-    if (treeStructuresDiffer(k1[i], k2[i])) return true;
-  }
-  return false;
 }
 
 export interface ComparisonWordChoice {

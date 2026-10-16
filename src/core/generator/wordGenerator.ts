@@ -283,3 +283,32 @@ function hasUnexpanded(node: DerivationNode): boolean {
   if (!node.isTerminal && (!node.children || node.children.length === 0)) return true;
   return (node.children || []).some(hasUnexpanded);
 }
+
+/** Compute node count and maximum depth of a derivation tree. */
+export function getTreeMetrics(node?: DerivationNode | null): { nodes: number; depth: number } {
+  if (!node) return { nodes: 0, depth: 0 };
+  let nodes = 1;
+  let maxChildDepth = 0;
+  if (node.children) {
+    for (const child of node.children) {
+      const childMetrics = getTreeMetrics(child);
+      nodes += childMetrics.nodes;
+      maxChildDepth = Math.max(maxChildDepth, childMetrics.depth);
+    }
+  }
+  return { nodes, depth: 1 + maxChildDepth };
+}
+
+/** Determine if two derivation trees differ in their syntactic structure. */
+export function treeStructuresDiffer(t1: DerivationNode | null, t2: DerivationNode | null): boolean {
+  if (!t1 || !t2) return t1 !== t2;
+  if (t1.symbol !== t2.symbol) return true;
+  const k1 = t1.children || [];
+  const k2 = t2.children || [];
+  if (k1.length !== k2.length) return true;
+  for (let i = 0; i < k1.length; i++) {
+    if (treeStructuresDiffer(k1[i], k2[i])) return true;
+  }
+  return false;
+}
+

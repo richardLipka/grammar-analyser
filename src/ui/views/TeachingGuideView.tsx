@@ -9,7 +9,7 @@ import { ComparisonReport, Derivation } from './EquivalenceView';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { ProductionText } from '../components/Symbols';
 import { explainWord } from '../../core/parser/derivationAttempt';
-import { DerivationNode } from '../../core/generator/wordGenerator';
+import { DerivationNode, getTreeMetrics } from '../../core/generator/wordGenerator';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { TEACHING_TECHNIQUES } from '../../core/teaching/teachingGuideData';
 import {
@@ -44,21 +44,6 @@ interface TeachingGuideViewProps {
   parseOptions: ParseOptions;
   onLoadIntoEditor?: (text: string) => void;
   mainGrammarText?: string;
-}
-
-/** Compute node count and maximum depth of a derivation tree. */
-function getTreeMetrics(node?: DerivationNode | null): { nodes: number; depth: number } {
-  if (!node) return { nodes: 0, depth: 0 };
-  let nodes = 1;
-  let maxChildDepth = 0;
-  if (node.children) {
-    for (const child of node.children) {
-      const childMetrics = getTreeMetrics(child);
-      nodes += childMetrics.nodes;
-      maxChildDepth = Math.max(maxChildDepth, childMetrics.depth);
-    }
-  }
-  return { nodes, depth: 1 + maxChildDepth };
 }
 
 export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({

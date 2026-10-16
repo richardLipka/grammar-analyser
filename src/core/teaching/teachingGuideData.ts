@@ -10,11 +10,9 @@
  * - Language equivalence verification with the Earley-based language comparator.
  */
 
-import { Grammar, formatGrammarForEditor } from '../ast/grammar';
-import { parseGrammar } from '../parser/grammarParser';
+import { Grammar } from '../ast/grammar';
 import {
   TransformationResult,
-  TransformationStep,
   reduceGrammar,
   removeEpsilonRules,
   removeUnitRules,
