@@ -184,7 +184,7 @@ export const EquivalenceView: React.FC<EquivalenceViewProps> = ({ grammar, text,
   );
 };
 
-const ComparisonReport: React.FC<{ result: ComparisonResult; lang: Language }> = ({ result, lang }) => {
+export const ComparisonReport: React.FC<{ result: ComparisonResult; lang: Language }> = ({ result, lang }) => {
   const cz = lang === 'cz';
   if (result.kind === 'different') {
     const word = result.word.join(' ') || 'ε';

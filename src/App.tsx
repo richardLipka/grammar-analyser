@@ -20,6 +20,7 @@ import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
 import { EquivalenceView } from './ui/views/EquivalenceView';
+import { TeachingGuideView } from './ui/views/TeachingGuideView';
 import { LatexExportView } from './ui/views/LatexExportView';
 import { LatexExportButton } from './ui/components/LatexExportButton';
 import { FavLogo } from './ui/components/FavLogo';
@@ -37,7 +38,7 @@ import { demonstrationWord } from './core/generator/exampleWord';
 import {
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
   Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2, ClipboardCheck,
-  ListX, Trash2
+  ListX, Trash2, GraduationCap
 } from 'lucide-react';
 
 type TabId = UrlTab;
@@ -491,6 +492,7 @@ export const App: React.FC = () => {
     { id: 'overview', icon: <Eye size={15} />, label: t.tabOverview },
     { id: 'firstFollow', icon: <GitCommit size={15} />, label: t.tabFirstFollow },
     { id: 'transformations', icon: <Sparkles size={15} />, label: t.tabTransform },
+    { id: 'teaching', icon: <GraduationCap size={15} />, label: t.tabTeaching, title: t.tabTeachingTitle },
     { id: 'check', icon: <ClipboardCheck size={15} />, label: t.tabCheck },
     { id: 'll', icon: <Layers size={15} />, label: t.tabLL, title: t.tabLLTitle },
     { id: 'lr', icon: <Cpu size={15} />, label: t.tabLR, title: t.tabLRTitle },
@@ -503,7 +505,7 @@ export const App: React.FC = () => {
   // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
   const TAB_ROWS: TabId[][] = [
     ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership'],
-    ['transformations', 'check', 'rd', 'latex']
+    ['transformations', 'teaching', 'check', 'rd', 'latex']
   ];
 
   return (
@@ -998,12 +1000,20 @@ export const App: React.FC = () => {
             )}
 
             {!analyzedGrammar || !analysisData ? (
-              <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
-                {isCalculating ? t.recalculating : t.pleaseSpecifyGrammar}
-              </div>
+              activeTab === 'teaching' ? (
+                <TeachingGuideView
+                  lang={lang}
+                  parseOptions={parseOptions}
+                  onLoadIntoEditor={(txt) => handleEditGrammar(txt)}
+                />
+              ) : (
+                <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
+                  {isCalculating ? t.recalculating : t.pleaseSpecifyGrammar}
+                </div>
+              )
             ) : (
-              // the comparison works on the text in the editor, not on the analysis, so it is not greyed out
-              <div className={(isStale || isCalculating) && activeTab !== 'check' ? 'results-invalid' : ''}>
+              // the comparison and teaching guide work independently of the analysis, so they are not greyed out
+              <div className={(isStale || isCalculating) && activeTab !== 'check' && activeTab !== 'teaching' ? 'results-invalid' : ''}>
                 {activeTab === 'overview' && (
                   <OverviewView
                     grammar={analyzedGrammar}
@@ -1040,6 +1050,14 @@ export const App: React.FC = () => {
                     onOpenClickMode={() => setEditorMode('click')}
                     onShowInfo={setInfoKey}
                     lang={lang}
+                  />
+                )}
+
+                {activeTab === 'teaching' && (
+                  <TeachingGuideView
+                    lang={lang}
+                    parseOptions={parseOptions}
+                    onLoadIntoEditor={(txt) => handleEditGrammar(txt)}
                   />
                 )}
 
