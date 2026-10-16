@@ -181,6 +181,11 @@ class RuleTable {
     return name;
   }
 
+  delete(nt: string) {
+    this.rules.delete(nt);
+    this.order = this.order.filter(x => x !== nt);
+  }
+
   size(): number {
     let n = 0;
     for (const alts of this.rules.values()) n += alts.length;
@@ -2199,6 +2204,30 @@ export function rightFactorGrammar(g: Grammar): TransformationResult {
 export function disambiguateDanglingElse(g: Grammar): TransformationResult {
   const table = new RuleTable(g);
 
+  // Pre-check: if a non-terminal (e.g. if_stmt) defines the if-else pair but recurses on a parent (e.g. stmt),
+  // and the parent has a unit rule to it (stmt -> if_stmt), inline if_stmt into parent stmt first.
+  for (const nt of table.order) {
+    const alts = table.get(nt);
+    for (const a1 of alts) {
+      if (a1.length < 2) continue;
+      const recNt = a1[a1.length - 1];
+      if (!g.nonTerminals.has(recNt) || recNt === nt) continue;
+      const alphaCandidate = a1.slice(0, a1.length - 1);
+      for (const a2 of alts) {
+        if (a2 === a1) continue;
+        if (a2.length > a1.length + 1 && hasPrefix(a2, [...alphaCandidate, recNt]) && a2[a2.length - 1] === recNt) {
+          const parentAlts = table.get(recNt);
+          if (parentAlts && parentAlts.some(ra => ra.length === 1 && ra[0] === nt)) {
+            const inlined = parentAlts.flatMap(ra => (ra.length === 1 && ra[0] === nt ? alts : [ra]));
+            table.set(recNt, inlined);
+            table.delete(nt);
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Find a non-terminal S with two productions: S -> α S and S -> α S β S (with β non-empty)
   let targetNt: string | null = null;
   let prefix: string[] = [];
@@ -2556,7 +2585,16 @@ export function convertLeftLinearToRightLinear(g: Grammar): TransformationResult
   // Construct dual NFA transitions and build right-linear rules
   const table = new RuleTable(g);
   const s = g.startSymbol;
-  const startNt = table.fresh('S_r');
+
+  // Non-terminals with outgoing transitions in the dual NFA
+  const hasOutgoing = new Set<string>();
+  for (const p of g.productions) {
+    if (p.rhs.length === 2 && g.nonTerminals.has(p.rhs[0])) {
+      hasOutgoing.add(p.rhs[0]);
+    }
+  }
+
+  const startNt = table.fresh('S0');
 
   const ntMap = new Map<string, string>();
   for (const nt of g.nonTerminals) {
@@ -2579,7 +2617,9 @@ export function convertLeftLinearToRightLinear(g: Grammar): TransformationResult
       if (targetState === s) {
         newRules.get(startNt)!.push([a]);
       }
-      newRules.get(startNt)!.push([a, targetNt]);
+      if (hasOutgoing.has(targetState)) {
+        newRules.get(startNt)!.push([a, targetNt]);
+      }
     } else if (p.rhs.length === 0 && p.lhs === s) {
       newRules.get(startNt)!.push([]);
     }
@@ -2597,7 +2637,9 @@ export function convertLeftLinearToRightLinear(g: Grammar): TransformationResult
       if (targetState === s) {
         newRules.get(srcNt)!.push([a]);
       }
-      newRules.get(srcNt)!.push([a, targetNt]);
+      if (hasOutgoing.has(targetState)) {
+        newRules.get(srcNt)!.push([a, targetNt]);
+      }
     }
   }
 

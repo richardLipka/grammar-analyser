@@ -738,10 +738,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Zavedli kanonickou transformaci na úplné a neúplné příkazy, která odstraňuje Shift/Reduce kolizi bez změny přijímaného jazyka.'
       }
     },
-    exampleGrammarText: 'S -> i C t S | i C t S e S | a\nC -> c',
+    exampleGrammarText: 'S -> "if" C "then" S "else" S | "if" C "then" S | "other"\nC -> "c"',
     exampleIssueNote: {
-      en: 'S -> i C t S vs S -> i C t S e S creates a Shift/Reduce conflict on "e" (else).',
-      cz: 'S -> i C t S a S -> i C t S e S vytváří Shift/Reduce kolizi na symbolu "e" (else).'
+      en: 'S -> "if" C "then" S vs S -> "if" C "then" S "else" S creates a Shift/Reduce conflict on "else".',
+      cz: 'S -> "if" C "then" S a S -> "if" C "then" S "else" S vytváří Shift/Reduce kolizi na symbolu "else".'
     },
     promisedForm: [],
     apply: (g) => disambiguateDanglingElse(g)
@@ -816,10 +816,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Dokázali, že LR kolize způsobené splynutím lookaheadů napříč kontexty lze mechanicky eliminovat rozštěpením neterminálů podle stavů.'
       }
     },
-    exampleGrammarText: 'S -> a A d | b B d | a B e | b A e\nA -> c\nB -> c',
+    exampleGrammarText: 'S -> a A x | b B x | a B y | b A y\nA -> c\nB -> c',
     exampleIssueNote: {
-      en: 'Classic grammar separating LR(1) from LALR(1): state merging creates a Reduce/Reduce conflict on "d" and "e".',
-      cz: 'Klasická gramatika oddělující LR(1) od LALR(1): sloučení stavů vyvolá Reduce/Reduce kolizi na "d" a "e".'
+      en: 'Classic grammar separating LR(1) from LALR(1): state merging creates a Reduce/Reduce conflict on "x" and "y".',
+      cz: 'Klasická gramatika oddělující LR(1) od LALR(1): sloučení stavů vyvolá Reduce/Reduce kolizi na "x" a "y".'
     },
     promisedForm: [],
     apply: (g) => splitNonTerminalLRContext(g)
@@ -855,10 +855,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Představuje moderní analýzu LR kolizí a eliminaci neadekvátnosti rozkladových tabulek, implementovanou v GNU Bison 3.0+.'
       }
     },
-    exampleGrammarText: 'S -> i C t S | i C t S e S | a\nC -> c',
+    exampleGrammarText: 'S -> "if" C "then" S "else" S | "if" C "then" S | "other"\nC -> "c"',
     exampleIssueNote: {
-      en: 'Shift/Reduce conflict in LR(0), SLR(1), and LALR(1).',
-      cz: 'Shift/Reduce kolize v LR(0), SLR(1) a LALR(1).'
+      en: 'Shift/Reduce conflict in LR(0), SLR(1), and LALR(1) on "else".',
+      cz: 'Shift/Reduce kolize v LR(0), SLR(1) a LALR(1) na symbolu "else".'
     },
     promisedForm: [],
     apply: (g) => attemptResolveLRConflicts(g)

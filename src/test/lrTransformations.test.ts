@@ -40,6 +40,36 @@ describe('Category A LR Transformations & Equivalence', () => {
       // SLR(1) conflicts should now be eliminated
       expect(resTable.conflicts.length).toBe(0);
     });
+
+    it('handles realistic multi-production forms including separate if_stmt non-terminal', () => {
+      const complexRaw = `
+        stmt -> if_stmt | "other"
+        if_stmt -> "if" "c" "then" stmt "else" stmt | "if" "c" "then" stmt
+      `;
+      const g = parseGrammar(complexRaw).grammar!;
+      const res = disambiguateDanglingElse(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      const comp = compareLanguages(g, res.transformedGrammar, 8);
+      expect(comp.kind).toBe('same-up-to');
+      const analysis = analyzeGrammar(res.transformedGrammar, { k2: false });
+      const resTable = buildLRTable(buildLR0Automaton(res.transformedGrammar, 'SLR(1)'), res.transformedGrammar, resAnalysis(res));
+      expect(resTable.conflicts.length).toBe(0);
+
+      function resAnalysis(r: any) {
+        return analyzeGrammar(r.transformedGrammar, { k2: false });
+      }
+    });
+
+    it('handles C-style parenthesized if conditionals', () => {
+      const cStyle = `
+        stmt -> "if" "(" "c" ")" stmt "else" stmt | "if" "(" "c" ")" stmt | "other"
+      `;
+      const g = parseGrammar(cStyle).grammar!;
+      const res = disambiguateDanglingElse(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      const comp = compareLanguages(g, res.transformedGrammar, 8);
+      expect(comp.kind).toBe('same-up-to');
+    });
   });
 
   describe('Precedence Stratification (Floyd 1963)', () => {
