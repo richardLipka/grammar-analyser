@@ -95,7 +95,7 @@ export const LR_TECHNIQUE_REFERENCES = [
     topicEn: 'Shift-Reduce Parsing Algorithm',
     topicCz: 'Algoritmus analýzy přesun-redukce',
     citation: 'Aho, A. V., Johnson, S. C.: LR parsing. ACM Computing Surveys 6(2), 99–124, 1974.',
-    url: 'https://doi.org/10.1145/356625.356629'
+    url: 'https://doi.org/10.1145/356628.356629'
   }
 ];
 
@@ -533,7 +533,7 @@ export const LRView: React.FC<LRViewProps> = ({
         <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 600 }}>{cz ? 'Teoretický základ (primární literatura):' : 'Theoretical foundation (primary literature):'}</span>
           <span>Aho & Johnson (1974): LR Parsing (ACM Computing Surveys 6(2), pp. 99–124)</span>
-          <a href="https://doi.org/10.1145/356625.356629" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
+          <a href="https://doi.org/10.1145/356628.356629" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
             [DOI]
           </a>
         </div>

@@ -68,7 +68,7 @@ export const RECURSIVE_DESCENT_PRIMARY_REFERENCES = [
     topicEn: 'Recursive Descent Formulation',
     topicCz: 'První formulace rekurzivního sestupu',
     citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3(4), 159–167, 1961.',
-    url: 'https://doi.org/10.1524/itit.1961.3.14.159'
+    url: 'https://dblp.org/rec/journals/er/Lucas61.html'
   },
   {
     authorYear: 'Conway (1963)',

@@ -43,20 +43,24 @@ export const REFERENCES: Record<string, Reference> = {
     citation: 'Hopcroft, J. E., Motwani, R., Ullman, J. D.: Introduction to Automata Theory, Languages, and Computation. 3rd ed. Addison-Wesley, 2006.'
   },
   au72: {
-    citation: 'Aho, A. V., Ullman, J. D.: The Theory of Parsing, Translation, and Compiling. Vol. I: Parsing. Prentice-Hall, 1972.'
+    citation: 'Aho, A. V., Ullman, J. D.: The Theory of Parsing, Translation, and Compiling. Vol. I: Parsing. Prentice-Hall, 1972.',
+    url: 'https://archive.org/details/theoryofparsingt00ahoa'
   },
   barhillel61: {
     citation: 'Bar-Hillel, Y., Perles, M., Shamir, E.: On formal properties of simple phrase structure grammars. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961.',
     url: 'https://doi.org/10.1515/9783112613764-007'
   },
   chomsky59: {
-    citation: 'Chomsky, N.: On certain formal properties of grammars. Information and Control 2(2), 137–167, 1959.'
+    citation: 'Chomsky, N.: On certain formal properties of grammars. Information and Control 2(2), 137–167, 1959.',
+    url: 'https://doi.org/10.1016/S0019-9958(59)90362-6'
   },
   greibach65: {
-    citation: 'Greibach, S. A.: A new normal-form theorem for context-free phrase structure grammars. Journal of the ACM 12(1), 42–52, 1965.'
+    citation: 'Greibach, S. A.: A new normal-form theorem for context-free phrase structure grammars. Journal of the ACM 12(1), 42–52, 1965.',
+    url: 'https://doi.org/10.1145/321250.321254'
   },
   rl70: {
-    citation: 'Rosenkrantz, D. J., Lewis, P. M.: Deterministic left corner parsing. 11th Annual Symposium on Switching and Automata Theory, 139–152, 1970.'
+    citation: 'Rosenkrantz, D. J., Lewis, P. M.: Deterministic left corner parsing. 11th Annual Symposium on Switching and Automata Theory, 139–152, 1970.',
+    url: 'https://doi.org/10.1109/SWAT.1970.19'
   },
   moore00: {
     citation: 'Moore, R. C.: Removing left recursion from context-free grammars. 1st Meeting of the North American Chapter of the ACL (NAACL), 2000.',
@@ -68,11 +72,11 @@ export const REFERENCES: Record<string, Reference> = {
   },
   foster68: {
     citation: 'Foster, J. M.: A syntax improving program. The Computer Journal 11(1), 31–34, 1968.',
-    url: 'https://academic.oup.com/comjnl/article/11/1/31/424306'
+    url: 'https://doi.org/10.1093/comjnl/11.1.31'
   },
   rs70: {
-    citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17, 226–256, 1970.',
-    url: 'https://www.sciencedirect.com/science/article/pii/S0019995870904468'
+    citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17(3), 226–256, 1970.',
+    url: 'https://doi.org/10.1016/S0019-9958(70)90446-8'
   },
   floyd63: {
     citation: 'Floyd, R. W.: Syntactic analysis and operator precedence. Journal of the ACM 10(3), 316–333, 1963.',
@@ -107,8 +111,8 @@ export const REFERENCES: Record<string, Reference> = {
     url: 'https://doi.org/10.1007/BF00290336'
   },
   denny08: {
-    citation: 'Denny, J. E., Malloy, B. A.: IELR(1): Practical LR(1) parser table generation for Bison. Proceedings of the 2008 ACM SIGPLAN Symposium on Partial Evaluation and Semantics-based Program Manipulation (PEPM \'08), 201–210, 2008.',
-    url: 'https://doi.org/10.1145/1328408.1328435'
+    citation: 'Denny, J. E., Malloy, B. A.: IELR(1): Practical LR(1) parser tables for non-LR(1) grammars with conflict resolution. In: Proceedings of the 2008 ACM Symposium on Applied Computing (SAC \'08), pp. 240–245, 2008.',
+    url: 'https://doi.org/10.1145/1363686.1363747'
   },
   lewis68: {
     citation: 'Lewis, P. M., Stearns, R. E.: Syntax-directed transduction. Journal of the ACM 15(3), 465–488, 1968.',
@@ -119,10 +123,12 @@ export const REFERENCES: Record<string, Reference> = {
     url: 'https://doi.org/10.1007/BF00289517'
   },
   lucas61: {
-    citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3, 159–167, 1961.'
+    citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3(4), 159–167, 1961.',
+    url: 'https://dblp.org/rec/journals/er/Lucas61.html'
   },
   wirth76: {
-    citation: 'Wirth, N.: Algorithms + Data Structures = Programs. Prentice-Hall, Englewood Cliffs, NJ, 1976.'
+    citation: 'Wirth, N.: Algorithms + Data Structures = Programs. Prentice-Hall, Englewood Cliffs, NJ, 1976.',
+    url: 'https://en.wikipedia.org/wiki/Algorithms_%2B_Data_Structures_%3D_Programs'
   }
 };
 

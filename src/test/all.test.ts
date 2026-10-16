@@ -124,6 +124,36 @@ describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
       expect(comp2.canParse).toBe(true);
       expect(comp2.hasLeftRecursion).toBe(false);
     });
+
+    it('safely handles arithmetic expression grammar with left recursion without hanging or freezing', () => {
+      const exprGrammar = parseGrammar(`
+        E -> E "+" T | T
+        T -> T "*" F | F
+        F -> "(" E ")" | "id"
+      `).grammar!;
+
+      const analysis = analyzeGrammar(exprGrammar, { k2: false });
+      const comp = checkALLCompatibility(exprGrammar, analysis);
+      expect(comp.canParse).toBe(false);
+      expect(comp.hasLeftRecursion).toBe(true);
+      expect(comp.leftRecursiveRules).toContain('E');
+      expect(comp.leftRecursiveRules).toContain('T');
+
+      const atn = buildATN(exprGrammar);
+      expect(atn.states.length).toBeGreaterThan(0);
+
+      // Verify that building DFA / closure on left-recursive grammar does not freeze
+      for (const dp of atn.decisionPoints) {
+        const { dfa } = createLookaheadDFA(dp, atn);
+        expect(dfa.states.length).toBeGreaterThan(0);
+      }
+
+      // Verify simulation halts with clean diagnostic step rather than throwing or looping
+      const sim = simulateALLParse(['id', '+', 'id'], exprGrammar, atn);
+      expect(sim.accepted).toBe(false);
+      expect(sim.steps.length).toBeGreaterThan(0);
+      expect(sim.steps[0].action).toContain('left-recursive');
+    });
   });
 
   describe('Primary Literature References', () => {

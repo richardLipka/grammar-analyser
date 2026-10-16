@@ -134,6 +134,30 @@ export function simulateALLParse(
 ): ALLSimulationResult {
   const dfaCache = dfaCacheMap ?? new Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>();
 
+  // Guard against direct left recursion in top-down simulation
+  const directLeftRecRules = Array.from(new Set(
+    grammar.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs)
+  ));
+  if (directLeftRecRules.length > 0) {
+    return {
+      accepted: false,
+      steps: [{
+        stepIndex: 0,
+        inputIndex: 0,
+        currentToken: tokens[0],
+        remainingTokens: [...tokens],
+        callStack: [grammar.startSymbol],
+        action: `Parsing halted: Grammar contains left-recursive rule(s) on [${directLeftRecRules.join(', ')}]. ALL(*) is a top-down parsing algorithm and requires eliminating left recursion (Parr, Harwell, Fisher 2014, §3).`,
+        actionCz: `Rozklad zastaven: Gramatika obsahuje levě rekurzivní pravidla v neterminálech [${directLeftRecRules.join(', ')}]. ALL(*) je algoritmus shora dolů a vyžaduje předchozí odstranění levé rekurze (Parr, Harwell, Fisher 2014, §3).`,
+        derivationTree: undefined
+      }],
+      maxLookaheadDepth: 0,
+      decisionsMade: 0,
+      error: `Grammar contains left-recursive non-terminals: ${directLeftRecRules.join(', ')}.`,
+      errorCz: `Gramatika obsahuje levě rekurzivní neterminály: ${directLeftRecRules.join(', ')}.`
+    };
+  }
+
   // Ensure DFA caches exist for all decision points
   for (const dp of atn.decisionPoints) {
     if (!dfaCache.has(dp.decisionNumber)) {
@@ -190,6 +214,20 @@ export function simulateALLParse(
         callStack: [...callStack],
         action: `Parsing terminated: step limit exceeded (${MAX_PARSE_STEPS})`,
         actionCz: `Rozklad ukončen: překročen limit počtu kroků (${MAX_PARSE_STEPS})`,
+        derivationTree: cloneTree(rootNode)
+      });
+      return false;
+    }
+
+    const recDepth = callStack.filter(s => s === nt).length;
+    if (recDepth > 8) {
+      steps.push({
+        stepIndex: steps.length,
+        inputIndex: tokenIdx,
+        remainingTokens: tokens.slice(tokenIdx),
+        callStack: [...callStack],
+        action: `Parsing halted: recursive depth exceeded for '${nt}' without consuming input (left recursion cycle detected)`,
+        actionCz: `Rozklad zastaven: překročena hloubka rekurze pro '${nt}' bez přečtení vstupu (detekován cyklus levé rekurze)`,
         derivationTree: cloneTree(rootNode)
       });
       return false;

@@ -13,6 +13,8 @@ export interface ATNConfig {
   alt: number;
   /** Call stack: follow-up return state IDs */
   context: number[];
+  /** Rules entered along current epsilon/rule path without token consumption */
+  rulesEntered?: number[];
 }
 
 export interface DFAState {
@@ -67,6 +69,7 @@ function stateConfigsKey(configs: ATNConfig[]): string {
 
 /**
  * Computes epsilon-closure of a set of ATN configurations.
+ * Protects against infinite left-recursive cycles and stack explosion.
  */
 export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig[] {
   const result: ATNConfig[] = [];
@@ -79,7 +82,11 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
     result.push(c);
   }
 
-  while (queue.length > 0) {
+  const MAX_CONTEXT_DEPTH = 20;
+  const MAX_CLOSURE_STEPS = 5000;
+  let steps = 0;
+
+  while (queue.length > 0 && steps++ < MAX_CLOSURE_STEPS) {
     const current = queue.shift()!;
     const state = atn.states[current.stateId];
     if (!state) continue;
@@ -92,7 +99,8 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
         const nextConfig: ATNConfig = {
           stateId: returnState,
           alt: current.alt,
-          context: nextContext
+          context: nextContext,
+          rulesEntered: current.rulesEntered
         };
         const key = configKey(nextConfig);
         if (!visited.has(key)) {
@@ -107,7 +115,8 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
           const nextConfig: ATNConfig = {
             stateId: retState,
             alt: current.alt,
-            context: []
+            context: [],
+            rulesEntered: current.rulesEntered
           };
           const key = configKey(nextConfig);
           if (!visited.has(key)) {
@@ -126,7 +135,8 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
         const nextConfig: ATNConfig = {
           stateId: trans.target,
           alt: current.alt,
-          context: current.context
+          context: current.context,
+          rulesEntered: current.rulesEntered
         };
         const key = configKey(nextConfig);
         if (!visited.has(key)) {
@@ -135,11 +145,23 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
           queue.push(nextConfig);
         }
       } else if (trans.kind === 'rule') {
+        // Left recursion & cyclic recursion protection:
+        // If this rule start state has already been entered along this epsilon-closure path
+        // without consuming any input tokens, further traversal is an infinite loop (e.g. A -> A alpha).
+        const rulesEntered = current.rulesEntered ?? [];
+        if (rulesEntered.includes(trans.target)) {
+          continue;
+        }
+        if (current.context.length >= MAX_CONTEXT_DEPTH) {
+          continue;
+        }
+
         const nextContext = trans.followState !== undefined ? [trans.followState, ...current.context] : current.context;
         const nextConfig: ATNConfig = {
           stateId: trans.target,
           alt: current.alt,
-          context: nextContext
+          context: nextContext,
+          rulesEntered: [...rulesEntered, trans.target]
         };
         const key = configKey(nextConfig);
         if (!visited.has(key)) {

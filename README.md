@@ -196,6 +196,19 @@ src/
 
 ---
 
+## 📚 Academic Literature & Bibliography
+
+Every algorithm, automaton construction, conflict resolution technique, and grammar transformation in `GrammarAnalyser` is based on rigorous theoretical compiler and formal language literature.
+
+See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibliographic directory covering:
+- **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
+- **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
+- **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
+- **General CFG Parsing**: Earley (1970), Cocke & Schwartz (1970), Younger (1967), Kasami (1965).
+- **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).
+
+---
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE). Free to use, adapt and share in schools.
@@ -205,3 +218,4 @@ Department of Computer Science and Engineering, Faculty of Applied Sciences,
 University of West Bohemia.
 
 The faculty mark shown in the header belongs to the university and is not covered by the MIT licence.
+

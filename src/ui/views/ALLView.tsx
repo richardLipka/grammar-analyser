@@ -65,14 +65,17 @@ export const ALLView: React.FC<ALLViewProps> = ({
   const atn: ATN = useMemo(() => buildATN(grammar), [grammar]);
   const compatibility = useMemo(() => checkALLCompatibility(grammar, analysis), [grammar, analysis]);
 
-  // Pre-warmed DFA cache for all decision points
+  // Pre-warmed DFA cache for all decision points (computed only when grammar is compatible with top-down parsing)
   const dfaCache = useMemo(() => {
     const map = new Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>();
+    if (!compatibility.canParse) {
+      return map;
+    }
     for (const dp of atn.decisionPoints) {
       map.set(dp.decisionNumber, createLookaheadDFA(dp, atn));
     }
     return map;
-  }, [atn]);
+  }, [atn, compatibility.canParse]);
 
   // Selected decision point for Lookahead DFA inspection
   const [selectedDecisionNum, setSelectedDecisionNum] = useState<number>(
@@ -88,12 +91,30 @@ export const ALLView: React.FC<ALLViewProps> = ({
   const activeDecision = atn.decisionPoints.find(dp => dp.decisionNumber === selectedDecisionNum);
   const activeDfaEntry = activeDecision ? dfaCache.get(activeDecision.decisionNumber) : undefined;
 
-  // Simulator state
+  // Simulator state: guarded against running on left-recursive grammars
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
-  const simulation: ALLSimulationResult = useMemo(
-    () => simulateALLParse(tokenized.tokens, grammar, atn, dfaCache),
-    [tokenized, grammar, atn, dfaCache]
-  );
+  const simulation: ALLSimulationResult = useMemo(() => {
+    if (!compatibility.canParse) {
+      return {
+        accepted: false,
+        steps: [{
+          stepIndex: 0,
+          inputIndex: 0,
+          currentToken: tokenized.tokens[0],
+          remainingTokens: [...tokenized.tokens],
+          callStack: [grammar.startSymbol],
+          action: `Parsing halted: Grammar contains left-recursive rule(s) [${compatibility.leftRecursiveRules.join(', ')}]. ALL(*) top-down parsing requires eliminating left recursion first (Parr, Harwell, Fisher 2014, §3).`,
+          actionCz: `Rozklad zastaven: Gramatika obsahuje levě rekurzivní pravidla [${compatibility.leftRecursiveRules.join(', ')}]. Algoritmus ALL(*) shora dolů vyžaduje nejprve odstranit levou rekurzi (Parr, Harwell, Fisher 2014, §3).`,
+          derivationTree: undefined
+        }],
+        maxLookaheadDepth: 0,
+        decisionsMade: 0,
+        error: compatibility.reasons.join('\n'),
+        errorCz: compatibility.reasonsCz.join('\n')
+      };
+    }
+    return simulateALLParse(tokenized.tokens, grammar, atn, dfaCache);
+  }, [tokenized, grammar, atn, dfaCache, compatibility]);
 
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -225,7 +246,7 @@ export const ALLView: React.FC<ALLViewProps> = ({
             ))}
           </div>
 
-          {activeDecision && activeDfaEntry && (
+          {activeDecision && (
             <div style={{ backgroundColor: 'var(--color-bg-base)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
               <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px' }}>
                 {cz ? `Rozhodnutí D${activeDecision.decisionNumber} pro neterminál ` : `Decision D${activeDecision.decisionNumber} for non-terminal `}
@@ -244,10 +265,18 @@ export const ALLView: React.FC<ALLViewProps> = ({
                 ))}
               </div>
 
-              {/* Lookahead DFA States Table */}
-              <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--color-text-muted)' }}>
-                {cz ? 'Stavy v mezipaměti Lookahead DFA:' : 'Cached Lookahead DFA States:'}
-              </div>
+              {!compatibility.canParse ? (
+                <div style={{ fontSize: '12px', color: 'var(--color-warning)', padding: '8px 12px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                  {cz
+                    ? 'Stavy Lookahead DFA se nevytvářejí, protože neterminál se účastní levé rekurze. V souladu s teorií ALL(*) (Parr et al. 2014) je nutné předchozí odstranění levé rekurze.'
+                    : 'Lookahead DFA states are not materialized because this non-terminal participates in left recursion. Per ALL(*) theory (Parr et al. 2014), left recursion must be eliminated first.'}
+                </div>
+              ) : activeDfaEntry && (
+                <>
+                  {/* Lookahead DFA States Table */}
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--color-text-muted)' }}>
+                    {cz ? 'Stavy v mezipaměti Lookahead DFA:' : 'Cached Lookahead DFA States:'}
+                  </div>
               <div className="table-responsive">
                 <table className="data-table" style={{ fontSize: '12px' }}>
                   <thead>
@@ -304,6 +333,8 @@ export const ALLView: React.FC<ALLViewProps> = ({
                   </tbody>
                 </table>
               </div>
+            </>
+          )}
             </div>
           )}
         </div>

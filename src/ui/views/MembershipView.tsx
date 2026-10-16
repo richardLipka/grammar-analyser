@@ -28,7 +28,7 @@ export const MEMBERSHIP_PRIMARY_REFERENCES = {
       topicEn: 'CYK Parsing Algorithm',
       topicCz: 'Algoritmus CYK',
       citation: 'Cocke, J., Schwartz, J. T.: Programming Languages and Their Compilers: Preliminary Notes. Courant Institute of Mathematical Sciences, New York University, 1970.',
-      url: 'https://archive.org/details/programminglangu00cock'
+      url: 'https://softwarepreservation.computerhistory.org/SETL/precursors/Cocke_Schwartz-Programming_Languages_and_Their_Compilers-1970.pdf'
     },
     {
       authorYear: 'Younger (1967)',
@@ -41,8 +41,8 @@ export const MEMBERSHIP_PRIMARY_REFERENCES = {
       authorYear: 'Kasami (1965)',
       topicEn: 'Efficient Syntax-Analysis Algorithm',
       topicCz: 'Efektivní syntaktická analýza BKG',
-      citation: 'Kasami, T.: An efficient recognition and syntax-analysis algorithm for context-free languages. Air Force Cambridge Research Lab, Technical Report AFCRL-65-758, 1965.',
-      url: 'https://apps.dtic.mil/sti/citations/AD0630131'
+      citation: 'Kasami, T.: An efficient recognition and syntax-analysis algorithm for context-free languages. Air Force Cambridge Research Lab, Technical Report AFCRL-65-758, 1965 / Coordinated Science Laboratory Report R-257, University of Illinois.',
+      url: 'http://hdl.handle.net/2142/74301'
     }
   ]
 };

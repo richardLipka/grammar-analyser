@@ -732,7 +732,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       title: 'The Theory of Parsing, Translation, and Compiling, Vol. 1: Parsing',
       venue: 'Prentice-Hall, Englewood Cliffs, NJ',
       year: 1972,
-      url: 'https://archive.org/details/theoryofparsingt0001ahov',
+      url: 'https://archive.org/details/theoryofparsingt00ahoa',
       historicalNote: {
         en: 'Introduced the canonical matched/open grammar transformation eliminating the dangling-else Shift/Reduce conflict without altering language recognition.',
         cz: 'Zavedli kanonickou transformaci na úplné a neúplné příkazy, která odstraňuje Shift/Reduce kolizi bez změny přijímaného jazyka.'
