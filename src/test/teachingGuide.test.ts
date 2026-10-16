@@ -86,8 +86,42 @@ describe('Teaching Guide Techniques', () => {
         // Check how many choices were found
         expect(choices.length).toBeGreaterThanOrEqual(3);
       });
-
     });
   }
+
+  describe('Custom grammars with arbitrary non-terminal names', () => {
+    it('applies immediateLeftRec to custom non-terminals (e.g. Expr)', () => {
+      const g = parseGrammar('Expr -> Expr + Term | Term\nTerm -> num').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'immediateLeftRec')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      expect(res.transformedGrammar.nonTerminals.has("Expr'")).toBe(true);
+    });
+
+    it('applies expandLeading to custom non-terminals (e.g. Root, Child)', () => {
+      const g = parseGrammar('Root -> Child x | y\nChild -> a | b').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'expandLeading')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      expect(res.transformedGrammar.productions.some(p => p.lhs === 'Root' && p.rhs[0] === 'a')).toBe(true);
+    });
+
+    it('applies substitute to custom non-terminals (e.g. Helper)', () => {
+      const g = parseGrammar('Main -> a Helper b\nHelper -> c | d').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'substitute')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      expect(res.transformedGrammar.productions.some(p => p.lhs === 'Main' && p.rhs.includes('c'))).toBe(true);
+    });
+
+    it('applies absorb to custom non-terminals (e.g. Sub)', () => {
+      const g = parseGrammar('Main -> Sub x y\nSub -> a | b').grammar!;
+      const tech = TEACHING_TECHNIQUES.find(t => t.id === 'absorb')!;
+      const res = tech.apply(g);
+      expect(res.steps.length).toBeGreaterThan(0);
+      expect(res.transformedGrammar.productions.some(p => p.lhs.includes('Sub') || p.rhs.some(s => s.includes('Sub')))).toBe(true);
+    });
+  });
 });
+
 

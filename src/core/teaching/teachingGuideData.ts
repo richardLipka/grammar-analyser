@@ -225,7 +225,24 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       cz: 'Pravidlo E → E + t je přímo rekurzivní zleva v neterminálu E, což vede k okamžitému zacyklení rekurzivního sestupu.'
     },
     promisedForm: ['noLeftRecursion'],
-    apply: (g) => eliminateImmediateLeftRecursionForSymbol(g, 'E', true)
+    apply: (g) => {
+      const targets = [...g.nonTerminals].filter(nt => {
+        const rules = g.productions.filter(p => p.lhs === nt);
+        return rules.some(p => p.rhs.length > 0 && p.rhs[0] === nt);
+      });
+      if (targets.length === 0) {
+        const fallback = g.nonTerminals.has('E') ? 'E' : g.startSymbol;
+        return eliminateImmediateLeftRecursionForSymbol(g, fallback, true);
+      }
+      let current = g;
+      const allSteps: TransformationResult['steps'] = [];
+      for (const nt of targets) {
+        const res = eliminateImmediateLeftRecursionForSymbol(current, nt, true);
+        current = res.transformedGrammar;
+        allSteps.push(...res.steps);
+      }
+      return { transformedGrammar: current, steps: allSteps };
+    }
   },
   {
     id: 'leftrec',
@@ -418,7 +435,23 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       cz: 'FIRST(A b) obsahuje a, protože A odvozuje a; dochází ke kolizi s a c, která je však skryta za neterminálem A.'
     },
     promisedForm: [],
-    apply: (g) => expandLeadingNonTerminalInSymbol(g, 'S', 'A')
+    apply: (g) => {
+      const targets = [...g.nonTerminals].filter(nt =>
+        g.productions.some(p => p.lhs === nt && p.rhs.length > 0 && g.nonTerminals.has(p.rhs[0]) && p.rhs[0] !== nt)
+      );
+      if (targets.length === 0) {
+        const fallback = g.nonTerminals.has('S') ? 'S' : g.startSymbol;
+        return expandLeadingNonTerminalInSymbol(g, fallback);
+      }
+      let current = g;
+      const allSteps: TransformationResult['steps'] = [];
+      for (const nt of targets) {
+        const res = expandLeadingNonTerminalInSymbol(current, nt);
+        current = res.transformedGrammar;
+        allSteps.push(...res.steps);
+      }
+      return { transformedGrammar: current, steps: allSteps };
+    }
   },
   {
     id: 'substitute',
@@ -457,7 +490,12 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       cz: 'A je pomocný neterminál s několika alternativami použitý v pravidle S → a A b.'
     },
     promisedForm: [],
-    apply: (g) => substituteSymbol(g, 'A')
+    apply: (g) => {
+      const candidate = [...g.nonTerminals].find(nt =>
+        nt !== g.startSymbol && g.productions.some(p => p.lhs !== nt && p.rhs.includes(nt))
+      ) ?? [...g.nonTerminals].find(nt => nt !== g.startSymbol) ?? (g.nonTerminals.has('A') ? 'A' : g.startSymbol);
+      return substituteSymbol(g, candidate);
+    }
   },
   {
     id: 'absorb',
@@ -497,11 +535,15 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
     },
     promisedForm: [],
     apply: (g) => {
-      // Find occurrence of A before a in S
-      const prod = g.productions.find(p => p.lhs === 'S' && p.rhs.includes('A'));
-      if (!prod) return { transformedGrammar: g, steps: [] };
-      const pos = prod.rhs.indexOf('A');
-      return absorbFollowingSymbol(g, { productionId: prod.id, position: pos });
+      for (const prod of g.productions) {
+        for (let pos = 0; pos < prod.rhs.length - 1; pos++) {
+          const B = prod.rhs[pos];
+          if (g.nonTerminals.has(B) && g.productions.some(p => p.lhs === B)) {
+            return absorbFollowingSymbol(g, { productionId: prod.id, position: pos });
+          }
+        }
+      }
+      return { transformedGrammar: g, steps: [] };
     }
   },
   {

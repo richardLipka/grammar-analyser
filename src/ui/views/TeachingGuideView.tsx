@@ -69,17 +69,21 @@ export const TeachingGuideView: React.FC<TeachingGuideViewProps> = ({
     [selectedId]
   );
 
-  // Initialize or reset custom grammar text when technique changes
+  // Initialize custom grammar text when technique changes
   useEffect(() => {
     setCustomText(technique.exampleGrammarText);
-    setStepIndex(0);
-    setCompResult(null);
-    setSelectedWordIndex(0);
-    runner.stop();
   }, [technique]);
 
   // Active grammar text according to mode
   const activeGrammarText = grammarSource === 'preset' ? technique.exampleGrammarText : customText;
+
+  // Reset steps and verification results whenever active grammar text changes
+  useEffect(() => {
+    setStepIndex(0);
+    setCompResult(null);
+    setSelectedWordIndex(0);
+    runner.stop();
+  }, [activeGrammarText]);
 
   // Parse active grammar
   const parsedActive = useMemo(
