@@ -1,7 +1,7 @@
 import React from 'react';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { LRLayout, formatLayoutAction } from '../../core/lr/lrTable';
-import { ConstructionStep, MergeStep, movedItems } from '../../core/lr/lrConstruction';
+import { ConstructionStep, MergeStep, movedItems, IELRSplitGroup } from '../../core/lr/lrConstruction';
 import { LR0Item, LR1Item, groupLR1Items, lr0ItemKey } from '../../core/lr/lrItem';
 import { formatItem } from './LRExplanation';
 import { Language } from '../../i18n/translations';
@@ -28,7 +28,7 @@ export const ConstructionStepText: React.FC<{
   lang: Language;
 }> = ({ automaton, step, index, total, name, lang }) => {
   const cz = lang === 'cz';
-  const lr1 = automaton.variant === 'LR(1)';
+  const lr1 = automaton.variant === 'LR(1)' || automaton.variant === 'IELR(1)';
   const last = index === total - 1;
   if (step.kind === 'initial') {
     const s = automaton.states[0];
@@ -59,6 +59,16 @@ export const ConstructionStepText: React.FC<{
   const targetItems = to.items1 ?? to.items0;
   const kernel = itemList(targetItems.filter(isKernel));
   const closure = itemList(targetItems.filter(it => !isKernel(it)));
+
+  // Identify whether an earlier state already has the exact same LR(0) core
+  const toCoreKeys = new Set(to.items0.filter(isKernel).map(lr0ItemKey));
+  const existingSameCoreState = step.isNew
+    ? automaton.states.slice(0, step.to).find(s => {
+        const sCore = s.items0.filter(isKernel).map(lr0ItemKey);
+        return sCore.length === toCoreKeys.size && sCore.every(k => toCoreKeys.has(k));
+      })
+    : undefined;
+
   return (
     <div className="construction-step">
       <div className="construction-step-title">
@@ -71,23 +81,52 @@ export const ConstructionStepText: React.FC<{
       <p>
         {cz ? `Ve stavu ${name(step.from)} se tečka posune přes ${step.symbol} v položkách ` : `In state ${name(step.from)} the dot moves over ${step.symbol} in the items `}
         <code>{moved.join(', ')}</code>
-        {cz ? '; vznikne jádro ' : '; this gives the kernel '}
+        {cz ? '; vzniknou položky jádra ' : '; this yields kernel items '}
         <code>{kernel.join(', ')}</code>.
       </p>
       {step.isNew ? (
-        closure.length > 0 ? (
+        existingSameCoreState ? (
           <p>
-            {cz ? 'Takové jádro dosud nemá žádný stav, vzniká tedy nový stav; CLOSURE k němu přidá ' : 'No state has this kernel yet, so it is a new state; CLOSURE adds '}
-            <code>{closure.join(', ')}</code>.
+            {automaton.variant === 'IELR(1)' ? (
+              cz ? (
+                <>
+                  Tento stav má <strong>stejné LR(0) jádro</strong> jako stav <strong>{name(existingSameCoreState.id)}</strong> (položky <code>{to.items0.filter(isKernel).map(it => formatItem(it.production, it.dotIndex)).join(', ')}</code>). Algoritmus IELR(1) jej však vytváří jako samostatný <strong>rozdělený stav</strong> (split state) s odlišnou množinou symbolů pro zkoumání dopředu (lookahead), protože jejich sloučení do jednoho stavu by způsobilo neadekvátní (falešný) LALR(1) konflikt.
+                </>
+              ) : (
+                <>
+                  This state shares the <strong>exact same LR(0) core</strong> as state <strong>{name(existingSameCoreState.id)}</strong> (items <code>{to.items0.filter(isKernel).map(it => formatItem(it.production, it.dotIndex)).join(', ')}</code>). However, the IELR(1) algorithm creates it as a separate <strong>split state</strong> with distinct lookahead symbols because merging them into a single state would cause an inadequate (spurious) LALR(1) conflict.
+                </>
+              )
+            ) : (
+              cz ? (
+                <>
+                  Tento stav má <strong>stejné LR(0) jádro</strong> jako stav <strong>{name(existingSameCoreState.id)}</strong> (položky <code>{to.items0.filter(isKernel).map(it => formatItem(it.production, it.dotIndex)).join(', ')}</code>), ale kanonický LR(1) automat vytváří samostatný stav, protože se liší množiny symbolů pro zkoumání dopředu (lookahead).
+                </>
+              ) : (
+                <>
+                  This state shares the <strong>exact same LR(0) core</strong> as state <strong>{name(existingSameCoreState.id)}</strong> (items <code>{to.items0.filter(isKernel).map(it => formatItem(it.production, it.dotIndex)).join(', ')}</code>), but canonical LR(1) creates a separate state because their lookahead sets differ.
+                </>
+              )
+            )}
+            {closure.length > 0 && (
+              <> {cz ? 'CLOSURE k němu přidá ' : 'CLOSURE adds '}<code>{closure.join(', ')}</code>.</>
+            )}
           </p>
         ) : (
-          <p>{cz ? 'Takové jádro dosud nemá žádný stav, vzniká tedy nový stav (uzávěr nic nepřidá).' : 'No state has this kernel yet, so it is a new state (the closure adds nothing).'}</p>
+          closure.length > 0 ? (
+            <p>
+              {cz ? 'Stav s tímto LR(0) jádrem dosud neexistuje, vzniká tedy nový stav; CLOSURE k němu přidá ' : 'No state with this LR(0) core exists yet, so a new state is created; CLOSURE adds '}
+              <code>{closure.join(', ')}</code>.
+            </p>
+          ) : (
+            <p>{cz ? 'Stav s tímto LR(0) jádrem dosud neexistuje, vzniká tedy nový stav (uzávěr nic nepřidá).' : 'No state with this LR(0) core exists yet, so a new state is created (the closure adds nothing).'}</p>
+          )
         )
       ) : (
         <p>
           {cz
-            ? `Stav s tímto jádrem už existuje (${name(step.to)}): nevzniká nový stav, přidá se jen přechod.`
-            : `A state with this kernel already exists (${name(step.to)}): no new state, only the transition is added.`}
+            ? `Stav s tímto jádrem a touto konfigurací lookaheadů už existuje (${name(step.to)}): nevzniká nový stav, přidá se jen přechod.`
+            : `A state with this core and lookahead configuration already exists (${name(step.to)}): no new state, only the transition is added.`}
         </p>
       )}
       {last && (
@@ -199,3 +238,99 @@ export const MergePanel: React.FC<{
     </div>
   );
 };
+
+/** Visualisation of IELR(1) core partitioning, state splits, and spurious conflicts eliminated. */
+export const IELRPanel: React.FC<{
+  groups: IELRSplitGroup[];
+  index: number;
+  onIndex: (i: number) => void;
+  ielrName: (id: number) => string;
+  lalrName: (id: number) => string;
+  ielrStates: number;
+  lalrStates: number;
+  layout: LRLayout;
+  lang: Language;
+}> = ({ groups, index, onIndex, ielrName, lalrName, ielrStates, lalrStates, layout, lang }) => {
+  const cz = lang === 'cz';
+  const splitGroups = groups.filter(g => g.isSplit);
+  const splitCount = splitGroups.length;
+  const summary = cz
+    ? `IELR(1) analyzuje LR(0) jádra: z celkem ${groups.length} jader ${splitCount > 0 ? `bylo ${splitCount} rozděleno (vzniklo ${ielrStates} stavů oproti ${lalrStates} v LALR(1)), čímž byly izolovány parazitní konflikty bez exploze stavů plného LR(1).` : `žádné nemuselo být rozděleno (automat má shodných ${ielrStates} stavů jako LALR(1)).`}`
+    : `IELR(1) analyzes LR(0) cores: of ${groups.length} total cores, ${splitCount > 0 ? `${splitCount} were split (yielding ${ielrStates} states vs ${lalrStates} in LALR(1)), eliminating spurious conflicts without full LR(1) state explosion.` : `none needed splitting (automaton has identical ${ielrStates} states to LALR(1)).`}`;
+
+  if (groups.length === 0) {
+    return (
+      <div className="construction-step">
+        <p>{cz ? 'Pro IELR(1) nejsou k dispozici žádná data o jádrech.' : 'No core data available for IELR(1).'}</p>
+      </div>
+    );
+  }
+
+  const safeIdx = Math.min(Math.max(0, index), groups.length - 1);
+  const g = groups[safeIdx];
+
+  return (
+    <div className="construction-step">
+      <p className="hint-text" style={{ marginTop: 0 }}>{summary}</p>
+      <div className="membership-pager" style={{ marginBottom: '6px' }}>
+        <button type="button" className="btn btn-secondary" disabled={safeIdx === 0} onClick={() => onIndex(safeIdx - 1)} aria-label={cz ? 'Předchozí jádro' : 'Previous core'}>
+          <ChevronLeft size={14} />
+        </button>
+        <span>
+          {cz ? 'Jádro ' : 'Core '}{safeIdx + 1}{cz ? ' z ' : ' of '}{groups.length}:{' '}
+          {g.isSplit ? (
+            <span className="construction-badge" style={{ backgroundColor: 'var(--color-primary-light, #e0e7ff)', color: 'var(--color-primary, #3730a3)', fontWeight: 600 }}>
+              {cz ? `Rozdělené jádro (${g.ielrStates.map(ielrName).join(', ')})` : `Split core (${g.ielrStates.map(ielrName).join(', ')})`}
+            </span>
+          ) : (
+            <span className="construction-badge" style={{ backgroundColor: 'var(--color-bg-subtle, #f3f4f6)', color: 'var(--color-text-muted)' }}>
+              {cz ? `Sloučené jádro (${g.ielrStates.map(ielrName).join(', ')})` : `Merged core (${g.ielrStates.map(ielrName).join(', ')})`}
+            </span>
+          )}
+        </span>
+        <button type="button" className="btn btn-secondary" disabled={safeIdx >= groups.length - 1} onClick={() => onIndex(safeIdx + 1)} aria-label={cz ? 'Další jádro' : 'Next core'}>
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="data-table-container">
+        <table className="data-table merge-table">
+          <thead>
+            <tr>
+              <th>{cz ? 'Položka (LR(0) jádro)' : 'Item (LR(0) core)'}</th>
+              {g.ielrStates.map(id => <th key={id}>IELR(1) {ielrName(id)}</th>)}
+              <th>LALR(1) {g.lalrState !== undefined ? lalrName(g.lalrState) : ''}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {g.rows.map((row, r) => (
+              <tr key={r}>
+                <td className="merge-item">{formatItem(row.item.production, row.item.dotIndex)}</td>
+                {row.perIelrState.map((las, c) => <td key={c} className="merge-la">{las.join(' / ') || '∅'}</td>)}
+                <td className="merge-la">{row.lalrUnion.join(' / ') || '∅'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {g.isSplit ? (
+        <div className="report-box danger" style={{ marginTop: '8px' }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', fontWeight: 700 }}>
+            <AlertTriangle size={14} />
+            {cz ? 'Odstraněný parazitní LALR(1) konflikt' : 'Eliminated spurious LALR(1) conflict'}
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
+            {cz
+              ? `V LALR(1) by sloučení těchto lookaheadů do jediného stavu vytvořilo konflikt${g.spuriousConflicts.length > 0 ? ` (${g.spuriousConflicts.map(c => `${c.symbol}: ${c.actions.map(a => formatLayoutAction(a, layout, lang)).join(' × ')}`).join('; ')})` : ''}. IELR(1) tomuto konfliktu zabránil rozdělením jádra do stavů ${g.ielrStates.map(ielrName).join(', ')}.`
+              : `In LALR(1), merging these lookaheads into a single state would cause a conflict${g.spuriousConflicts.length > 0 ? ` (${g.spuriousConflicts.map(c => `${c.symbol}: ${c.actions.map(a => formatLayoutAction(a, layout, lang)).join(' × ')}`).join('; ')})` : ''}. IELR(1) prevented this conflict by splitting the core into states ${g.ielrStates.map(ielrName).join(', ')}.`}
+          </p>
+        </div>
+      ) : (
+        <div className="report-box success" style={{ marginTop: '8px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <CheckCircle2 size={14} />
+          {cz ? 'Jádro bez parazitního konfliktu: sloučení do jediného stavu je bezpečné.' : 'Core without spurious conflict: merging into a single state is safe.'}
+        </div>
+      )}
+    </div>
+  );
+};
+

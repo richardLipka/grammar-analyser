@@ -5,8 +5,8 @@ import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { explainItem, explainLookahead, incomingEdges, itemsMovingOver, stateCreators } from '../../core/lr/lrExplain';
 import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
-import { constructionSteps, constructedSoFar, mergeSteps } from '../../core/lr/lrConstruction';
-import { ConstructionStepText, MergePanel } from '../components/LRConstructionPanel';
+import { constructionSteps, constructedSoFar, mergeSteps, ielrSplitGroups } from '../../core/lr/lrConstruction';
+import { ConstructionStepText, MergePanel, IELRPanel } from '../components/LRConstructionPanel';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { AutomatonGraphVisualizer, DisplayItem, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
 import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReason, formatItem } from '../components/LRExplanation';
@@ -116,8 +116,8 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
 
   useEffect(() => setSelectedStateId(0), [activeAutomaton]);
 
-  // The finished automaton, its construction step by step, or the LR(1) → LALR(1) merges
-  const [mode, setMode] = useState<'final' | 'steps' | 'merge'>('final');
+  // The finished automaton, its construction step by step, LALR(1) merges, or IELR(1) state splits
+  const [mode, setMode] = useState<'final' | 'steps' | 'merge' | 'ielr'>('final');
   const steps = useMemo(() => constructionSteps(activeAutomaton), [activeAutomaton]);
   const [stepIdx, setStepIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -129,21 +129,36 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   );
   const [mergeIdx, setMergeIdx] = useState(0);
   const canMerge = selectedVariant === 'LALR(1)' && !!lr1Automaton && !!lr1Table;
+
+  const ielrGroups = useMemo(
+    () => (selectedVariant === 'IELR(1)' && ielr1Automaton && lr1Automaton ? ielrSplitGroups(ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table) : []),
+    [selectedVariant, ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table]
+  );
+  const [ielrIdx, setIelrIdx] = useState(0);
+  const canIelr = selectedVariant === 'IELR(1)' && !!ielr1Automaton && !!lr1Automaton;
+
   useEffect(() => {
     setStepIdx(0);
     setMergeIdx(0);
+    setIelrIdx(0);
     setPlaying(false);
     if (mode === 'merge' && !canMerge) setMode('final');
+    if (mode === 'ielr' && !canIelr) setMode('final');
   }, [activeAutomaton]);
   const step = mode === 'steps' ? steps[Math.min(stepIdx, steps.length - 1)] : undefined;
   const soFar = mode === 'steps' ? constructedSoFar(steps, stepIdx) : undefined;
-  // The state of the current step (or merge) is the one inspected
+  // The state of the current step (or merge / ielr split) is the one inspected
   useEffect(() => {
     if (step) setSelectedStateId(step.kind === 'goto' ? step.to : 0);
   }, [step]);
   useEffect(() => {
     if (mode === 'merge' && merges[mergeIdx]) setSelectedStateId(merges[mergeIdx].lalrState);
   }, [mode, mergeIdx, merges]);
+  useEffect(() => {
+    if (mode === 'ielr' && ielrGroups[ielrIdx] && ielrGroups[ielrIdx].ielrStates.length > 0) {
+      setSelectedStateId(ielrGroups[ielrIdx].ielrStates[0]);
+    }
+  }, [mode, ielrIdx, ielrGroups]);
   // A large automaton is not drawn unless asked for: dagre would block the page for a long time
   const [forceGraph, setForceGraph] = useState(false);
   useEffect(() => setForceGraph(false), [activeAutomaton]);
@@ -153,7 +168,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const conflicts = lecture ? activeTable.fConflicts : activeTable.conflicts;
   const conflictStates = new Set(conflicts.map(c => c.stateId));
   const selectedState = activeAutomaton.states.find(s => s.id === selectedStateId);
-  const withLookaheads = selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)';
+  const withLookaheads = selectedVariant === 'LR(1)' || selectedVariant === 'LALR(1)' || selectedVariant === 'IELR(1)';
   const items = selectedState ? stateDisplayItems(selectedState, withLookaheads) : [];
   const stateConflicts = conflicts.filter(c => c.stateId === selectedStateId);
   // Lecture: states named by their entry symbols (#, E₁); Dragon Book: numbers
@@ -316,6 +331,18 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               {cz ? 'Sloučení LR(1) → LALR(1)' : 'Merging LR(1) → LALR(1)'}
             </button>
           )}
+          {selectedVariant === 'IELR(1)' && (
+            <button
+              type="button"
+              className={`btn ${mode === 'ielr' ? 'btn-primary' : 'btn-secondary'}`}
+              aria-pressed={mode === 'ielr'}
+              disabled={!canIelr}
+              title={canIelr ? undefined : (cz ? 'Automat LR(1) nebo IELR(1) nebyl spočten' : 'The LR(1) or IELR(1) automaton was not computed')}
+              onClick={() => { setMode('ielr'); setIelrIdx(0); }}
+            >
+              {cz ? 'Dělení jader v IELR(1)' : 'IELR(1) Core Splitting'}
+            </button>
+          )}
         </div>
         {mode === 'steps' && step && (
           <>
@@ -324,6 +351,13 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                 {cz
                   ? 'LALR(1) má stavy automatu LR(0); konstrukce ukazuje jejich vznik, dopředu prohlížené symboly jsou už výsledné (viz Sloučení LR(1) → LALR(1)).'
                   : 'LALR(1) has the states of the LR(0) automaton; the construction shows how they arise, the lookaheads are already the final ones (see Merging LR(1) → LALR(1)).'}
+              </p>
+            )}
+            {selectedVariant === 'IELR(1)' && (
+              <p className="hint-text" style={{ margin: '6px 0 0' }}>
+                {cz
+                  ? 'IELR(1) zachovává minimální počet stavů LALR(1), ale rozděluje stavy s identickým LR(0) jádrem, kde by sloučení lookaheadů vytvořilo konflikt (viz Dělení jader v IELR(1)).'
+                  : 'IELR(1) preserves minimal LALR(1) state counts while splitting states sharing the same LR(0) core whenever merging lookaheads would induce conflicts (see IELR(1) Core Splitting).'}
               </p>
             )}
             <SimulatorControls
@@ -350,6 +384,19 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             lalrName={name}
             lr1Name={id => stateLabel(lr1Table, id, layout)}
             lr1States={lr1Automaton?.states.length ?? 0}
+            lalrStates={lalr1Automaton.states.length}
+            layout={layout}
+            lang={lang}
+          />
+        )}
+        {mode === 'ielr' && (
+          <IELRPanel
+            groups={ielrGroups}
+            index={Math.min(ielrIdx, Math.max(0, ielrGroups.length - 1))}
+            onIndex={setIelrIdx}
+            ielrName={name}
+            lalrName={id => stateLabel(lalr1Table, id, layout)}
+            ielrStates={activeAutomaton.states.length}
             lalrStates={lalr1Automaton.states.length}
             layout={layout}
             lang={lang}

@@ -4,6 +4,7 @@ import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLR0Automaton, buildLALR1Automaton, buildLR1Automaton, buildIELR1Automaton } from '../core/lr/lrAutomaton';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
+import { ielrSplitGroups } from '../core/lr/lrConstruction';
 import { computeAnalysis } from '../core/analysisJob';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 import { LR_PRIMARY_REFERENCES, LR_TECHNIQUE_REFERENCES } from '../ui/views/LRView';
@@ -104,6 +105,13 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       const ielrTable = buildLRTable(ielr, g, analysis);
       expect(ielrTable.conflicts.length).toBe(0);
       expect(ielrTable.isConflictFree).toBe(true);
+
+      // Verify that ielrSplitGroups groups identical LR(0) cores and detects the split
+      const groups = ielrSplitGroups(ielr, lr1, lalr, lalrTable);
+      const splitGroup = groups.find(grp => grp.isSplit);
+      expect(splitGroup).toBeDefined();
+      expect(splitGroup!.ielrStates.length).toBe(2);
+      expect(splitGroup!.spuriousConflicts.length).toBeGreaterThan(0);
 
       // Parses all 4 valid statement structures
       expect(simulateLRParse(['print', 'id', ';'], g, ielrTable).accepted).toBe(true);
