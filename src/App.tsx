@@ -1005,6 +1005,7 @@ export const App: React.FC = () => {
                   lang={lang}
                   parseOptions={parseOptions}
                   onLoadIntoEditor={(txt) => handleEditGrammar(txt)}
+                  mainGrammarText={grammarText}
                 />
               ) : (
                 <div className="card" style={{ textAlign: 'center', padding: '40px', color: 'var(--color-text-muted)' }}>
@@ -1058,6 +1059,7 @@ export const App: React.FC = () => {
                     lang={lang}
                     parseOptions={parseOptions}
                     onLoadIntoEditor={(txt) => handleEditGrammar(txt)}
+                    mainGrammarText={grammarText}
                   />
                 )}
 

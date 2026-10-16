@@ -344,7 +344,7 @@ const WordPanel: React.FC<{ grammar: Grammar; word: string[]; lang: Language; fi
 };
 
 /** The leftmost derivation; for an attempt the last form is marked where it no longer matches the word. */
-const Derivation: React.FC<{ forms: string[][]; lang: Language; breakAt?: number; breakNote?: React.ReactNode }> = ({ forms, lang, breakAt, breakNote }) => {
+export const Derivation: React.FC<{ forms: string[][]; lang: Language; breakAt?: number; breakNote?: React.ReactNode }> = ({ forms, lang, breakAt, breakNote }) => {
   const cz = lang === 'cz';
   const broken = breakNote !== undefined;
   return (

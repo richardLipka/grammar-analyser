@@ -3,6 +3,7 @@ import { TEACHING_TECHNIQUES } from '../core/teaching/teachingGuideData';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { checkForm, compareLanguagesSteps } from '../core/analyser/equivalence';
 import { runToEnd, runJob } from '../core/jobs/job';
+import { analyzeTechniqueOnGrammar, findComparisonWords } from '../core/teaching/techniqueAnalyzer';
 
 describe('Teaching Guide Techniques', () => {
   for (const technique of TEACHING_TECHNIQUES) {
@@ -62,6 +63,31 @@ describe('Teaching Guide Techniques', () => {
           }
         });
       }
+
+      it('dynamically detects defect and computes sets', () => {
+        const parsed = parseGrammar(technique.exampleGrammarText);
+        const original = parsed.grammar!;
+        const analysis = analyzeTechniqueOnGrammar(original, technique.id, 'en');
+        expect(analysis.statusText).toBeTruthy();
+        expect(analysis.defectDetail).toBeTruthy();
+      });
+
+      it('finds comparison words with derivation trees', () => {
+        const parsed = parseGrammar(technique.exampleGrammarText);
+        const original = parsed.grammar!;
+        const result = technique.apply(original);
+        const choices = findComparisonWords(original, result.transformedGrammar, 5);
+
+        // For grammars with multiple words, we should have words
+        if (choices.length > 0) {
+          expect(choices[0].wordText).toBeDefined();
+          expect(choices[0].tokens).toBeDefined();
+        }
+        // Check how many choices were found
+        expect(choices.length).toBeGreaterThanOrEqual(3);
+      });
+
     });
   }
 });
+

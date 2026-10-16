@@ -453,10 +453,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Formulovali větu o algebraickém dosazování zachovávajícím jazyk u deterministických bezkontextových gramatik.'
       }
     },
-    exampleGrammarText: 'S -> a A b\nA -> c | d',
+    exampleGrammarText: 'S -> a A b\nA -> c | d | e',
     exampleIssueNote: {
-      en: 'A is an intermediate non-terminal used solely inside S → a A b.',
-      cz: 'A je pomocný neterminál použitý výhradně v pravidle S → a A b.'
+      en: 'A is an intermediate non-terminal with multiple alternatives used inside S → a A b.',
+      cz: 'A je pomocný neterminál s několika alternativami použitý v pravidle S → a A b.'
     },
     promisedForm: [],
     apply: (g) => substituteSymbol(g, 'A')
@@ -492,10 +492,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Foster zavedl techniku pohlcení terminálu pro řešení nejednoznačností typu lookahead/follow v programu SID.'
       }
     },
-    exampleGrammarText: 'S -> A a b\nA -> c | d',
+    exampleGrammarText: 'S -> A a b\nA -> c | d | e',
     exampleIssueNote: {
-      en: 'A is followed by terminal a; absorbing a into [Aa] creates rules [Aa] -> c a | d a.',
-      cz: 'Za neterminálem A následuje terminál a; jeho pohlcením vznikne neterminál [Aa] s pravidly c a | d a.'
+      en: 'A is followed by terminal a; absorbing a into [Aa] creates rules [Aa] -> c a | d a | e a.',
+      cz: 'Za neterminálem A následuje terminál a; jeho pohlcením vznikne neterminál [Aa] s pravidly c a | d a | e a.'
     },
     promisedForm: [],
     apply: (g) => {
@@ -576,10 +576,10 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
         cz: 'Greibachová dokázala, že každý bezkontextový jazyk lze přijímat zásobníkovým automatem v reálném čase, který v každém kroku přečte právě jeden symbol.'
       }
     },
-    exampleGrammarText: 'S -> A B\nA -> a\nB -> b',
+    exampleGrammarText: 'S -> A B | c\nA -> S B | a\nB -> b',
     exampleIssueNote: {
-      en: 'Rule S → A B begins with non-terminal A instead of a terminal token.',
-      cz: 'Pravidlo S → A B začíná neterminálem A namísto terminálního symbolu.'
+      en: 'Rules start with non-terminals (S → A B, A → S B); GNF systematically orders S, A, B, eliminates forward non-terminals, introduces Z for left recursion, and back-substitutes leading terminals.',
+      cz: 'Pravidla začínají neterminály (S → A B, A → S B); GNF systematicky uspořádá S, A, B, dopředně dosadí, odstraní vzniklou levou rekurzi pomocným Z a zpětně dosadí počáteční terminály.'
     },
     promisedForm: ['gnf'],
     apply: (g) => convertToGreibach(g)

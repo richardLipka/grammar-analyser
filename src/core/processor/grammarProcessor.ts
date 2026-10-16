@@ -953,7 +953,8 @@ export function convertToGreibach(g: Grammar): TransformationResult {
     description: `A1, …, An = ${order.join(', ')}.`,
     descriptionCz: `A1, …, An = ${order.join(', ')}.`,
     mathExplanation: 'Goal of the forward phase: every rule Ai -> Aj γ satisfies j > i.',
-    mathExplanationCz: 'Cíl dopředné fáze: každé pravidlo Ai -> Aj γ splňuje j > i.'
+    mathExplanationCz: 'Cíl dopředné fáze: každé pravidlo Ai -> Aj γ splňuje j > i.',
+    intermediateGrammar: table.toGrammar(current.startSymbol)
   });
 
   const substituteLeading = (nt: string, leading: string): number => {
@@ -1001,7 +1002,16 @@ export function convertToGreibach(g: Grammar): TransformationResult {
         addedRules: [
           ...table.get(Ai).map(r => fmtRule(Ai, r)),
           ...(zOf.has(Ai) ? table.get(zOf.get(Ai)!).map(r => fmtRule(zOf.get(Ai)!, r)) : [])
-        ]
+        ],
+        intermediateGrammar: table.toGrammar(current.startSymbol)
+      });
+    } else {
+      steps.push({
+        title: `GNF 3.${i + 1}: Process ${Ai}`,
+        titleCz: `GNF 3.${i + 1}: Zpracování ${Ai}`,
+        description: `Rules of ${Ai} already satisfy j > i (no leading lower-index non-terminals) and have no immediate left recursion.`,
+        descriptionCz: `Pravidla ${Ai} již splňují j > i (neobsahují žádné úvodní neterminály s nižším indexem) a nemají přímou levou rekurzi.`,
+        intermediateGrammar: table.toGrammar(current.startSymbol)
       });
     }
     if (table.size() > MAX_PRODUCTIONS) return abortTooLarge(steps, g);
@@ -1039,7 +1049,16 @@ export function convertToGreibach(g: Grammar): TransformationResult {
       title: 'GNF 5/6: Substitute into the New Non-Terminals',
       titleCz: 'GNF 5/6: Dosazení do nových neterminálů',
       description: `The leading non-terminals of ${[...zOf.values()].join(', ')} are replaced by their rules, which now start with terminals.`,
-      descriptionCz: `Úvodní neterminály v pravidlech ${[...zOf.values()].join(', ')} jsou nahrazeny jejich pravidly, která již začínají terminálem.`
+      descriptionCz: `Úvodní neterminály v pravidlech ${[...zOf.values()].join(', ')} jsou nahrazeny jejich pravidly, která již začínají terminálem.`,
+      intermediateGrammar: table.toGrammar(current.startSymbol)
+    });
+  } else {
+    steps.push({
+      title: 'GNF 5/6: Substitute into the New Non-Terminals',
+      titleCz: 'GNF 5/6: Dosazení do nových neterminálů',
+      description: 'No auxiliary non-terminals Z were needed because no left recursion occurred during the forward phase.',
+      descriptionCz: 'Žádné pomocné neterminály Z nebyly potřeba, protože v dopředné fázi nevznikla žádná levá rekurze.',
+      intermediateGrammar: table.toGrammar(current.startSymbol)
     });
   }
 
@@ -1065,7 +1084,8 @@ export function convertToGreibach(g: Grammar): TransformationResult {
     descriptionCz: 'Neterminály, na které již nic neodkazuje (např. zástupné X_a z CNF), se odstraní.',
     mathExplanation: 'Result: every rule has the form A -> a α with a ∈ T and α ∈ N*, plus S -> ε when ε ∈ L(G).',
     mathExplanationCz: 'Výsledek: každé pravidlo má tvar A -> a α, kde a ∈ T a α ∈ N*, případně S -> ε, je-li ε ∈ L(G).',
-    removedRules: red.steps.flatMap(s => s.removedRules || [])
+    removedRules: red.steps.flatMap(s => s.removedRules || []),
+    intermediateGrammar: cloneGrammar(current)
   });
 
   return { transformedGrammar: current, steps: withSnapshot(steps, current) };
