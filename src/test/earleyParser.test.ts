@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { tokenizeInput } from '../core/parser/inputTokenizer';
 import { simulateEarleyParse } from '../core/earley/earleyParser';
-import { simulateETTPParse, buildETTPTable } from '../core/earley/ettpParser';
+import {
+  simulateETTPParse,
+  buildETTPTable,
+  isETTPKernelItem,
+  getETTPTransitionReason,
+  findPredictionTriggers
+} from '../core/earley/ettpParser';
 import { checkEarleyCompatibility, checkETTPCompatibility } from '../core/earley/earleyCompatibility';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
@@ -167,5 +173,93 @@ describe('Earley (1970) and ETTP (2025) Parsers Suite', () => {
       console.error('Earley/ETTP Tree Leaf Mismatches:\n' + mismatches.join('\n'));
     }
     expect(mismatches).toEqual([]);
+  });
+
+  describe('Earley / ETTP Automaton Graph: Cores, Remaining Rules, and Transition Reasons', () => {
+    it('partitions all states into core and remaining prediction rules across presets', () => {
+      for (const preset of PRESET_GRAMMARS.slice(0, 10)) {
+        const parsed = parseGrammar(preset.grammarText);
+        if (!parsed.grammar) continue;
+        const g = parsed.grammar;
+        const table = buildETTPTable(g);
+
+        expect(table.states.length).toBeGreaterThan(0);
+
+        // State 0 checks: augmented axiom is kernel, others are prediction closure
+        const startState = table.states[table.startStateId];
+        const startKernel = startState.items.filter(it => isETTPKernelItem(it, startState.id, table.startStateId));
+        const startClosure = startState.items.filter(it => !isETTPKernelItem(it, startState.id, table.startStateId));
+
+        expect(startKernel.length).toBe(1);
+        expect(startKernel[0].production.id).toBe(-1); // S' -> . S
+        expect(startClosure.length).toBeGreaterThanOrEqual(1);
+
+        for (const s of table.states) {
+          const kernel = s.items.filter(it => isETTPKernelItem(it, s.id, table.startStateId));
+          const closure = s.items.filter(it => !isETTPKernelItem(it, s.id, table.startStateId));
+
+          expect(kernel.length + closure.length).toBe(s.items.length);
+          if (s.id > 0) {
+            for (const it of kernel) {
+              expect(it.dot).toBeGreaterThan(0);
+            }
+          }
+          for (const it of closure) {
+            expect(it.dot).toBe(0);
+            const triggers = findPredictionTriggers(s, it);
+            expect(triggers.length, `Closure item ${it.production.lhs} in state ${s.id} must be triggered by an item in the state`).toBeGreaterThanOrEqual(1);
+          }
+        }
+      }
+    });
+
+    it('computes exact derivation reasons and origin semantics for all transitions', () => {
+      for (const preset of PRESET_GRAMMARS.slice(0, 8)) {
+        const parsed = parseGrammar(preset.grammarText);
+        if (!parsed.grammar) continue;
+        const g = parsed.grammar;
+        const table = buildETTPTable(g);
+
+        for (const fromState of table.states) {
+          for (const [sym, tr] of fromState.transitions.entries()) {
+            const targetState = table.states[tr.targetStateId];
+            expect(targetState).toBeDefined();
+
+            const reason = getETTPTransitionReason(fromState, sym, targetState);
+            expect(reason, `Must compute reason for transition on ${sym} from q${fromState.id} to q${targetState.id}`).toBeDefined();
+            expect(reason!.triggerItems.length).toBeGreaterThanOrEqual(1);
+            expect(reason!.resultingKernelItems.length).toBe(reason!.triggerItems.length);
+
+            // Verify each trigger item in source has symbol after dot
+            for (const it of reason!.triggerItems) {
+              expect(it.dot).toBeLessThan(it.production.rhs.length);
+              expect(it.production.rhs[it.dot]).toBe(sym);
+            }
+
+            // Verify each resulting item in target has symbol before dot
+            for (const it of reason!.resultingKernelItems) {
+              expect(it.dot).toBeGreaterThan(0);
+              expect(it.production.rhs[it.dot - 1]).toBe(sym);
+              // Target state must contain this item in its kernel
+              const foundInTarget = targetState.items.some(
+                tgtIt => tgtIt.production.id === it.production.id && tgtIt.dot === it.dot
+              );
+              expect(foundInTarget).toBe(true);
+            }
+
+            // Verify origin kind matches dot position in trigger items
+            const anyKernel = reason!.triggerItems.some(it => it.dot > 0);
+            const anyPredicted = reason!.triggerItems.some(it => it.dot === 0);
+            if (anyKernel && anyPredicted) {
+              expect(reason!.originKind).toBe('both');
+            } else if (anyKernel) {
+              expect(reason!.originKind).toBe('kernel');
+            } else {
+              expect(reason!.originKind).toBe('predicted');
+            }
+          }
+        }
+      }
+    });
   });
 });

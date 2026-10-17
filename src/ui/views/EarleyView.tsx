@@ -341,42 +341,67 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
       </div>
 
       {/* Main Analysis Pane: State Chart / Graph & Derivation Tree */}
-      {parserMode === 'ettp' && (
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${ettpSubView === 'chart' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '11.5px', padding: '4px 10px' }}
-            onClick={() => setEttpSubView('chart')}
-          >
-            <Layers size={13} style={{ marginRight: '4px' }} />
-            <span>{cz ? 'Tabulka stavových množin (Chart S₀ … Sₙ)' : 'State Sets Chart (S₀ … Sₙ)'}</span>
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${ettpSubView === 'graph' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '11.5px', padding: '4px 10px' }}
-            onClick={() => setEttpSubView('graph')}
-          >
-            <Network size={13} style={{ marginRight: '4px' }} />
-            <span>{cz ? `Graf stavového automatu ETTP (${ettpTable.states.length} stavů)` : `ETTP Automaton Graph (${ettpTable.states.length} states)`}</span>
-          </button>
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <button
+          type="button"
+          className={`btn btn-sm ${ettpSubView === 'chart' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ fontSize: '11.5px', padding: '4px 10px' }}
+          onClick={() => setEttpSubView('chart')}
+        >
+          <Layers size={13} style={{ marginRight: '4px' }} />
+          <span>{cz ? 'Tabulka stavových množin (Chart S₀ … Sₙ)' : 'State Sets Chart (S₀ … Sₙ)'}</span>
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${ettpSubView === 'graph' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ fontSize: '11.5px', padding: '4px 10px' }}
+          onClick={() => setEttpSubView('graph')}
+        >
+          <Network size={13} style={{ marginRight: '4px' }} />
+          <span>
+            {cz
+              ? `Graf přechodového automatu Earley / ETTP (${ettpTable.states.length} stavů)`
+              : `Earley / ETTP Automaton Graph (${ettpTable.states.length} states)`}
+          </span>
+        </button>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1.4fr) minmax(300px, 1fr)', gap: '16px' }}>
         {/* Left: State Sets Chart OR ETTP Automaton Graph */}
-        {parserMode === 'ettp' && ettpSubView === 'graph' ? (
+        {ettpSubView === 'graph' ? (
           <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
             <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Network size={16} color="var(--color-primary)" />
-                <span>{cz ? `Graf přechodového automatu ETTP (${ettpTable.states.length} stavů)` : `ETTP Transition Automaton Graph (${ettpTable.states.length} states)`}</span>
+                <span>
+                  {cz
+                    ? `Graf přechodového automatu Earley / ETTP (${ettpTable.states.length} stavů)`
+                    : `Earley / ETTP Transition Automaton Graph (${ettpTable.states.length} states)`}
+                </span>
               </div>
               <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-                {cz ? 'Kliknutím na uzel zobrazíte detail odvození stavu' : 'Click node to inspect derivation'}
+                {cz ? 'Jádra stavů (Core), zbývající pravidla (Closure) a důvody přechodů' : 'State cores, closure rules & transition reasons'}
               </span>
             </div>
+            {parserMode === 'classic' && (
+              <div
+                style={{
+                  padding: '6px 10px',
+                  marginBottom: '10px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--color-bg-base)',
+                  border: '1px solid var(--color-border)',
+                  fontSize: '11px',
+                  color: 'var(--color-text-secondary)',
+                  lineHeight: '1.4'
+                }}
+              >
+                <Info size={13} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'text-bottom' }} />
+                {cz
+                  ? 'Klasický Earleyův algoritmus (1970) generuje stavové množiny položek dynamicky za běhu. Scott & Johnstone (2025) a Aycock & Horspool (2002) ukázaly, že tyto množiny položek odpovídají stavům přechodového automatu, který lze staticky předpočítat.'
+                  : 'Classic Earley (1970) generates item sets dynamically at runtime. Scott & Johnstone (2025) and Aycock & Horspool (2002) showed that these item sets correspond to the states of a transition automaton that can be precomputed statically.'}
+              </div>
+            )}
             <ETTPGraphVisualizer
               table={ettpTable}
               selectedStateId={selectedGraphStateId}
@@ -384,7 +409,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
               activeStateId={activeETTPStep?.stateId}
               activeSymbol={activeETTPStep?.triggerSymbol}
               lang={lang}
-              height="480px"
+              height="500px"
             />
           </div>
         ) : (

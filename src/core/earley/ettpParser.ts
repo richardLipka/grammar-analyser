@@ -255,6 +255,65 @@ export function buildETTPTable(grammar: Grammar): ETTPTable {
   };
 }
 
+export interface ETTPTransitionReason {
+  fromStateId: number;
+  symbol: string;
+  targetStateId: number;
+  originKind: 'kernel' | 'predicted' | 'both';
+  triggerItems: ETTPItem[]; // items in source state with dot before symbol: [A -> alpha . X beta]
+  resultingKernelItems: ETTPItem[]; // items in target state with dot after symbol: [A -> alpha X . beta]
+}
+
+/**
+ * Checks whether an item belongs to the kernel/core of the given state.
+ * For start state (q0), the augmented axiom [S' -> . S] is in the kernel.
+ * For all states, items with dot > 0 are kernel items.
+ */
+export function isETTPKernelItem(it: ETTPItem, stateId: number = 0, startStateId: number = 0): boolean {
+  if (it.dot > 0) return true;
+  return stateId === startStateId && it.production.id === -1;
+}
+
+/**
+ * Computes detailed derivation reasons for transitions between states.
+ */
+export function getETTPTransitionReason(
+  fromState: ETTPState,
+  symbol: string,
+  targetState: ETTPState
+): ETTPTransitionReason | undefined {
+  const tr = fromState.transitions.get(symbol);
+  if (!tr || tr.targetStateId !== targetState.id) return undefined;
+
+  const triggerItems = fromState.items.filter(
+    it => it.dot < it.production.rhs.length && it.production.rhs[it.dot] === symbol
+  );
+  const resultingKernelItems = triggerItems.map(it => ({
+    production: it.production,
+    dot: it.dot + 1
+  }));
+
+  return {
+    fromStateId: fromState.id,
+    symbol,
+    targetStateId: targetState.id,
+    originKind: tr.originKind,
+    triggerItems,
+    resultingKernelItems
+  };
+}
+
+/**
+ * Finds which parent item(s) in the state caused a closure item [B -> . gamma] to be predicted.
+ * A parent item [A -> alpha . B beta] has non-terminal B immediately after its dot.
+ */
+export function findPredictionTriggers(state: ETTPState, item: ETTPItem): ETTPItem[] {
+  const lhs = item.production.lhs;
+  return state.items.filter(
+    it => it.dot < it.production.rhs.length && it.production.rhs[it.dot] === lhs
+  );
+}
+
 /**
  * Simulates ETTP Table Traversal over input tokens with detailed step-by-step traces.
  */

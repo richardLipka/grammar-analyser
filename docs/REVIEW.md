@@ -876,10 +876,29 @@ Owner's request: a name that is missing in the symbol table fails the recursive 
   7. ETTP (2025/2026) (`simulateETTPParse`)
   8. CYK chart parser (`simulateCYKParse`, `extractCYKTrees`)
   9. Recursive descent simulator (`simulateRecursiveDescent`)
-  10. General membership & derivation attempt (`testMembership`, `explainWord`)
 - Algorithmic Fixes:
   - In `src/core/all/allPredictor.ts`: Fixed ATN lookahead prediction closure on rule stop states for start symbol recursion (e.g., nested sub-expressions `F -> '(' E ')'`). Previously, follower return states were ignored when `ruleName === atn.startSymbol`, causing lookahead predictions to fail on closing parentheses.
   - In `src/core/all/allParser.ts`: Replaced hardcoded fixed-depth call-stack recursion check with token-position cycle detection (`activeCallsAtPos`), allowing legitimate deep right derivations while safely preventing non-productive left loops.
 - Tests: Comprehensive master test suite in `src/test/allParsersTreeYield.test.ts` plus direct leaf yield assertions in `src/test/all.test.ts`, `src/test/glr.test.ts`, `src/test/ielr.test.ts`, `src/test/recursiveDescentJs.test.ts`, and `src/test/rdSampleGrammars.test.ts`. All 38 test suites (717 tests) pass.
+
+**7. Earley & ETTP Automaton Graph: Node Cores, Remaining Rules, and Transition Reasons.**
+- Literature grounding: Grounded in Scott & Johnstone (2025/2026) ("Earley Table Traversing Parsers"), classic Earley (CACM 1970), and Aycock & Horspool (2002).
+- Node Cores & Remaining Rules:
+  - Inside every automaton node, items are partitioned into the **Core / Kernel** ($A \to \alpha \cdot \beta$ with $|\alpha| > 0$, plus $[S' \to \cdot S]$ for state 0) and the **Remaining Rules / Prediction Closure** ($B \to \cdot \gamma$ with $|\alpha| = 0$).
+  - Rendered with a distinct dashed separator and label (`Zbývající pravidla (predikce) / Remaining rules (closure)`), with header badges indicating counts (e.g. `2K + 3P`).
+- Transition Reasons & Origin Semantics:
+  - Parallel transitions between the same state pair are merged into unified labeled edges (`symbols: string[]`), preventing Dagre edge overwrite.
+  - Edges display origin badges `[K]` (kernel, solid line), `[P]` (predicted, dashed line), or `[K+P]` (hybrid).
+  - Interactive hover tooltips (via `FloatingTip`) display the exact derivation reason: triggering items in $q_{from}$ ($A \to \alpha \cdot X \beta$), resulting core items in $q_{to}$ ($A \to \alpha X \cdot \beta$), and origin semantics (inheriting origin $j$ vs initializing origin $i$).
+- State Educational Derivation Inspector:
+  - The inspector below the graph features 4 structured cards:
+    1. *Jádro stavu a vznik (Core & Origin)*: incoming transitions and the parent items that generated this state's core.
+    2. *Zbývající pravidla (Predikovaný uzávěr / Prediction Closure)*: lists closure rules and identifies the exact parent item in the state that triggered each prediction.
+    3. *Výstupní přechody a spouštěcí pravidla (Outgoing Transitions & Reasons)*: outgoing transitions with triggering rules and clickable target state navigation.
+    4. *Dokončená pravidla a redukce kompletoru (Completions & Reductions)*: explains how completed rules $A \to \gamma \cdot$ drive the Earley Completer.
+- Dual-Mode Accessibility:
+  - The automaton graph is now accessible in both Classic Earley (1970) and ETTP (2025) modes, with an educational banner explaining the connection between runtime chart sets and the precomputed static item automaton.
+- Tests: Added unit test suite in `src/test/earleyParser.test.ts` verifying core/closure partitioning, transition reasons, trigger items, and origin classification across presets. All 38 test suites (719 tests) pass.
+
 
 
