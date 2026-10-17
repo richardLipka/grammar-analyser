@@ -78,6 +78,7 @@ export interface ETTPStep {
   operation: 'init' | 'scan' | 'complete';
   stateId: number;
   origin: number;
+  triggerSymbol?: string;
   descriptionEn: string;
   descriptionCz: string;
   activeSetIndex: number;
@@ -299,7 +300,7 @@ export function simulateETTPParse(
     descCz: string,
     triggerSymbol?: string,
     treeChildren?: DerivationNode[],
-    currentTree?: DerivationNode
+    customTree?: DerivationNode
   ): boolean {
     if (stepCounter >= maxSteps) {
       truncated = true;
@@ -328,12 +329,13 @@ export function simulateETTPParse(
       operation: op,
       stateId,
       origin,
+      triggerSymbol,
       descriptionEn: descEn,
       descriptionCz: descCz,
       activeSetIndex: setIdx,
       totalItemsSoFar: totalRuntimePairs,
       chartSnapshot: takeChartSnapshot(),
-      derivationTree: currentTree
+      derivationTree: customTree
     });
     return true;
   }
@@ -364,7 +366,7 @@ export function simulateETTPParse(
         let completedSubtree: DerivationNode | undefined = undefined;
         if (completedNt !== "S'") {
           const children: DerivationNode[] = it.treeChildren && it.treeChildren.length > 0
-            ? [...it.treeChildren]
+            ? it.treeChildren
             : (prod.rhs.length === 0
                 ? [{ id: `tree_eps_${i}`, symbol: 'ε', isTerminal: true }]
                 : prod.rhs.map((sym, sIdx) => ({
@@ -467,7 +469,8 @@ export function simulateETTPParse(
               `Table Scan: Matched token '${nextInputToken}' at position ${i + 1} in state q${it.stateId}. Traversed δ(q${it.stateId}, '${nextInputToken}') → q${nextStateId} [${kindEn}]. Added state pair (q${nextStateId}, ${orig}) to S_${i + 1}`,
               `Tabulkový skener: Shoda vstupního symbolu '${nextInputToken}' na pozici ${i + 1} ve stavu q${it.stateId}. Proveden přechod δ(q${it.stateId}, '${nextInputToken}') → q${nextStateId} [${kindCz}]. Přidán stavový pár (q${nextStateId}, ${orig}) do S_${i + 1}`,
               nextInputToken,
-              [...(it.treeChildren ?? []), scannedLeaf]
+              [...(it.treeChildren ?? []), scannedLeaf],
+              scannedLeaf
             );
             if (added) scanTransitions++;
           }
@@ -504,6 +507,7 @@ export function simulateETTPParse(
 
   return {
     accepted,
+    truncated,
     totalSteps: stepCounter,
     steps,
     sets,

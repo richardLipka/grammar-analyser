@@ -37,6 +37,7 @@ import { tokenizeInput } from '../../core/parser/inputTokenizer';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
+import { ETTPGraphVisualizer } from '../visualizer/ETTPGraphVisualizer';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { exportParseTreeToTikz } from '../../core/export/latexExport';
 import { ReferenceBar } from '../components/ReferenceBar';
@@ -45,7 +46,7 @@ import {
   Layers, CheckCircle2, AlertTriangle, Eye, Sparkles,
   GitBranch, ArrowRight, ExternalLink, HelpCircle,
   BookOpen, ChevronDown, ChevronRight, List, TableProperties,
-  Cpu, Zap, Info
+  Cpu, Zap, Info, Network
 } from 'lucide-react';
 
 interface EarleyViewProps {
@@ -67,6 +68,9 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   const cz = lang === 'cz';
 
   const [parserMode, setParserMode] = useState<'classic' | 'ettp'>(initialMode);
+  const [ettpSubView, setEttpSubView] = useState<'chart' | 'graph'>('chart');
+  const [selectedGraphStateId, setSelectedGraphStateId] = useState<number | null>(null);
+  const [selectedTreeIdx, setSelectedTreeIdx] = useState<number>(0);
   const [inputText, setInputText] = useState(defaultInput);
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
@@ -105,6 +109,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   useEffect(() => {
     setCurrentStepIdx(0);
     setIsPlaying(false);
+    setSelectedTreeIdx(0);
   }, [inputText, parserMode, grammar]);
 
   // Autoplay hook
@@ -113,9 +118,23 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   const activeEarleyStep: EarleyStep | undefined = earleySim.steps[currentStepIdx];
   const activeETTPStep: ETTPStep | undefined = ettpSim.steps[currentStepIdx];
 
-  const currentDerivationTree = parserMode === 'classic'
-    ? (activeEarleyStep?.derivationTree ?? (earleySim.accepted ? earleySim.trees[0] : undefined))
-    : (activeETTPStep?.derivationTree ?? (ettpSim.accepted ? ettpSim.trees[0] : undefined));
+  const isLastStep = currentStepIdx === totalSteps - 1;
+  const activeSim = parserMode === 'classic' ? earleySim : ettpSim;
+  const activeStep = parserMode === 'classic' ? activeEarleyStep : activeETTPStep;
+
+  // Progressive derivation tree: shows the active subtree being scanned/reduced up to the current step.
+  // On the final step when accepted, shows the full completed derivation tree (with alternative tree navigation if ambiguous).
+  const currentDerivationTree = useMemo(() => {
+    if (isLastStep && activeSim.accepted && activeSim.trees.length > 0) {
+      return activeSim.trees[selectedTreeIdx] ?? activeSim.trees[0];
+    }
+    if (activeStep?.derivationTree) return activeStep.derivationTree;
+    for (let idx = currentStepIdx - 1; idx >= 0; idx--) {
+      const step = activeSim.steps[idx];
+      if (step?.derivationTree) return step.derivationTree;
+    }
+    return undefined;
+  }, [isLastStep, activeSim.accepted, activeSim.trees, activeSim.steps, selectedTreeIdx, activeStep, currentStepIdx]);
 
   const theory = cz ? EARLEY_THEORY_GUIDE.cz : EARLEY_THEORY_GUIDE.en;
 
@@ -306,179 +325,253 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
         )}
       </div>
 
-      {/* Main Analysis Pane: State Chart & Derivation Tree */}
+      {/* Main Analysis Pane: State Chart / Graph & Derivation Tree */}
+      {parserMode === 'ettp' && (
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${ettpSubView === 'chart' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ fontSize: '11.5px', padding: '4px 10px' }}
+            onClick={() => setEttpSubView('chart')}
+          >
+            <Layers size={13} style={{ marginRight: '4px' }} />
+            <span>{cz ? 'Tabulka stavových množin (Chart S₀ … Sₙ)' : 'State Sets Chart (S₀ … Sₙ)'}</span>
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${ettpSubView === 'graph' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ fontSize: '11.5px', padding: '4px 10px' }}
+            onClick={() => setEttpSubView('graph')}
+          >
+            <Network size={13} style={{ marginRight: '4px' }} />
+            <span>{cz ? `Graf stavového automatu ETTP (${ettpTable.states.length} stavů)` : `ETTP Automaton Graph (${ettpTable.states.length} states)`}</span>
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1.4fr) minmax(300px, 1fr)', gap: '16px' }}>
-        {/* Left: State Sets Chart (S_0, S_1, ..., S_n) */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Layers size={16} color="var(--color-primary)" />
-              <span>
-                {parserMode === 'classic'
-                  ? (cz ? 'Tabulka stavových množin Earley (Chart S₀ … Sₙ)' : 'Earley Item Sets Chart (S₀ … Sₙ)')
-                  : (cz ? 'Tabulkové stavové množiny ETTP (S₀ … Sₙ)' : 'ETTP State Sets (S₀ … Sₙ)')}
+        {/* Left: State Sets Chart OR ETTP Automaton Graph */}
+        {parserMode === 'ettp' && ettpSubView === 'graph' ? (
+          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Network size={16} color="var(--color-primary)" />
+                <span>{cz ? `Graf přechodového automatu ETTP (${ettpTable.states.length} stavů)` : `ETTP Transition Automaton Graph (${ettpTable.states.length} states)`}</span>
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                {cz ? 'Kliknutím na uzel zobrazíte detail odvození stavu' : 'Click node to inspect derivation'}
               </span>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-              {cz ? `${tokenized.tokens.length + 1} množin` : `${tokenized.tokens.length + 1} sets`}
-            </span>
+            <ETTPGraphVisualizer
+              table={ettpTable}
+              selectedStateId={selectedGraphStateId}
+              onSelectState={setSelectedGraphStateId}
+              activeStateId={activeETTPStep?.stateId}
+              activeSymbol={activeETTPStep?.triggerSymbol}
+              lang={lang}
+              height="480px"
+            />
           </div>
+        ) : (
+          <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-title">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Layers size={16} color="var(--color-primary)" />
+                <span>
+                  {parserMode === 'classic'
+                    ? (cz ? 'Tabulka stavových množin Earley (Chart S₀ … Sₙ)' : 'Earley Item Sets Chart (S₀ … Sₙ)')
+                    : (cz ? 'Tabulkové stavové množiny ETTP (S₀ … Sₙ)' : 'ETTP State Sets (S₀ … Sₙ)')}
+                </span>
+              </div>
+              <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+                {cz ? `${tokenized.tokens.length + 1} množin` : `${tokenized.tokens.length + 1} sets`}
+              </span>
+            </div>
 
-          <div
-            style={{
-              display: 'flex',
-              gap: '12px',
-              overflowX: 'auto',
-              paddingBottom: '10px',
-              minHeight: '260px'
-            }}
-          >
-            {Array.from({ length: tokenized.tokens.length + 1 }, (_, setIdx) => {
-              const tokenMatched = setIdx > 0 ? tokenized.tokens[setIdx - 1] : undefined;
-              const isCurrentActiveSet = (parserMode === 'classic' ? activeEarleyStep?.activeSetIndex : activeETTPStep?.activeSetIndex) === setIdx;
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                overflowX: 'auto',
+                paddingBottom: '10px',
+                minHeight: '260px'
+              }}
+            >
+              {Array.from({ length: tokenized.tokens.length + 1 }, (_, setIdx) => {
+                const tokenMatched = setIdx > 0 ? tokenized.tokens[setIdx - 1] : undefined;
+                const isCurrentActiveSet = (parserMode === 'classic' ? activeEarleyStep?.activeSetIndex : activeETTPStep?.activeSetIndex) === setIdx;
 
-              const snapshotItems = parserMode === 'classic'
-                ? (activeEarleyStep?.chartSnapshot[setIdx]?.items ?? [])
-                : (activeETTPStep?.chartSnapshot[setIdx]?.items ?? []);
+                const snapshotItems = parserMode === 'classic'
+                  ? (activeEarleyStep?.chartSnapshot[setIdx]?.items ?? [])
+                  : (activeETTPStep?.chartSnapshot[setIdx]?.items ?? []);
 
-              return (
-                <div
-                  key={setIdx}
-                  style={{
-                    minWidth: '220px',
-                    maxWidth: '280px',
-                    flex: '0 0 auto',
-                    borderRadius: 'var(--radius-md)',
-                    border: isCurrentActiveSet ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                    backgroundColor: isCurrentActiveSet ? 'var(--color-bg-surface)' : 'var(--color-bg-base)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                  }}
-                >
+                return (
                   <div
+                    key={setIdx}
                     style={{
-                      padding: '6px 10px',
-                      backgroundColor: isCurrentActiveSet ? 'var(--color-primary-subtle)' : 'var(--color-bg-subtle)',
-                      borderBottom: '1px solid var(--color-border)',
+                      minWidth: '220px',
+                      maxWidth: '280px',
+                      flex: '0 0 auto',
+                      borderRadius: 'var(--radius-md)',
+                      border: isCurrentActiveSet ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      backgroundColor: isCurrentActiveSet ? 'var(--color-bg-surface)' : 'var(--color-bg-base)',
                       display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
+                      flexDirection: 'column',
+                      overflow: 'hidden'
                     }}
                   >
-                    <span style={{ fontWeight: 700, fontSize: '12px' }}>
-                      S<sub>{setIdx}</sub> {tokenMatched ? `(token: '${tokenMatched}')` : '(start)'}
-                    </span>
-                    <span style={{ fontSize: '10.5px', color: 'var(--color-text-secondary)' }}>
-                      {snapshotItems.length} {cz ? 'pol.' : 'items'}
-                    </span>
-                  </div>
-
-                  <div style={{ padding: '8px', overflowY: 'auto', maxHeight: '380px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {snapshotItems.length === 0 ? (
-                      <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '4px' }}>
-                        {cz ? 'Zatím prázdná množina' : 'Set empty so far'}
+                    <div
+                      style={{
+                        padding: '6px 10px',
+                        backgroundColor: isCurrentActiveSet ? 'var(--color-primary-subtle)' : 'var(--color-bg-subtle)',
+                        borderBottom: '1px solid var(--color-border)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, fontSize: '12px' }}>
+                        S<sub>{setIdx}</sub> {tokenMatched ? `(token: '${tokenMatched}')` : '(start)'}
                       </span>
-                    ) : parserMode === 'classic' ? (
-                      (snapshotItems as typeof activeEarleyStep.item[]).map((it, itIdx) => {
-                        const isLatest = activeEarleyStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
-                        const tooltipText = `${formatEarleyItem(it)}\nOperation: ${it.operation}${it.triggerSymbol ? `\nTrigger: ${it.triggerSymbol}` : ''}${it.completedItemOrigin !== undefined ? `\nOrigin: ${it.completedItemOrigin}` : ''}`;
-                        return (
-                          <div
-                            key={itIdx}
-                            title={tooltipText}
-                            style={{
-                              padding: '5px 8px',
-                              borderRadius: 'var(--radius-sm)',
-                              backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
-                              border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                              fontSize: '11px',
-                              fontFamily: 'monospace'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                              <span style={{ fontWeight: 600 }}>{formatEarleyItem(it)}</span>
-                              <span style={{ fontSize: '9.5px', opacity: 0.8 }}>
-                                {it.operation}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      (snapshotItems as { stateId: number; origin: number }[]).map((it, itIdx) => {
-                        const isLatest = activeETTPStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
-                        const stateObj = ettpTable.states[it.stateId];
-                        const stateItemsTooltip = `State q${it.stateId} (Items in closure):\n` +
-                          stateObj.items.map(sIt => {
-                            const rhs = [...sIt.production.rhs];
-                            rhs.splice(sIt.dot, 0, '•');
-                            return `${sIt.production.lhs} → ${rhs.join(' ') || '•'}`;
-                          }).join('\n') +
-                          (stateObj.completions.length > 0 ? `\n\nCompletions: ${stateObj.completions.map(c => c.production.lhs).join(', ')}` : '') +
-                          `\n(Click to inspect state q${it.stateId} in table)`;
+                      <span style={{ fontSize: '10.5px', color: 'var(--color-text-secondary)' }}>
+                        {snapshotItems.length} {cz ? 'pol.' : 'items'}
+                      </span>
+                    </div>
 
-                        return (
-                          <div
-                            key={itIdx}
-                            title={stateItemsTooltip}
-                            onClick={() => {
-                              setSelectedTableStateId(it.stateId);
-                              setShowTableModal(true);
-                            }}
-                            style={{
-                              padding: '6px 8px',
-                              borderRadius: 'var(--radius-sm)',
-                              backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
-                              border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontWeight: 700, color: 'var(--color-primary)', fontFamily: 'monospace' }}>
-                                (q{it.stateId}, {it.origin})
-                              </span>
-                              {stateObj.isAcceptState && (
-                                <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 4px' }}>
-                                  accept
+                    <div style={{ padding: '8px', overflowY: 'auto', maxHeight: '380px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {snapshotItems.length === 0 ? (
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '4px' }}>
+                          {cz ? 'Zatím prázdná množina' : 'Set empty so far'}
+                        </span>
+                      ) : parserMode === 'classic' ? (
+                        (snapshotItems as typeof activeEarleyStep.item[]).map((it, itIdx) => {
+                          const isLatest = activeEarleyStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
+                          const tooltipText = `${formatEarleyItem(it)}\nOperation: ${it.operation}${it.triggerSymbol ? `\nTrigger: ${it.triggerSymbol}` : ''}${it.completedItemOrigin !== undefined ? `\nOrigin: ${it.completedItemOrigin}` : ''}`;
+                          return (
+                            <div
+                              key={itIdx}
+                              title={tooltipText}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
+                                border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                fontSize: '11px',
+                                fontFamily: 'monospace'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                <span style={{ fontWeight: 600 }}>{formatEarleyItem(it)}</span>
+                                <span style={{ fontSize: '9.5px', opacity: 0.8 }}>
+                                  {it.operation}
                                 </span>
-                              )}
+                              </div>
                             </div>
-                            <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '2px', fontFamily: 'monospace' }}>
-                              {stateObj.completions.length > 0
-                                ? `red: ${stateObj.completions.map(c => c.production.lhs).join(', ')}`
-                                : `trans: ${[...stateObj.transitions.keys()].join(', ')}`}
+                          );
+                        })
+                      ) : (
+                        (snapshotItems as { stateId: number; origin: number }[]).map((it, itIdx) => {
+                          const isLatest = activeETTPStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
+                          const stateObj = ettpTable.states[it.stateId];
+                          const stateItemsTooltip = `State q${it.stateId} (Items in closure):\n` +
+                            stateObj.items.map(sIt => {
+                              const rhs = [...sIt.production.rhs];
+                              rhs.splice(sIt.dot, 0, '•');
+                              return `${sIt.production.lhs} → ${rhs.join(' ') || '•'}`;
+                            }).join('\n') +
+                            (stateObj.completions.length > 0 ? `\n\nCompletions: ${stateObj.completions.map(c => c.production.lhs).join(', ')}` : '') +
+                            `\n(Click to inspect state q${it.stateId} in Automaton Graph)`;
+
+                          return (
+                            <div
+                              key={itIdx}
+                              title={stateItemsTooltip}
+                              onClick={() => {
+                                setSelectedGraphStateId(it.stateId);
+                                setSelectedTableStateId(it.stateId);
+                                setEttpSubView('graph');
+                              }}
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
+                                border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: 700, color: 'var(--color-primary)', fontFamily: 'monospace' }}>
+                                  (q{it.stateId}, {it.origin})
+                                </span>
+                                {stateObj.isAcceptState && (
+                                  <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 4px' }}>
+                                    accept
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '2px', fontFamily: 'monospace' }}>
+                                {stateObj.completions.length > 0
+                                  ? `red: ${stateObj.completions.map(c => c.production.lhs).join(', ')}`
+                                  : `trans: ${[...stateObj.transitions.keys()].join(', ')}`}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Right: Derivation Tree & Statistics */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Synchronized Derivation Tree */}
           <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <GitBranch size={16} color="var(--color-primary)" />
                 <span>{cz ? 'Derivační strom' : 'Derivation Tree'}</span>
               </div>
-              {currentDerivationTree && (
-                <LatexExportButton
-                  getLatex={() => exportParseTreeToTikz(currentDerivationTree)}
-                  filename="earley_parse_tree.tex"
-                  lang={lang}
-                  title={cz ? 'Exportovat strom do LaTeXu (TikZ)' : 'Export tree as LaTeX (TikZ)'}
-                />
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isLastStep && activeSim.accepted && activeSim.trees.length > 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                      disabled={selectedTreeIdx === 0}
+                      onClick={() => setSelectedTreeIdx(p => Math.max(0, p - 1))}
+                    >
+                      ◀
+                    </button>
+                    <span style={{ fontSize: '11px', fontWeight: 600 }}>
+                      {cz ? `Strom ${selectedTreeIdx + 1}/${activeSim.trees.length}` : `Tree ${selectedTreeIdx + 1}/${activeSim.trees.length}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '2px 6px', fontSize: '11px' }}
+                      disabled={selectedTreeIdx === activeSim.trees.length - 1}
+                      onClick={() => setSelectedTreeIdx(p => Math.min(activeSim.trees.length - 1, p + 1))}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                )}
+                {currentDerivationTree && (
+                  <LatexExportButton
+                    getLatex={() => exportParseTreeToTikz(currentDerivationTree)}
+                    filename="earley_parse_tree.tex"
+                    lang={lang}
+                    title={cz ? 'Exportovat strom do LaTeXu (TikZ)' : 'Export tree as LaTeX (TikZ)'}
+                  />
+                )}
+              </div>
             </div>
 
             <div style={{ flex: 1, minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -488,7 +581,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 <div style={{ textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: '12px', padding: '24px' }}>
                   {currentStepIdx === totalSteps - 1 && !(parserMode === 'classic' ? earleySim.accepted : ettpSim.accepted)
                     ? (cz ? 'Slovo nepatří do jazyka gramatiky (žádný derivační strom neexistuje).' : 'Word is not in the grammar language (no valid derivation tree exists).')
-                    : (cz ? 'Derivační strom bude sestaven po dokončení pravidel.' : 'Derivation tree will form as completed rules reduce.')}
+                    : (cz ? 'Derivační strom se vytváří postupně během skenování a redukcí.' : 'Derivation tree will form progressively as tokens are scanned and reduced.')}
                 </div>
               )}
             </div>

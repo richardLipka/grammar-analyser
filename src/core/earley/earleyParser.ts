@@ -140,7 +140,7 @@ export function simulateEarleyParse(
     item: EarleyItem,
     descEn: string,
     descCz: string,
-    currentTree?: DerivationNode
+    customTree?: DerivationNode
   ): boolean {
     if (stepCounter >= maxSteps) {
       truncated = true;
@@ -165,7 +165,7 @@ export function simulateEarleyParse(
       activeSetIndex: setIdx,
       totalItemsSoFar: totalItemsCount,
       chartSnapshot: takeChartSnapshot(),
-      derivationTree: currentTree
+      derivationTree: customTree
     });
     return true;
   }
@@ -254,7 +254,7 @@ export function simulateEarleyParse(
         let completedSubtree: DerivationNode | undefined = undefined;
         if (completedNt !== "S'") {
           const children: DerivationNode[] = it.treeChildren && it.treeChildren.length > 0
-            ? [...it.treeChildren]
+            ? it.treeChildren
             : (it.production.rhs.length === 0
                 ? [{ id: `tree_eps_${i}_${it.id}`, symbol: 'ε', isTerminal: true }]
                 : it.production.rhs.map((sym, sIdx) => ({
@@ -298,7 +298,7 @@ export function simulateEarleyParse(
               i,
               completedAdvItem,
               `Completer: Completed ${completedRuleStr} in S_${i} (originated at S_${originIdx}). Advanced ${formatEarleyItem(originItem)} from S_${originIdx} over '${completedNt}' to ${formatEarleyItem(completedAdvItem)} in S_${i}`,
-              `Kompletor: V S_${i} bylo dokončeno pravidlo ${completedRuleStr} (počátek v S_${originIdx}). Nalezena položka ${formatEarleyItem(originItem)} v S_${originIdx}; posunuta tečka přes '${completedNt}' na ${formatEarleyItem(completedAdvItem)} v S_${i}`,
+              `Kompletátor: Dokončeno pravidlo ${completedRuleStr} v S_${i} (počátek v S_${originIdx}). Posunuta položka ${formatEarleyItem(originItem)} z S_${originIdx} přes '${completedNt}' na ${formatEarleyItem(completedAdvItem)} v S_${i}`,
               completedSubtree
             );
             if (added) completeCount++;
@@ -336,7 +336,8 @@ export function simulateEarleyParse(
             i + 1,
             scannedItem,
             `Scanner: Matched token '${nextInputToken}' at position ${i + 1} with ${formatEarleyItem(it)} in S_${i}. Advanced dot to ${formatEarleyItem(scannedItem)} in S_${i + 1}`,
-            `Skener: Nalezena shoda vstupního symbolu '${nextInputToken}' na pozici ${i + 1} s položkou ${formatEarleyItem(it)} v S_${i}. Posunuta tečka na ${formatEarleyItem(scannedItem)} v S_${i + 1}`
+            `Skener: Shoda se vstupním symbolem '${nextInputToken}' na pozici ${i + 1} pro ${formatEarleyItem(it)} v S_${i}. Posunuta tečka na ${formatEarleyItem(scannedItem)} v S_${i + 1}`,
+            scannedLeaf
           );
           if (added) scanCount++;
         }
