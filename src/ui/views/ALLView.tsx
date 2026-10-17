@@ -108,6 +108,7 @@ export const ALLView: React.FC<ALLViewProps> = ({
   const inspectedDfaState = activeDfaEntry?.dfa.states.find(s => s.id === selectedDfaStateId) ?? activeDfaEntry?.dfa.states[0];
 
   // Simulator state: guarded against running on left-recursive grammars
+  const [detailedLookahead, setDetailedLookahead] = useState(false);
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
   const simulation: ALLSimulationResult = useMemo(() => {
     if (!compatibility.canParse) {
@@ -129,8 +130,8 @@ export const ALLView: React.FC<ALLViewProps> = ({
         errorCz: compatibility.reasonsCz.join('\n')
       };
     }
-    return simulateALLParse(tokenized.tokens, grammar, atn, dfaCache);
-  }, [tokenized, grammar, atn, dfaCache, compatibility]);
+    return simulateALLParse(tokenized.tokens, grammar, atn, dfaCache, { detailedLookaheadSteps: detailedLookahead });
+  }, [tokenized, grammar, atn, dfaCache, compatibility, detailedLookahead]);
 
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -151,6 +152,16 @@ export const ALLView: React.FC<ALLViewProps> = ({
 
   const currentStep: ALLParseStep | undefined = simulation.steps[currentStepIdx];
   const lastStep = simulation.steps[simulation.steps.length - 1];
+
+  // Dynamically synchronize the active Lookahead DFA decision point and DFA state with the simulation step
+  useEffect(() => {
+    if (currentStep?.activeDecisionNumber !== undefined) {
+      setSelectedDecisionNum(currentStep.activeDecisionNumber);
+    }
+    if (currentStep?.activeDfaStateId !== undefined) {
+      setSelectedDfaStateId(currentStep.activeDfaStateId);
+    }
+  }, [currentStep]);
 
   return (
     <div>
@@ -596,7 +607,21 @@ export const ALLView: React.FC<ALLViewProps> = ({
           placeholder={cz ? 'Zadejte slovo pro simulaci...' : 'Enter word to simulate...'}
           aria-label={cz ? 'Slovo pro rozklad' : 'Word to parse'}
         />
-        <TokenizedInputNote tokenized={tokenized} lang={lang} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+          <TokenizedInputNote tokenized={tokenized} lang={lang} />
+          <label className="precedence-switch" style={{ margin: 0, fontSize: '12px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="checkbox"
+                checked={detailedLookahead}
+                onChange={e => setDetailedLookahead(e.target.checked)}
+              />
+              {cz
+                ? 'Podrobné krokování dopředného pohledu (včetně mikrokroků v Lookahead DFA)'
+                : 'Detailed lookahead stepping (including Lookahead DFA micro-steps)'}
+            </span>
+          </label>
+        </div>
 
         {/* Simulator Controls */}
         <SimulatorControls
@@ -613,16 +638,20 @@ export const ALLView: React.FC<ALLViewProps> = ({
         {/* Step Callout Banner */}
         {currentStep && (
           <div
-            className={`report-box ${currentStep.decisionEvent ? 'info' : currentStep.isMatch ? 'success' : 'neutral'}`}
+            className={`report-box ${currentStep.subStepType === 'lookahead_scan' || currentStep.subStepType === 'decision_start' ? 'info' : currentStep.decisionEvent ? 'info' : currentStep.isMatch ? 'success' : 'neutral'}`}
             style={{ margin: '12px 0', fontSize: '13px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               <strong>{cz ? `Krok ${currentStepIdx + 1} z ${simulation.steps.length}:` : `Step ${currentStepIdx + 1} of ${simulation.steps.length}:`}</strong>
-              {currentStep.decisionEvent && (
+              {currentStep.subStepType === 'lookahead_scan' || currentStep.subStepType === 'decision_start' ? (
+                <span className="badge badge-info">
+                  {cz ? `Lookahead DFA: stav s${currentStep.activeDfaStateId}` : `Lookahead DFA: state s${currentStep.activeDfaStateId}`}
+                </span>
+              ) : currentStep.decisionEvent ? (
                 <span className="badge badge-primary">
                   {cz ? `Dopředný pohled: hloubka ${currentStep.decisionEvent.lookaheadDepth}` : `Lookahead depth: ${currentStep.decisionEvent.lookaheadDepth}`}
                 </span>
-              )}
+              ) : null}
             </div>
             <div>{cz ? currentStep.actionCz : currentStep.action}</div>
 

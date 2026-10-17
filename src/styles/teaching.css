@@ -1728,6 +1728,29 @@
   background-color: var(--color-primary-subtle);
 }
 
+.cyk-cell.active-target {
+  outline: 2.5px solid var(--color-primary);
+  outline-offset: -2px;
+  background-color: var(--color-primary-subtle);
+  font-weight: 700;
+}
+
+.cyk-cell.active-left {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+  background-color: rgba(37, 99, 235, 0.18);
+}
+
+.cyk-cell.active-right {
+  outline: 2px solid #9333ea;
+  outline-offset: -2px;
+  background-color: rgba(147, 51, 234, 0.18);
+}
+
+.cyk-cell.dimmed {
+  opacity: 0.35;
+}
+
 .cyk-cell.witness {
   background-color: var(--graph-origin-subtle);
   outline: 2px solid var(--graph-origin);

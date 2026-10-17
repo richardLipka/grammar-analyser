@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { testMembership } from '../../core/parser/membership';
-import { cnfViolations, cykTable, CykWitness } from '../../core/parser/cyk';
+import { cnfViolations, cykTable, CykWitness, simulateCYKParse, CYKSimulationResult, CYKStep } from '../../core/parser/cyk';
 import { tokenizeInput } from '../../core/parser/inputTokenizer';
 import { convertToChomsky } from '../../core/processor/grammarProcessor';
 import { exportParseTreeToTikz } from '../../core/export/latexExport';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { LatexExportButton } from '../components/LatexExportButton';
+import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { ProductionText } from '../components/Symbols';
 import { Language } from '../../i18n/translations';
 import { CheckCircle2, XCircle, ChevronLeft, ChevronRight, Grid3x3, SearchCheck, ExternalLink } from 'lucide-react';
@@ -196,13 +197,46 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
   );
   const g = violations.length === 0 ? grammar : cnf;
   const table = useMemo(() => (g && tokens ? cykTable(g, tokens) : null), [g, tokens]);
+  const sim = useMemo(() => (g && tokens && tokens.length > 0 ? simulateCYKParse(g, tokens) : null), [g, tokens]);
+
+  const [stepMode, setStepMode] = useState(false);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeed, setPlaySpeed] = useState(600);
+
   const [selected, setSelected] = useState<{ i: number; j: number } | null>(null);
   const [hoverWitness, setHoverWitness] = useState<CykWitness | null>(null);
+
   useEffect(() => {
     setSelected(null);
     setHoverWitness(null);
-  }, [table]);
+    setStepIdx(0);
+    setIsPlaying(false);
+  }, [table, sim]);
+
+  useAutoPlay(isPlaying, stepIdx, sim?.totalSteps ?? 0, playSpeed, setStepIdx, () => setIsPlaying(false));
+
+  const currentStep: CYKStep | undefined = sim?.steps[stepIdx];
   const V = (i: number, j: number) => `V(${i}, ${j})`;
+
+  // When stepMode is active, whether cell has been computed in the snapshot
+  const isCellComputed = (i: number, j: number) => {
+    if (!stepMode || !currentStep) return true;
+    return `${i},${j}` in currentStep.tableSnapshot;
+  };
+
+  const getCellSymbols = (i: number, j: number): string[] => {
+    if (!table) return [];
+    if (!stepMode || !currentStep) {
+      return [...table.cells[i][j].keys()];
+    }
+    const snap = currentStep.tableSnapshot[`${i},${j}`];
+    return snap ?? [];
+  };
+
+  const activeTree = stepMode && currentStep?.derivationTree
+    ? currentStep.derivationTree
+    : (table?.accepted && sim && sim.trees.length > 0 ? sim.trees[0] : undefined);
 
   return (
     <div className="card">
@@ -263,6 +297,66 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
           </div>
         ) : (
           <>
+            {/* Step Mode Toggle & Simulator Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+              <label className="precedence-switch" style={{ margin: 0, fontSize: '12px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="checkbox" checked={stepMode} onChange={e => setStepMode(e.target.checked)} />
+                  {cz ? 'Krokovat algoritmus CYK (postupné plnění tabulky a větví)' : 'Step-by-step CYK (progressive table & tree filling)'}
+                </span>
+              </label>
+              {stepMode && sim && (
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                  {cz ? `Krok ${stepIdx + 1} z ${sim.totalSteps}` : `Step ${stepIdx + 1} of ${sim.totalSteps}`}
+                </span>
+              )}
+            </div>
+
+            {stepMode && sim && (
+              <>
+                <SimulatorControls
+                  stepIdx={stepIdx}
+                  total={sim.totalSteps}
+                  isPlaying={isPlaying}
+                  speed={playSpeed}
+                  lang={lang}
+                  onStep={setStepIdx}
+                  onTogglePlay={() => setIsPlaying(!isPlaying)}
+                  onSpeed={setPlaySpeed}
+                />
+
+                {currentStep && (
+                  <div
+                    className={`report-box ${currentStep.phase === 'accept' ? (sim.accepted ? 'success' : 'danger') : currentStep.phase === 'combine' ? 'info' : 'neutral'}`}
+                    style={{ margin: '10px 0', fontSize: '13px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <strong>{cz ? `Krok ${stepIdx + 1} z ${sim.totalSteps}:` : `Step ${stepIdx + 1} of ${sim.totalSteps}:`}</strong>
+                      {currentStep.targetCell && (
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <span className="badge badge-primary">
+                            {V(currentStep.targetCell.i, currentStep.targetCell.j)}
+                            {currentStep.k !== undefined ? ` (k=${currentStep.k})` : ''}
+                          </span>
+                          {currentStep.leftCell && (
+                            <span className="badge" style={{ backgroundColor: 'rgba(37, 99, 235, 0.2)', color: '#2563eb' }}>
+                              L: {V(currentStep.leftCell.i, currentStep.leftCell.j)}
+                            </span>
+                          )}
+                          {currentStep.rightCell && (
+                            <span className="badge" style={{ backgroundColor: 'rgba(147, 51, 234, 0.2)', color: '#9333ea' }}>
+                              P: {V(currentStep.rightCell.i, currentStep.rightCell.j)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div>{cz ? currentStep.descriptionCz : currentStep.descriptionEn}</div>
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="data-table-container">
               <table className="cyk-table">
                 <tbody>
@@ -273,21 +367,44 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
                         const i = c + 1;
                         const j = i + len - 1;
                         if (j > table.n) return <td key={c} className="cyk-none" />;
-                        const cell = table.cells[i][j];
+                        const cellComputed = isCellComputed(i, j);
+                        const symbols = getCellSymbols(i, j);
                         const isSel = selected?.i === i && selected?.j === j;
                         const isWitness = !!hoverWitness && selected && hoverWitness.k !== undefined &&
                           ((i === selected.i && j === hoverWitness.k) || (i === hoverWitness.k + 1 && j === selected.j));
                         const isTop = i === 1 && j === table.n;
+                        const isTarget = stepMode && currentStep && currentStep.targetCell.i === i && currentStep.targetCell.j === j;
+                        const isLeft = stepMode && currentStep?.leftCell && currentStep.leftCell.i === i && currentStep.leftCell.j === j;
+                        const isRight = stepMode && currentStep?.rightCell && currentStep.rightCell.i === i && currentStep.rightCell.j === j;
+                        const isDimmed = stepMode && !cellComputed && !isTarget;
+
+                        const classNames = [
+                          'cyk-cell',
+                          isSel ? 'selected' : '',
+                          isWitness ? 'witness' : '',
+                          isTop ? 'top' : '',
+                          isTarget ? 'active-target' : '',
+                          isLeft ? 'active-left' : '',
+                          isRight ? 'active-right' : '',
+                          isDimmed ? 'dimmed' : ''
+                        ].filter(Boolean).join(' ');
+
                         return (
                           <td
                             key={c}
-                            className={['cyk-cell', isSel ? 'selected' : '', isWitness ? 'witness' : '', isTop ? 'top' : ''].join(' ')}
+                            className={classNames}
                             onClick={() => setSelected({ i, j })}
                             title={V(i, j)}
                           >
-                            {cell.size === 0 ? <span className="cyk-empty">∅</span> : [...cell.keys()].map(A => (
-                              <span key={A} className={isTop && A === g.startSymbol ? 'cyk-start' : ''}>{A}</span>
-                            ))}
+                            {!cellComputed ? (
+                              <span className="cyk-empty" style={{ opacity: 0.4 }}>·</span>
+                            ) : symbols.length === 0 ? (
+                              <span className="cyk-empty">∅</span>
+                            ) : (
+                              symbols.map(A => (
+                                <span key={A} className={isTop && A === g.startSymbol ? 'cyk-start' : ''}>{A}</span>
+                              ))
+                            )}
                           </td>
                         );
                       })}
@@ -302,13 +419,41 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
                 </tbody>
               </table>
             </div>
+
             <div className={`report-box ${table.accepted ? 'success' : 'danger'}`} style={{ marginTop: '10px' }}>
               {table.accepted
                 ? (cz ? `${g.startSymbol} ∈ ${V(1, table.n)}: slovo do jazyka patří.` : `${g.startSymbol} ∈ ${V(1, table.n)}: the word belongs to the language.`)
                 : (cz ? `${g.startSymbol} ∉ ${V(1, table.n)}: slovo do jazyka nepatří.` : `${g.startSymbol} ∉ ${V(1, table.n)}: the word does not belong to the language.`)}
             </div>
+
+            {/* Derivation Tree Visualizer */}
+            {activeTree && (
+              <div style={{ marginTop: '16px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px' }}>
+                    {stepMode && currentStep?.phase !== 'accept'
+                      ? (cz ? `Částečný derivační podstrom pro ${V(currentStep!.targetCell.i, currentStep!.targetCell.j)}` : `Partial Derivation Subtree for ${V(currentStep!.targetCell.i, currentStep!.targetCell.j)}`)
+                      : (cz ? 'Derivační strom CYK (binární CNF strom)' : 'CYK Derivation Tree (Binary CNF Tree)')}
+                  </div>
+                  <LatexExportButton
+                    getLatex={() => exportParseTreeToTikz(activeTree)}
+                    filename={`cyk_tree_${stepMode ? `step_${stepIdx}` : 'full'}.tex`}
+                    label={cz ? 'TikZ strom' : 'TikZ Tree'}
+                    title={cz ? 'Export derivačního stromu do LaTeXu (TikZ)' : 'Export derivation tree to LaTeX (TikZ)'}
+                    lang={lang}
+                  />
+                </div>
+                <DerivationTreeVisualizer
+                  rootNode={activeTree}
+                  height="260px"
+                  filename={`cyk_tree_${stepMode ? `step_${stepIdx}` : 'full'}`}
+                  lang={lang}
+                />
+              </div>
+            )}
+
             {selected && (
-              <div className="cyk-detail">
+              <div className="cyk-detail" style={{ marginTop: '14px' }}>
                 <strong>{V(selected.i, selected.j)} = {'{'} {[...table.cells[selected.i][selected.j].keys()].join(', ')} {'}'}</strong>
                 {table.cells[selected.i][selected.j].size === 0 && (
                   <div className="hint-text">

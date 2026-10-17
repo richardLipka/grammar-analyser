@@ -46,6 +46,15 @@ export interface ALLParseStep {
   decisionEvent?: ALLDecisionEvent;
   derivationTree?: DerivationNode;
   isMatch?: boolean;
+  activeDfaStateId?: number;
+  activeDecisionNumber?: number;
+  lookaheadTokens?: string[];
+  viableAlts?: number[];
+  subStepType?: 'decision_start' | 'lookahead_scan' | 'decision_resolved' | 'expand' | 'match';
+}
+
+export interface ALLParseOptions {
+  detailedLookaheadSteps?: boolean;
 }
 
 export interface ALLSimulationResult {
@@ -96,7 +105,8 @@ export function simulateALLParse(
   tokens: string[],
   grammar: Grammar,
   atn: ATN,
-  dfaCacheMap?: Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>
+  dfaCacheMap?: Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>,
+  options?: ALLParseOptions
 ): ALLSimulationResult {
   const dfaCache = dfaCacheMap ?? new Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>();
 
@@ -238,6 +248,46 @@ export function simulateALLParse(
           trace: pred.trace,
           isAmbiguous: pred.isAmbiguous
         };
+
+        // If detailed lookahead stepping is enabled, emit step-by-step lookahead transitions
+        if (options?.detailedLookaheadSteps) {
+          steps.push({
+            stepIndex: steps.length,
+            inputIndex: tokenIdx,
+            currentToken: tokens[tokenIdx],
+            remainingTokens: tokens.slice(tokenIdx),
+            callStack: [...callStack],
+            action: `[Lookahead D${decision.decisionNumber}] Start adaptive prediction for '${nt}' in Lookahead DFA at state s0. Viable alternatives: [${prods.map((_, i) => i + 1).join(', ')}]`,
+            actionCz: `[Dopředný pohled D${decision.decisionNumber}] Zahájení adaptivní predikce pro '${nt}' v automatu Lookahead DFA ze stavu s0. Živé alternativy: [${prods.map((_, i) => i + 1).join(', ')}]`,
+            activeDfaStateId: 0,
+            activeDecisionNumber: decision.decisionNumber,
+            lookaheadTokens: [],
+            viableAlts: prods.map((_, i) => i + 1),
+            subStepType: 'decision_start',
+            derivationTree: cloneTree(rootNode)
+          });
+
+          if (pred.trace && pred.trace.length > 0) {
+            for (let tIdx = 0; tIdx < pred.trace.length; tIdx++) {
+              const tr = pred.trace[tIdx];
+              steps.push({
+                stepIndex: steps.length,
+                inputIndex: tokenIdx,
+                currentToken: tr.token ?? tokens[tokenIdx],
+                remainingTokens: tokens.slice(tokenIdx),
+                callStack: [...callStack],
+                action: `[Lookahead D${decision.decisionNumber}] Scanned token '${tr.token ?? '$'}' -> reached Lookahead DFA state s${tr.dfaStateId}. Viable alternatives: [${tr.remainingAlts.join(', ')}] (${tr.action})`,
+                actionCz: `[Dopředný pohled D${decision.decisionNumber}] Přečten token '${tr.token ?? '$'}' -> dosažen stav DFA s${tr.dfaStateId}. Živé alternativy: [${tr.remainingAlts.join(', ')}] (${tr.actionCz})`,
+                activeDfaStateId: tr.dfaStateId,
+                activeDecisionNumber: decision.decisionNumber,
+                lookaheadTokens: pred.lookaheadTokens.slice(0, tIdx + 1),
+                viableAlts: tr.remainingAlts,
+                subStepType: 'lookahead_scan',
+                derivationTree: cloneTree(rootNode)
+              });
+            }
+          }
+        }
       }
     }
 
@@ -261,6 +311,9 @@ export function simulateALLParse(
           ? `Adaptivní rozhodnutí D${decisionEvent.decisionNumber}: přečten dopředný pohled [${decisionEvent.lookaheadTokens.join(', ')}] (hloubka: ${decisionEvent.lookaheadDepth}) -> expanze ${prodStr}`
           : `Expanze jediné alternativy: ${prodStr}`,
         decisionEvent,
+        activeDfaStateId: decisionEvent?.dfaStateId,
+        activeDecisionNumber: decisionEvent?.decisionNumber,
+        subStepType: decisionEvent ? 'decision_resolved' : 'expand',
         derivationTree: cloneTree(rootNode)
       });
       return true;
@@ -285,6 +338,9 @@ export function simulateALLParse(
         ? `Adaptivní rozhodnutí D${decisionEvent.decisionNumber}: přečten dopředný pohled [${decisionEvent.lookaheadTokens.join(', ')}] (hloubka: ${decisionEvent.lookaheadDepth}) -> expanze ${prodStr}`
         : `Expanze jediné alternativy: ${prodStr}`,
       decisionEvent,
+      activeDfaStateId: decisionEvent?.dfaStateId,
+      activeDecisionNumber: decisionEvent?.decisionNumber,
+      subStepType: decisionEvent ? 'decision_resolved' : 'expand',
       derivationTree: cloneTree(rootNode)
     });
 

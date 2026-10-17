@@ -90,6 +90,26 @@ describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
       // The trace shows viable alternatives shrinking as lookahead progresses
       expect(firstDecision.trace![0].remainingAlts.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('emits detailed lookahead DFA transitions when detailedLookaheadSteps is enabled', () => {
+      const g = parseGrammar(`
+        S -> A "x" | B "y"
+        A -> "a" "a" "b"
+        B -> "a" "a" "a" "a" "b"
+      `).grammar!;
+
+      const atn = buildATN(g);
+      const macroSim = simulateALLParse(['a', 'a', 'b', 'x'], g, atn);
+      const microSim = simulateALLParse(['a', 'a', 'b', 'x'], g, atn, undefined, { detailedLookaheadSteps: true });
+
+      expect(microSim.accepted).toBe(true);
+      expect(microSim.steps.length).toBeGreaterThan(macroSim.steps.length);
+
+      const lookaheadScanSteps = microSim.steps.filter(s => s.subStepType === 'lookahead_scan');
+      expect(lookaheadScanSteps.length).toBeGreaterThanOrEqual(1);
+      expect(lookaheadScanSteps[0].activeDfaStateId).toBeDefined();
+      expect(lookaheadScanSteps[0].activeDecisionNumber).toBeDefined();
+    });
   });
 
   describe('Factored Arithmetic Expressions', () => {

@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { parseGrammar } from '../core/parser/grammarParser';
 import { Grammar } from '../core/ast/grammar';
 import { testMembership, viablePrefixLength } from '../core/parser/membership';
-import { cnfViolations, cykTable } from '../core/parser/cyk';
+import { cnfViolations, cykTable, simulateCYKParse, extractCYKTrees } from '../core/parser/cyk';
 import { convertToChomsky } from '../core/processor/grammarProcessor';
 import { DerivationNode } from '../core/generator/wordGenerator';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
@@ -172,5 +172,27 @@ describe('CYK', () => {
         expect(cykTable(cnf, w).accepted, `seed ${s} '${w.join(' ')}'`).toBe(accepts(g, w));
       }
     }
+  });
+
+  it('simulates step-by-step execution and extracts valid derivation trees', () => {
+    const g = parse('S -> A B | B C\nA -> B A | a\nB -> C C | b\nC -> A B | a');
+    const sim = simulateCYKParse(g, 'b a a b a'.split(' '));
+    expect(sim.accepted).toBe(true);
+    expect(sim.totalSteps).toBeGreaterThan(0);
+    expect(sim.trees.length).toBeGreaterThan(0);
+    expect(yieldOf(sim.trees[0])).toEqual('b a a b a'.split(' '));
+
+    // Verify step progression
+    const baseSteps = sim.steps.filter(s => s.phase === 'base');
+    expect(baseSteps.length).toBe(5);
+    const combineSteps = sim.steps.filter(s => s.phase === 'combine');
+    expect(combineSteps.length).toBeGreaterThan(0);
+    const acceptStep = sim.steps[sim.steps.length - 1];
+    expect(acceptStep.phase).toBe('accept');
+    expect(acceptStep.addedNonTerminals).toContain('S');
+
+    // Test extraction of multiple trees
+    const trees = extractCYKTrees(g, 'b a a b a'.split(' '), sim.table, 5);
+    expect(trees.length).toBeGreaterThan(0);
   });
 });
