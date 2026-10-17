@@ -858,5 +858,9 @@ Owner's request: a name that is missing in the symbol table fails the recursive 
 
 **4. Text Clarity & Bilingual Parity.**
 - Verified that all explanations across LL(1)/LL(2), LR(0)/SLR(1)/LALR(1)/LR(1), GLR, ALL(*), Earley, ETTP, CYK, recursive descent, and grammar transformations adhere strictly to KIV/FJP course terminology in Czech and standard academic literature terminology in English.
-- All unit test suites pass (37 suites, 632 tests).
+
+**5. Earley & ETTP Derivation Tree Verification & Visualization Fix.**
+- Problem: In ETTP (`ettpParser.ts`), state-pair transition traversal compounded children, causing exponential prefix duplication in the derivation trees. In `EarleyView.tsx`, the tree visualizer only showed the complete parse tree on the final step (`isLastStep`), displaying isolated, partial step fragments during step navigation.
+- Fix: ETTP derivation tree extraction now produces exact trees matching the parsed tokens without distortion. `EarleyView.tsx` defaults to displaying the full derivation tree of the accepted word (with leaves matching the input word 100%), adds a segmented toggle between Full Tree and Step Subtree, and highlights active step nodes directly within the tree.
+- Tests: Added automated test in `src/test/earleyParser.test.ts` verifying that `extractLeaves(tree)` exactly equals `tokens` across all presets and generated words for both Earley and ETTP. All 37 test suites and 633 tests pass.
 

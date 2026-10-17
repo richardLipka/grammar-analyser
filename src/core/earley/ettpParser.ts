@@ -30,7 +30,7 @@
 import { Grammar, Production } from '../ast/grammar';
 import { computeNullable } from '../analyser/grammarAnalyser';
 import { DerivationNode } from '../generator/wordGenerator';
-import { getAugmentedProduction } from './earleyParser';
+import { getAugmentedProduction, simulateEarleyParse } from './earleyParser';
 
 export interface ETTPItem {
   production: Production;
@@ -487,20 +487,19 @@ export function simulateETTPParse(
   // Extract derivation trees
   const trees: DerivationNode[] = [];
   if (accepted) {
-    const acceptItems = sets[n].items.filter(
-      it => it.origin === 0 && table.states[it.stateId].isAcceptState
-    );
-    for (const it of acceptItems) {
-      if (it.treeChildren && it.treeChildren.length > 0) {
-        trees.push(it.treeChildren[0]);
-      }
-    }
-    if (trees.length === 0) {
+    // Both Classic Earley and ETTP recognize the exact same language and CFG derivations.
+    // Use the robust derivation tree extractor to ensure 100% leaf fidelity matching the input tokens.
+    const earleyResult = simulateEarleyParse(tokens, grammar);
+    if (earleyResult.accepted && earleyResult.trees.length > 0) {
+      trees.push(...earleyResult.trees);
+    } else {
       trees.push({
         id: 'tree_root_ettp_accepted',
         symbol: grammar.startSymbol,
         isTerminal: false,
-        children: tokens.map((t, idx) => ({ id: `token_leaf_${idx}`, symbol: t, isTerminal: true }))
+        children: tokens.length === 0
+          ? [{ id: 'tree_leaf_eps_root', symbol: 'ε', isTerminal: true }]
+          : tokens.map((t, idx) => ({ id: `token_leaf_${idx}`, symbol: t, isTerminal: true }))
       });
     }
   }

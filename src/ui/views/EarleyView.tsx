@@ -118,23 +118,38 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   const activeEarleyStep: EarleyStep | undefined = earleySim.steps[currentStepIdx];
   const activeETTPStep: ETTPStep | undefined = ettpSim.steps[currentStepIdx];
 
+  const [treeDisplayMode, setTreeDisplayMode] = useState<'full' | 'step'>('full');
   const isLastStep = currentStepIdx === totalSteps - 1;
   const activeSim = parserMode === 'classic' ? earleySim : ettpSim;
   const activeStep = parserMode === 'classic' ? activeEarleyStep : activeETTPStep;
 
-  // Progressive derivation tree: shows the active subtree being scanned/reduced up to the current step.
-  // On the final step when accepted, shows the full completed derivation tree (with alternative tree navigation if ambiguous).
-  const currentDerivationTree = useMemo(() => {
-    if (isLastStep && activeSim.accepted && activeSim.trees.length > 0) {
+  // Derivation tree computation:
+  // - Full completed tree for the parsed input word (leaves match tokens exactly)
+  // - Active step subtree tracking local reductions/scans
+  const fullDerivationTree = useMemo(() => {
+    if (activeSim.accepted && activeSim.trees.length > 0) {
       return activeSim.trees[selectedTreeIdx] ?? activeSim.trees[0];
     }
+    return undefined;
+  }, [activeSim.accepted, activeSim.trees, selectedTreeIdx]);
+
+  const stepSubtree = useMemo(() => {
     if (activeStep?.derivationTree) return activeStep.derivationTree;
     for (let idx = currentStepIdx - 1; idx >= 0; idx--) {
       const step = activeSim.steps[idx];
       if (step?.derivationTree) return step.derivationTree;
     }
     return undefined;
-  }, [isLastStep, activeSim.accepted, activeSim.trees, activeSim.steps, selectedTreeIdx, activeStep, currentStepIdx]);
+  }, [activeStep, activeSim.steps, currentStepIdx]);
+
+  const currentDerivationTree = treeDisplayMode === 'full' && fullDerivationTree ? fullDerivationTree : (stepSubtree ?? fullDerivationTree);
+
+  const highlightedNodeIds = useMemo(() => {
+    if (treeDisplayMode === 'full' && activeStep?.derivationTree?.id) {
+      return [activeStep.derivationTree.id];
+    }
+    return undefined;
+  }, [treeDisplayMode, activeStep]);
 
   const theory = cz ? EARLEY_THEORY_GUIDE.cz : EARLEY_THEORY_GUIDE.en;
 
@@ -538,7 +553,29 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 <span>{cz ? 'Derivační strom' : 'Derivation Tree'}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {isLastStep && activeSim.accepted && activeSim.trees.length > 1 && (
+                {fullDerivationTree && stepSubtree && (
+                  <div style={{ display: 'inline-flex', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${treeDisplayMode === 'full' ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ fontSize: '11px', padding: '2px 8px', height: '24px', borderRadius: 0 }}
+                      onClick={() => setTreeDisplayMode('full')}
+                      title={cz ? 'Zobrazit úplný derivační strom vstupního slova' : 'Show full derivation tree of the input word'}
+                    >
+                      {cz ? 'Úplný strom' : 'Full Tree'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${treeDisplayMode === 'step' ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ fontSize: '11px', padding: '2px 8px', height: '24px', borderRadius: 0 }}
+                      onClick={() => setTreeDisplayMode('step')}
+                      title={cz ? 'Zobrazit podstrom vytvářený v aktuálním kroku' : 'Show subtree formed at current step'}
+                    >
+                      {cz ? 'Krok' : 'Step'}
+                    </button>
+                  </div>
+                )}
+                {treeDisplayMode === 'full' && activeSim.accepted && activeSim.trees.length > 1 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <button
                       type="button"
@@ -576,7 +613,11 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
 
             <div style={{ flex: 1, minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {currentDerivationTree ? (
-                <DerivationTreeVisualizer rootNode={currentDerivationTree} lang={lang} />
+                <DerivationTreeVisualizer
+                  rootNode={currentDerivationTree}
+                  lang={lang}
+                  highlightNodeIds={highlightedNodeIds}
+                />
               ) : (
                 <div style={{ textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: '12px', padding: '24px' }}>
                   {currentStepIdx === totalSteps - 1 && !(parserMode === 'classic' ? earleySim.accepted : ettpSim.accepted)

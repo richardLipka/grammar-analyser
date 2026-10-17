@@ -6,6 +6,7 @@ import { simulateETTPParse, buildETTPTable } from '../core/earley/ettpParser';
 import { checkEarleyCompatibility, checkETTPCompatibility } from '../core/earley/earleyCompatibility';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { generateWords } from '../core/generator/wordGenerator';
 
 describe('Earley (1970) and ETTP (2025) Parsers Suite', () => {
   it('correctly parses arithmetic expressions in both Earley and ETTP', () => {
@@ -101,5 +102,70 @@ describe('Earley (1970) and ETTP (2025) Parsers Suite', () => {
         expect(earleyRes.accepted).toBe(ettpRes.accepted);
       }
     }
+  });
+
+  it('verifies that the tree leaves match the input word across all preset grammars and sample inputs in Earley and ETTP', () => {
+    function extractLeaves(node: { symbol: string; children?: any[] }): string[] {
+      if (!node.children || node.children.length === 0) {
+        if (node.symbol === 'ε') return [];
+        return [node.symbol];
+      }
+      const leaves: string[] = [];
+      for (const child of node.children) {
+        leaves.push(...extractLeaves(child));
+      }
+      return leaves;
+    }
+
+    const mismatches: string[] = [];
+
+    for (const p of PRESET_GRAMMARS) {
+      const parsed = parseGrammar(p.grammarText);
+      if (!parsed.grammar || parsed.errors.length > 0) continue;
+      const g = parsed.grammar;
+
+      const wordsToTest: string[][] = [];
+      if (p.sampleInput && p.sampleInput.trim() !== '') {
+        wordsToTest.push(tokenizeInput(p.sampleInput, g.terminals).tokens);
+      }
+      for (const w of generateWords(g, 3, 6)) {
+        wordsToTest.push(w.tokens);
+      }
+
+      for (const tokens of wordsToTest) {
+        const expected = tokens.join(' ');
+
+      // 1. Verify Earley
+      const earleyRes = simulateEarleyParse(tokens, g);
+      if (earleyRes.accepted) {
+        if (!earleyRes.trees || earleyRes.trees.length === 0) {
+          mismatches.push(`[${p.id}] Earley accepted "${expected}" but returned no trees`);
+        } else {
+          const actual = extractLeaves(earleyRes.trees[0]).join(' ');
+          if (actual !== expected) {
+            mismatches.push(`[${p.id}] Earley leaf mismatch: expected "${expected}", got "${actual}"`);
+          }
+        }
+      }
+
+      // 2. Verify ETTP
+      const ettpRes = simulateETTPParse(tokens, g);
+      if (ettpRes.accepted) {
+        if (!ettpRes.trees || ettpRes.trees.length === 0) {
+          mismatches.push(`[${p.id}] ETTP accepted "${expected}" but returned no trees`);
+        } else {
+          const actual = extractLeaves(ettpRes.trees[0]).join(' ');
+          if (actual !== expected) {
+            mismatches.push(`[${p.id}] ETTP leaf mismatch: expected "${expected}", got "${actual}"`);
+          }
+        }
+      }
+    }
+  }
+
+  if (mismatches.length > 0) {
+      console.error('Earley/ETTP Tree Leaf Mismatches:\n' + mismatches.join('\n'));
+    }
+    expect(mismatches).toEqual([]);
   });
 });
