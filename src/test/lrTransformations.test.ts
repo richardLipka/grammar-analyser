@@ -11,6 +11,7 @@ import { compareLanguages } from '../core/analyser/equivalence';
 import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLR0Automaton, buildLALR1Automaton, buildLR1Automaton } from '../core/lr/lrAutomaton';
 import { buildLRTable } from '../core/lr/lrTable';
+import { rules } from './earley';
 
 describe('Category A LR Transformations & Equivalence', () => {
   describe('Dangling-Else Disambiguation (Aho & Ullman 1972)', () => {
@@ -24,6 +25,14 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(raw).grammar!;
       const res = disambiguateDanglingElse(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S -> S_m",
+        "S -> S_o",
+        "S_m -> if c then S_m else S_m",
+        "S_m -> other",
+        "S_o -> if c then S",
+        "S_o -> if c then S_m else S_o"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 8);
       expect(comp.kind).toBe('same-up-to');
     });
@@ -49,6 +58,14 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(complexRaw).grammar!;
       const res = disambiguateDanglingElse(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "stmt -> stmt_m",
+        "stmt -> stmt_o",
+        "stmt_m -> if c then stmt_m else stmt_m",
+        "stmt_m -> other",
+        "stmt_o -> if c then stmt",
+        "stmt_o -> if c then stmt_m else stmt_o"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 8);
       expect(comp.kind).toBe('same-up-to');
       const analysis = analyzeGrammar(res.transformedGrammar, { k2: false });
@@ -67,6 +84,14 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(cStyle).grammar!;
       const res = disambiguateDanglingElse(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "stmt -> stmt_m",
+        "stmt -> stmt_o",
+        "stmt_m -> if ( c ) stmt_m else stmt_m",
+        "stmt_m -> other",
+        "stmt_o -> if ( c ) stmt",
+        "stmt_o -> if ( c ) stmt_m else stmt_o"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 8);
       expect(comp.kind).toBe('same-up-to');
     });
@@ -84,6 +109,14 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(raw).grammar!;
       const res = stratifyPrecedence(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "E -> E + T",
+        "E -> T",
+        "T -> T * F",
+        "T -> F",
+        "F -> ( E )",
+        "F -> id"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 6);
       expect(comp.kind).toBe('same-up-to');
     });
@@ -114,6 +147,16 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(raw).grammar!;
       const res = splitNonTerminalLRContext(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S -> a A1 d",
+        "S -> b B2 d",
+        "S -> a B1 e",
+        "S -> b A2 e",
+        "A1 -> c",
+        "A2 -> c",
+        "B1 -> c",
+        "B2 -> c"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 6);
       expect(comp.kind).toBe('same-up-to');
     });
@@ -143,6 +186,11 @@ describe('Category A LR Transformations & Equivalence', () => {
       const g = parseGrammar(raw).grammar!;
       const res = convertLeftLinearToRightLinear(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S0 -> a A_r",
+        "A_r -> b",
+        "A_r -> a A_r"
+      ]);
       const comp = compareLanguages(g, res.transformedGrammar, 8);
       expect(comp.kind).toBe('same-up-to');
     });
@@ -164,6 +212,14 @@ describe('Category A LR Transformations & Equivalence', () => {
       `).grammar!;
       const res = attemptResolveLRConflicts(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S -> S_m",
+        "S -> S_o",
+        "S_m -> if c then S_m else S_m",
+        "S_m -> other",
+        "S_o -> if c then S",
+        "S_o -> if c then S_m else S_o"
+      ]);
       expect(compareLanguages(g, res.transformedGrammar, 8).kind).toBe('same-up-to');
     });
 
@@ -173,6 +229,13 @@ describe('Category A LR Transformations & Equivalence', () => {
       `).grammar!;
       const res = attemptResolveLRConflicts(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "E -> E + T",
+        "E -> T",
+        "T -> T * F",
+        "T -> F",
+        "F -> id"
+      ]);
       expect(compareLanguages(g, res.transformedGrammar, 6).kind).toBe('same-up-to');
     });
 
@@ -184,6 +247,16 @@ describe('Category A LR Transformations & Equivalence', () => {
       `).grammar!;
       const res = attemptResolveLRConflicts(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S -> a A1 d",
+        "S -> b B2 d",
+        "S -> a B1 e",
+        "S -> b A2 e",
+        "A1 -> c",
+        "A2 -> c",
+        "B1 -> c",
+        "B2 -> c"
+      ]);
       expect(compareLanguages(g, res.transformedGrammar, 6).kind).toBe('same-up-to');
     });
 
@@ -194,6 +267,11 @@ describe('Category A LR Transformations & Equivalence', () => {
       `).grammar!;
       const res = attemptResolveLRConflicts(g);
       expect(res.steps.length).toBeGreaterThan(0);
+      expect(rules(res.transformedGrammar)).toEqual([
+        "S0 -> a A_r",
+        "A_r -> b",
+        "A_r -> a A_r"
+      ]);
       expect(compareLanguages(g, res.transformedGrammar, 8).kind).toBe('same-up-to');
     });
   });

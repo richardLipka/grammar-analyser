@@ -28,6 +28,7 @@ import {
   exportLLTableToLatex,
   exportParseTreeToTikz
 } from '../core/export/latexExport';
+import { rules, expectEquivalent } from './earley';
 
 describe('Grammar Parser & Syntax Variations', () => {
   it('parses arrow syntax with pipe alternatives', () => {
@@ -154,6 +155,8 @@ describe('Grammar Processor (Transformations)', () => {
       p => p.rhs.length > 0 && p.rhs[0] === p.lhs
     );
     expect(hasLeftRec).toBe(false);
+    expect(rules(res.transformedGrammar)).toEqual(["E -> T E'", "E' -> + T E'", "E' ->", "T -> id"]);
+    expectEquivalent(g, res.transformedGrammar, 5);
   });
 
   it('left factors common prefixes', () => {
@@ -165,6 +168,13 @@ describe('Grammar Processor (Transformations)', () => {
 
     const sProds = res.transformedGrammar.productions.filter(p => p.lhs === 'S');
     expect(sProds.length).toBeLessThan(3);
+    expect(rules(res.transformedGrammar)).toEqual([
+      "S -> if c then S S'",
+      "S -> other",
+      "S' -> else S",
+      "S' ->"
+    ]);
+    expectEquivalent(g, res.transformedGrammar, 5);
   });
 
   it('removes unit rules', () => {
@@ -180,6 +190,8 @@ describe('Grammar Processor (Transformations)', () => {
       p => p.rhs.length === 1 && res.transformedGrammar.nonTerminals.has(p.rhs[0])
     );
     expect(hasUnit).toBe(false);
+    expect(rules(res.transformedGrammar)).toEqual(["E -> id", "T -> id", "F -> id"]);
+    expectEquivalent(g, res.transformedGrammar, 5);
   });
 
   it('converts to Chomsky Normal Form (CNF)', () => {
@@ -202,6 +214,16 @@ describe('Grammar Processor (Transformations)', () => {
         throw new Error(`Production ${p.lhs} -> ${p.rhs.join(' ')} violates CNF length`);
       }
     }
+    expect(rules(res.transformedGrammar)).toEqual([
+      "S0 -> X_a C_1",
+      "S0 -> X_a X_b",
+      "S -> X_a C_1",
+      "S -> X_a X_b",
+      "X_a -> a",
+      "X_b -> b",
+      "C_1 -> S X_b"
+    ]);
+    expectEquivalent(g, res.transformedGrammar, 6);
   });
 
   it('reduces grammar by removing unreachable and unproductive symbols', () => {
@@ -218,6 +240,8 @@ describe('Grammar Processor (Transformations)', () => {
     expect(res.transformedGrammar.nonTerminals.has('C')).toBe(false);
     expect(res.transformedGrammar.nonTerminals.has('S')).toBe(true);
     expect(res.transformedGrammar.nonTerminals.has('A')).toBe(true);
+    expect(rules(res.transformedGrammar)).toEqual(["S -> a A", "A -> a"]);
+    expectEquivalent(g, res.transformedGrammar, 5);
   });
 });
 
@@ -454,6 +478,11 @@ describe('Bilingual Output Support', () => {
     const ePrimeProds = resE.transformedGrammar.productions.filter(p => p.lhs === "E'");
     expect(ePrimeProds.some(p => p.rhs.length === 0)).toBe(true);
     expect(ePrimeProds.some(p => p.rhs[0] === '+')).toBe(true);
+    expect(rules(resE.transformedGrammar)).toEqual([
+      "E -> T E'", "E' -> + T E'", "E' ->", "T -> id",
+      "A -> a b c", "A -> a b d", "A -> x", "B ->", "U -> id", "W -> U"
+    ]);
+    expectEquivalent(g, resE.transformedGrammar, 5);
 
     // A has left factorization
     const aTrans = getAvailableTransformationsForSymbol(g, 'A');
@@ -462,10 +491,23 @@ describe('Bilingual Output Support', () => {
     const resA = applySymbolTransformation(g, 'A', aTrans.find(t => t.id.startsWith('leftFactor:'))!.id);
     expect(resA.steps).toHaveLength(1);
     expect(resA.transformedGrammar.nonTerminals.has("A'")).toBe(true);
+    expect(rules(resA.transformedGrammar)).toEqual([
+      "E -> E + T", "E -> T", "T -> id",
+      "A -> a b A'", "A -> x", "A' -> c", "A' -> d",
+      "B ->", "U -> id", "W -> U"
+    ]);
+    expectEquivalent(g, resA.transformedGrammar, 5);
 
     // B has epsilon elimination
     const bTrans = getAvailableTransformationsForSymbol(g, 'B');
     expect(bTrans.some(t => t.id === 'eliminateEpsilon')).toBe(true);
+    const resB = applySymbolTransformation(g, 'B', 'eliminateEpsilon');
+    expect(rules(resB.transformedGrammar)).toEqual([
+      "E -> E + T", "E -> T", "T -> id",
+      "A -> a b c", "A -> a b d", "A -> x",
+      "U -> id", "W -> U"
+    ]);
+    expectEquivalent(g, resB.transformedGrammar, 5);
 
     // W has unit rule elimination (W -> U)
     const wTrans = getAvailableTransformationsForSymbol(g, 'W');
@@ -474,6 +516,12 @@ describe('Bilingual Output Support', () => {
     expect(resW.steps).toHaveLength(1);
     const wProds = resW.transformedGrammar.productions.filter(p => p.lhs === 'W');
     expect(wProds.some(p => p.rhs.length === 1 && p.rhs[0] === 'id')).toBe(true);
+    expect(rules(resW.transformedGrammar)).toEqual([
+      "E -> E + T", "E -> T", "T -> id",
+      "A -> a b c", "A -> a b d", "A -> x",
+      "B ->", "U -> id", "W -> id"
+    ]);
+    expectEquivalent(g, resW.transformedGrammar, 5);
   });
 
   describe('LaTeX and Graph Exporters', () => {

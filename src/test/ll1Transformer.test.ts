@@ -39,6 +39,13 @@ describe('Automatic transformation to LL(1)', () => {
     expect(res.steps[0].titleCz).toContain('levé rekurze');
     expect(res.steps[0].descriptionCz).toMatch(/^Důvod: /);
     expect(res.steps[res.steps.length - 1].titleCz).toBe('Výsledek: gramatika je LL(1)');
+    expect(rules(res.transformedGrammar)).toEqual([
+      "E -> T E'", "E' -> + T E'", "E' ->",
+      "T -> F T'", "T' -> * F T'", "T' ->",
+      "F -> ( E )", "F -> a"
+    ]);
+    expect(isLL1(res.transformedGrammar)).toBe(true);
+    expectEquivalent(g, res.transformedGrammar, 6);
   });
 
   it('exposes a FIRST-FIRST clash by substitution, then factors (KIV/FJP 9 a 10, p. 20)', () => {
@@ -46,6 +53,11 @@ describe('Automatic transformation to LL(1)', () => {
     const res = transformToLL1(g);
     expect(res.success).toBe(true);
     expect(res.steps.map(s => s.titleCz).join(' | ')).toMatch(/Dosazení C .*Levá faktorizace A/);
+    expect(rules(res.transformedGrammar)).toEqual([
+      "A -> a A'", "A -> b F D", "A' -> b", "A' -> E D",
+      "D -> d", "E -> x", "F -> f"
+    ]);
+    expect(isLL1(res.transformedGrammar)).toBe(true);
     expectEquivalent(g, res.transformedGrammar, 5);
   });
 
@@ -54,6 +66,12 @@ describe('Automatic transformation to LL(1)', () => {
     const res = transformToLL1(g);
     expect(res.success).toBe(true);
     expect(res.steps.some(s => s.titleCz?.includes('Pohlcení'))).toBe(true);
+    expect(rules(res.transformedGrammar)).toEqual([
+      "S -> a A a a", "S -> b [Ab] a",
+      "A -> b", "A ->",
+      "[Ab] -> b A"
+    ]);
+    expect(isLL1(res.transformedGrammar)).toBe(true);
     expectEquivalent(g, res.transformedGrammar, 6);
   });
 

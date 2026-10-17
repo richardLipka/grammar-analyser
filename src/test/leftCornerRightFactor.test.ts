@@ -54,6 +54,18 @@ describe('Left-corner transformation', () => {
     const g = parse('S -> A a | b\nA -> S c | A d | e');
     expect(leftRecursive(g).sort()).toEqual(['A', 'S']);
     const res = leftCornerTransform(g).transformedGrammar;
+    expect(rules(res)).toEqual([
+      'S -> a [S-S]',
+      'S -> b [S-S]',
+      'S -> d [S-A]',
+      '[S-A] -> a [S-S]',
+      '[S-A] -> d [S-A]',
+      '[S-S] -> c [S-A]',
+      '[S-S] ->',
+      'A -> d [A-A]',
+      'A -> a [A-S]',
+      'A -> b [A-S]'
+    ]);
     expect(leftRecursive(res)).toEqual([]);
     expectEquivalent(g, res, 6);
   });
@@ -61,8 +73,14 @@ describe('Left-corner transformation', () => {
   it('keeps non-terminals outside the left-recursive cycles unchanged', () => {
     const g = parse('S -> x L y | z\nL -> L , a | a\nM -> m');
     const res = leftCornerTransform(g).transformedGrammar;
-    expect(rules(res)).toContain('S -> x L y');
-    expect(rules(res)).toContain('M -> m');
+    expect(rules(res)).toEqual([
+      'S -> x L y',
+      'S -> z',
+      'L -> a [L-L]',
+      '[L-L] -> , a [L-L]',
+      '[L-L] ->',
+      'M -> m'
+    ]);
     expectEquivalent(g, res, 6);
   });
 
@@ -118,6 +136,13 @@ describe('Right factoring', () => {
   it('factors the whole grammar until no common suffix is left', () => {
     const g = parse('S -> i E t S | i E t S e S | a\nE -> b');
     const res = rightFactorGrammar(g).transformedGrammar;
+    expect(rules(res)).toEqual([
+      "S -> S' S",
+      'S -> a',
+      "S' -> i E t",
+      "S' -> i E t S",
+      'E -> b'
+    ]);
     for (const nt of res.nonTerminals) {
       const alts = res.productions.filter(p => p.lhs === nt).map(p => p.rhs);
       for (let i = 0; i < alts.length; i++) {

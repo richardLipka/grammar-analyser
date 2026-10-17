@@ -98,14 +98,14 @@ describe('Occurrence transformations', () => {
     const occ = occurrenceOf(g, 'S', 'A', 1);
     const res = applySymbolTransformation(g, '', `expandOccurrence:${occ.productionId}:${occ.position}`).transformedGrammar;
     expect(rules(res)).toEqual(['S -> A x a', 'S -> A x b', 'A -> a', 'A -> b']);
+    expectEquivalent(g, res, 5);
   });
 
   it('copies a non-terminal for one occurrence (reduction of FOLLOW sets)', () => {
     const g = parse('S -> A a | b A c\nA -> a | e');
     expect(conflicts(g)).toContain('A:a:First/Follow');
     const res = splitFollowForOccurrence(g, occurrenceOf(g, 'S', 'A', 1)).transformedGrammar;
-    expect(rules(res)).toContain('S -> b A₂ c');
-    expect(rules(res)).toContain('A₂ -> a');
+    expect(rules(res)).toEqual(['S -> A a', 'S -> b A₂ c', 'A -> a', 'A ->', 'A₂ -> a', 'A₂ ->']);
     expect(analyzeGrammar(res).follow1.get('A₂')).toEqual(new Set(['c']));
     expectEquivalent(g, res, 6);
   });
@@ -115,7 +115,10 @@ describe('Lecture transformations of whole non-terminals', () => {
   it('removes immediate left recursion without ε-rules (8 BKG, variant a)', () => {
     const g = parse('E -> E + T | T\nT -> T * F | F\nF -> ( E ) | i');
     const res = applySymbolTransformation(g, 'E', 'eliminateImmediateLeftRecursionEpsFree').transformedGrammar;
-    expect(rules(res).filter(r => r.startsWith('E'))).toEqual(["E -> T", "E -> T E'", "E' -> + T", "E' -> + T E'"]);
+    expect(rules(res)).toEqual([
+      "E -> T", "E -> T E'", "E' -> + T", "E' -> + T E'",
+      "T -> T * F", "T -> F", "F -> ( E )", "F -> i"
+    ]);
     expectEquivalent(g, res, 5);
   });
 

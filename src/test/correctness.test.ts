@@ -290,12 +290,16 @@ describe('Transformations preserve the language', () => {
     const res = applySymbolTransformation(g, 'A', 'eliminateEpsilon').transformedGrammar;
     expect(accepts(res, [])).toBe(true);
     expect(res.productions.some(p => p.lhs === 'A' && p.rhs.length === 0)).toBe(false);
+    expect(rules(res)).toEqual(["S -> A b", "S -> b", "S -> B", "B -> A", "B ->", "A -> a"]);
+    expectEquivalent(g, res, 5);
   });
 
   it('recomputes terminals after removing rules', () => {
     const g = parse('S -> "a"\nU -> "z"');
     const res = applySymbolTransformation(g, 'U', 'removeUnreachable').transformedGrammar;
     expect([...res.terminals]).toEqual(['a']);
+    expect(rules(res)).toEqual(['S -> a']);
+    expectEquivalent(g, res, 5);
   });
 });
 

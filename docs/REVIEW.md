@@ -900,5 +900,28 @@ Owner's request: a name that is missing in the symbol table fails the recursive 
   - The automaton graph is now accessible in both Classic Earley (1970) and ETTP (2025) modes, with an educational banner explaining the connection between runtime chart sets and the precomputed static item automaton.
 - Tests: Added unit test suite in `src/test/earleyParser.test.ts` verifying core/closure partitioning, transition reasons, trigger items, and origin classification across presets. All 38 test suites (719 tests) pass.
 
+**8. Rigorous Verification of Grammar Transformations: Actual Results and Language Equivalence (2026-10-17).**
+- Problem: Several transformer test suites previously verified only metadata (e.g. `res.steps[0].titleCz`, step counts), boolean return flags (`res.success === true`), or generic properties without checking the actual resulting grammar rules against expected solutions or verifying that $L(G) = L(G')$.
+- Systematic Audit & Reinforcement:
+  - `src/test/ll1Transformer.test.ts`: Added concrete rule assertions `rules(res.transformedGrammar)`, `isLL1(res.transformedGrammar)`, and language equivalence `expectEquivalent(g, res.transformedGrammar, k)` to:
+    - Left recursion removal: verified exact rules `E -> T E'`, `E' -> + T E' | ε`, `T -> F T'`, `T' -> * F T' | ε`, `F -> ( E ) | a` and $L(G) = L(G')$.
+    - FIRST-FIRST clash exposure via substitution and left factoring: verified exact rules `A -> a A' | b F D`, `A' -> b | E D`, `D -> d`, `E -> x`, `F -> f` and $L(G) = L(G')$.
+    - FIRST-FOLLOW conflict resolution via terminal absorption: verified exact rules `S -> a A a a | b [Ab] a`, `A -> b | ε`, `[Ab] -> b A` and $L(G) = L(G')$.
+  - `src/test/leftCornerRightFactor.test.ts`:
+    - Verified exact resulting rules for left-corner transformations eliminating indirect left recursion (`rules(res)` for $S \to A a \mid b, A \to S c \mid A d \mid e$ and non-terminal cycle boundaries).
+    - Verified exact resulting rules for full right factoring (`rules(res)` for $S \to i E t S \mid i E t S e S \mid a, E \to b$).
+  - `src/test/ll1Transformations.test.ts`:
+    - Added language equivalence verification `expectEquivalent(g, res, 5)` to occurrence-level substitutions.
+    - Verified complete rule assertions `rules(res)` for non-terminal splitting (`splitFollowForOccurrence`) and epsilon-free immediate left recursion elimination.
+  - `src/test/grammar.test.ts`:
+    - In `Grammar Processor (Transformations)`: Added exact `rules(res.transformedGrammar)` and `expectEquivalent` checks to left recursion removal, left factoring, unit rule removal, Chomsky Normal Form (CNF) conversion, and grammar reduction.
+    - In symbol transformations: Added exact `rules(res.transformedGrammar)` and `expectEquivalent` assertions for individual non-terminal transformations (`eliminateImmediateLeftRecursion`, `leftFactor`, `eliminateEpsilon`, `eliminateUnit`).
+  - `src/test/lrTransformations.test.ts`:
+    - Verified exact resulting rules `rules(res.transformedGrammar)` for Dangling-Else disambiguation (standard, complex multi-rule form, and C-style parentheses), Floyd precedence stratification, Mickunas context splitting, and left-linear to right-linear conversion.
+    - Verified exact resulting rules for `attemptResolveLRConflicts` across all conflict resolution strategies.
+  - `src/test/correctness.test.ts`:
+    - Added exact rule checks and language equivalence to `eliminateEpsilon` and unreachable rule elimination.
+- Validation: All 38 test suites (719 tests) pass with zero errors, verifying both actual rule structures and language preservation across all transformations.
+
 
 
