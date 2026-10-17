@@ -13,7 +13,7 @@ export const EARLEY_PRIMARY_REFERENCES: ParserLiteratureReference[] = [
   {
     authorYear: 'Earley (1970)',
     citation: 'Earley, J.: An efficient context-free parsing algorithm. Communications of the ACM 13(2), 94–102 (1970).',
-    url: 'https://doi.org/10.1145/362005.362035',
+    url: 'https://doi.org/10.1145/362007.362035',
     sections: '§1 (Introduction), §2 (The Algorithm), §3 (Correctness & Time Bounds: O(n³) general, O(n²) unambiguous, O(n) bounded state)'
   },
   {

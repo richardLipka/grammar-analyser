@@ -17,6 +17,7 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
+import { ReferenceBar } from '../components/ReferenceBar';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
@@ -1234,6 +1235,13 @@ export const LRView: React.FC<LRViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Primary Literature Reference Bar */}
+      <ReferenceBar
+        references={LR_TECHNIQUE_REFERENCES}
+        lang={lang}
+        label={cz ? 'Primární literatura (analyzátory LR a GLR):' : 'Primary literature (LR & GLR parsers):'}
+      />
     </div>
   );
 };

@@ -3,7 +3,7 @@
  *
  * Primary Literature:
  * - Earley, J.: An efficient context-free parsing algorithm. Communications of the ACM 13(2), 94–102 (1970).
- *   https://doi.org/10.1145/362005.362035
+ *   https://doi.org/10.1145/362007.362035
  * - Aycock, J., Horspool, R.N.: Practical Earley Parsing. The Computer Journal 45(6), 620–630 (2002).
  *   https://doi.org/10.1093/comjnl/45.6.620
  *

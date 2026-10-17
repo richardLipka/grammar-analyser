@@ -16,6 +16,38 @@ import { HistoryEntry } from '../useGrammarHistory';
 import { WHOLE_GRAMMAR_TRANSFORMATIONS } from '../wholeGrammarTransformations';
 import { InfoKey, WHOLE_GRAMMAR_INFO } from '../../core/processor/transformationInfo';
 import { InfoButton } from '../components/TransformationInfo';
+import { ReferenceBar } from '../components/ReferenceBar';
+
+export const TRANSFORMATIONS_PRIMARY_REFERENCES = [
+  {
+    authorYear: 'Chomsky (1959)',
+    topicEn: 'Chomsky Normal Form & Syntax',
+    topicCz: 'Chomského normální forma a syntaxe',
+    citation: 'Chomsky, N.: On certain formal properties of grammars. Information and Control 2(2), 137–167, 1959.',
+    url: 'https://doi.org/10.1016/S0019-9958(59)90362-6'
+  },
+  {
+    authorYear: 'Greibach (1965)',
+    topicEn: 'Greibach Normal Form',
+    topicCz: 'Greibachové normální forma',
+    citation: 'Greibach, S. A.: A new normal-form theorem for context-free phrase structure grammars. Journal of the ACM 12(1), 42–52, 1965.',
+    url: 'https://doi.org/10.1145/321250.321254'
+  },
+  {
+    authorYear: 'Rosenkrantz & Stearns (1970)',
+    topicEn: 'Left Factorization & Deterministic Top-Down Grammars',
+    topicCz: 'Levá faktorizace a deterministické gramatiky shora dolů',
+    citation: 'Rosenkrantz, D. J., Stearns, R. E.: Properties of deterministic top-down grammars. Information and Control 17(3), 226–256, 1970.',
+    url: 'https://doi.org/10.1016/S0019-9958(70)90446-8'
+  },
+  {
+    authorYear: 'Bar-Hillel, Perles & Shamir (1961)',
+    topicEn: 'Grammar Reduction & Properties',
+    topicCz: 'Redukce gramatik a jejich vlastnosti',
+    citation: 'Bar-Hillel, Y., Perles, M., Shamir, E.: On formal properties of simple phrase structure grammars. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961.',
+    url: 'https://doi.org/10.1515/9783112613764-007'
+  }
+];
 
 interface TransformationsViewProps {
   /** The analysed grammar (the editor's current grammar once it has been analysed) */
@@ -226,6 +258,13 @@ export const TransformationsView: React.FC<TransformationsViewProps> = ({
           ))}
         </ol>
       </div>
+
+      {/* Primary Literature Reference Bar */}
+      <ReferenceBar
+        references={TRANSFORMATIONS_PRIMARY_REFERENCES}
+        lang={lang}
+        label={lang === 'cz' ? 'Primární literatura (ekvivalentní úpravy a normální formy BKG):' : 'Primary literature (equivalent transformations & normal forms):'}
+      />
     </div>
   );
 };

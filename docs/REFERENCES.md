@@ -213,8 +213,21 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Title:** *An Efficient Recognition and Syntax-Analysis Algorithm for Context-Free Languages*
 - **Venue:** Air Force Cambridge Research Laboratory, Scientific Report AFCRL-65-758, Bedford, MA, 1965; also Coordinated Science Laboratory Report R-257, University of Illinois, Urbana, IL.
 - **Identifier / Link:** [http://hdl.handle.net/2142/74301](http://hdl.handle.net/2142/74301) (UIUC IDEALS Permanent Repository Handle)
-- **App Usage:** Foundational $O(n^3)$ dynamic programming recognition algorithm for context-free grammars (the 'K' in CYK).
-- **Referenced In:** `MembershipView.tsx`.
+### Aycock & Horspool (2002)
+- **Authors:** John Aycock, R. Nigel Horspool
+- **Title:** *Practical Earley Parsing*
+- **Venue:** The Computer Journal, Vol. 45, No. 6, pp. 620–630, 2002.
+- **Identifier / Link:** [https://doi.org/10.1093/comjnl/45.6.620](https://doi.org/10.1093/comjnl/45.6.620)
+- **App Usage:** Elimination of cyclic chart looping for $\varepsilon$-productions by instantly advancing the dot past nullable symbols during Prediction and Completer phases.
+- **Referenced In:** `EarleyView.tsx`, `earleyParser.ts`, `earleyExplain.ts`.
+
+### Scott & Johnstone (2025/2026)
+- **Authors:** Elizabeth Scott, Adrian Johnstone
+- **Title:** *Earley Table Traversing Parsers*
+- **Venue:** Science of Computer Programming, Vol. 247, 103335, 2025/2026.
+- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2025.103335](https://doi.org/10.1016/j.scico.2025.103335)
+- **App Usage:** Precomputation of an Earley transition table eliminating all dynamic prediction operations at runtime (0 predictor steps), maintaining compact $(q, j)$ state-origin pairs and traversing transitions $\delta(q, X)$ across input sets $S_i$.
+- **Referenced In:** `EarleyView.tsx`, `ettpParser.ts`, `earleyExplain.ts`, `earleyCompatibility.ts`.
 
 ---
 

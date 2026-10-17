@@ -834,3 +834,29 @@ Owner's request: a name that is missing in the symbol table fails the recursive 
 - Unused imports and a dead constant (`ASSOC_NAME`) removed.
 
 *Tests:* redeclaration stops the descent and is shadowing in an inner scope; the terminal instead of a name is not checked while real names are; every sample's word of terminals is accepted with the symbol table on.
+
+## 27. Step-by-step interactive algorithms, literature audit & text clarity (2026-10-17)
+
+**1. CYK Step-by-Step Dynamic Programming Simulation.**
+- An interactive step-by-step table filling simulator was implemented for the CYK algorithm (`src/ui/views/CYKView.tsx`).
+- In addition to showing the final triangular table, users can step forward, step backward, or auto-play the computation cell-by-cell ($V(i, j)$ ordered by substring length $l = 1 \dots n$).
+- Visual operand cell highlighting: when computing cell $(i, j)$ at split position $k$, the left operand cell $V(i, k)$ (`.active-left`) and right operand cell $V(k+1, j)$ (`.active-right`) are highlighted with distinct vibrant borders and backgrounds, while the target cell $V(i, j)$ (`.active-target`) is highlighted and all other cells are slightly dimmed (`.dimmed`).
+- Derivation tree extraction: `extractCYKTrees` parses back-pointers from the CYK table to generate valid binary derivation trees for accepted words, rendering them directly in the tree visualizer.
+- Step descriptions are fully localized in Czech and English, detailing the active substring, split point, and applicable CNF rules ($A \to B\,C$ or $A \to a$).
+
+**2. ALL(\*) Lookahead Micro-Stepping.**
+- In addition to top-level parsing decisions, ALL(\*) lookahead calculations feature detailed step tracing (`detailedLookaheadSteps`).
+- Steps trace ATN subparser $\varepsilon$-closures, call/return stack movements, Lookahead DFA state caching and transitions, and conflict resolution by rule priority.
+- The interactive Dagre SVG visualizer highlights the active DFA state and configuration frontiers in real time with bilingual status banners.
+
+**3. Academic Literature & Bibliography Audit.**
+- Automated network validation across all 53 external URLs and DOIs in the codebase.
+- Found and fixed a DOI typo in `src/core/earley/earleyParser.ts:6` and `src/core/earley/earleyExplain.ts:16` (`10.1145/362005.362035` → `10.1145/362007.362035`, now resolving directly to ACM Digital Library for Earley's 1970 CACM paper).
+- Integrated the existing `LR_TECHNIQUE_REFERENCES` into `src/ui/views/LRView.tsx` via `<ReferenceBar>` (Knuth 1965, DeRemer 1969/1971/1982, Aho 1974/1975, Pager 1977, Tomita 1985, Scott & Johnstone 2006, Denny & Malloy 2010).
+- Integrated `TRANSFORMATIONS_PRIMARY_REFERENCES` into `src/ui/views/TransformationsView.tsx` via `<ReferenceBar>` (Chomsky 1959, Greibach 1965, Rosenkrantz & Stearns 1970, Bar-Hillel et al. 1961).
+- Updated `docs/REFERENCES.md` with full bibliographic citations for Scott & Johnstone (2025/2026) (Earley Table Traversing Parsers) and Aycock & Horspool (2002) (Directly-executable Earley parsers).
+
+**4. Text Clarity & Bilingual Parity.**
+- Verified that all explanations across LL(1)/LL(2), LR(0)/SLR(1)/LALR(1)/LR(1), GLR, ALL(*), Earley, ETTP, CYK, recursive descent, and grammar transformations adhere strictly to KIV/FJP course terminology in Czech and standard academic literature terminology in English.
+- All unit test suites pass (37 suites, 632 tests).
+

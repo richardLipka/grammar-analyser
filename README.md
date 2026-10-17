@@ -73,10 +73,25 @@
   - The search runs in slices and asks after every 30 s whether to continue; stopped, it reports the lengths checked completely
   - Agreement is reported as a hint only (equivalence of context-free grammars is undecidable)
   - The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the violating rules
-- **Membership & CYK** (tab *CYK*):
+- **Earley (1970) & ETTP (Scott & Johnstone 2025/2026) Chart Parsers** (tab *Earley / ETTP*):
+  - General context-free parsing for arbitrary CFGs (including left/right recursion, ambiguities, and cycles) in $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ unambiguous, and $\mathcal{O}(n)$ deterministic time
+  - **Classic Earley (1970)** with Aycock & Horspool (2002) nullable $\varepsilon$-rule optimization to prevent cyclic chart looping
+  - **Earley Table Traversing Parsers (ETTP 2025/2026)**: precomputed Earley transition table eliminating all runtime prediction steps (0 predictor steps at runtime), maintaining compact $(q, j)$ state-origin pairs
+  - Interactive step simulator with color-coded operation badges (Scanner, Predictor, Completer, Transition), state set chart visualization, ETTP transition table inspector, and synchronized derivation tree generation
+- **ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)** (tab *ALL(*)*):
+  - Implements the dynamic non-backtracking adaptive LL(*) algorithm powering ANTLR 4
+  - Augmented Transition Networks (ATN) with rule call and return transitions
+  - Dynamic Lookahead DFA synthesis: caching deterministic lookahead decisions computed via ATN subparser $\varepsilon$-closure simulations
+  - Interactive step simulator with Lookahead DFA Dagre SVG graph visualization, micro-step lookahead tracing, and derivation tree building
+- **Generalized LR (GLR) Parser (Tomita 1985, Scott & Johnstone 2006)**:
+  - General bottom-up parsing for non-LR and ambiguous grammars using Graph-Structured Stack (GSS)
+  - Forks on Shift/Reduce and Reduce/Reduce conflicts, merges on identical stack frontiers, and produces the complete parse forest
+  - Interactive SVG GSS graph visualizer powered by Dagre, with node inspection (origins, LR items, merge notices) and synchronized derivation tree highlighting
+- **Membership & CYK Step-by-Step** (tab *CYK*):
   - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
   - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
-  - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle; a click on a cell lists $A \to B\,C$ with $B \in V(i, k)$, $C \in V(k{+}1, j)$ and marks the two cells; for another grammar the CYK table of an equivalent grammar in CNF on request
+  - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle
+  - **Step-by-step table filling simulator**: progressive cell calculation with visual operand cell highlighting (left operand, right operand, and target cell in the DP triangle), step explanation of matching rules $A \to B\,C$, and derivation tree extraction
 - **Recursive-descent parser generator & step simulator** (tab *Rekurzivní sestup*, LL(1) grammars):
   - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine), in **Oberon-07** (modules `In`, `Out`), in **C99** (stdio, a `switch` per non-terminal, exit status 0 for an accepted word), in **Python 3** and in **JavaScript** (`parse(input, hooks)` with optional hooks onEnter/onRule/onMatch/onExit, runnable in the browser and by `node parser.js < input`): one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side; all five print the same for the same input
   - **Step simulator**: the input with the current symbol, the call stack (the rule of every procedure and the symbol it is at), the procedure being executed with its `if (sym ∈ {…})` branches, the parse tree with the path to the active node, and the symbol table; step back/forward, play, speed
@@ -139,7 +154,7 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 |---|---|
 | `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
 | `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
-| `tab` | `overview`, `first-follow`, `transformations`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `rd`, `words`, `latex` |
+| `tab` | `overview`, `first-follow`, `transformations`, `teaching`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `all`, `rd`, `words`, `latex`, `earley` (or `ettp`) |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
 | `split` | `1` or `0`: whether words such as `bxc` in the course notation are the symbols `b x c` or one terminal, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
@@ -177,19 +192,22 @@ The compiled, optimized static bundle is generated in `dist/`.
 src/
 ├── core/
 │   ├── ast/                # Grammar data models, AST nodes, symbol types
-│   ├── parser/             # Multi-syntax grammar parser
+│   ├── parser/             # Multi-syntax grammar parser (arrow, BNF, Yacc, ANTLR)
 │   ├── analyser/           # Nullable, Endable, FIRST(k), FOLLOW(k), Lookaheads
 │   ├── processor/          # Equivalent grammar transformations & proof logs
 │   ├── generator/          # Word generation, derivation traces, example words of L(G)
 │   ├── ll/                 # LL(1) / LL(2) tables, conflict engine & top-down simulator
-│   ├── lr/                 # LR(0), SLR(1), LALR(1), LR(1) automata & shift-reduce simulator
+│   ├── lr/                 # LR(0), SLR(1), LALR(1), LR(1), GLR parser & GSS engine
+│   ├── all/                # ALL(*) ATN networks, Lookahead DFA synthesis & simulator
+│   ├── earley/             # Classic Earley (1970) & ETTP (2025/2026) chart parsers
+│   ├── codegen/            # Recursive descent code generators (PL/0, Oberon, C, Python, JS), VM & symbol table
 │   ├── export/             # LaTeX exam/problem-set exporter
 │   └── presets/            # Curated university textbook grammars
 ├── i18n/                   # English & Czech academic terminology
 ├── ui/
-│   ├── visualizer/         # Dagre-powered SVG automaton graph & tree visualizers
-│   ├── views/              # Overview, FirstFollow, Transformations, LL, LR, Graph, Words, LaTeX
-│   └── components/         # Reusable UI widgets
+│   ├── visualizer/         # Dagre-powered SVG automaton, DFA, GSS & tree visualizers
+│   ├── views/              # Overview, FirstFollow, Transformations, LL, LR, Graph, ALL, Earley, CYK, RD, Words, LaTeX
+│   └── components/         # Reusable UI widgets & ReferenceBar
 ├── styles/                 # Vanilla CSS design system (Dark, Light, Projector modes)
 └── App.tsx                 # Master application orchestrator
 ```
