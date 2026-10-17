@@ -14,6 +14,7 @@ import { FIRST_FOLLOW_PRIMARY_REFERENCES } from '../ui/views/FirstFollowView';
 import { MEMBERSHIP_PRIMARY_REFERENCES } from '../ui/views/MembershipView';
 import { RECURSIVE_DESCENT_PRIMARY_REFERENCES } from '../ui/views/RecursiveDescentView';
 import { REFERENCES, TRANSFORMATION_INFO } from '../core/processor/transformationInfo';
+import { extractTreeLeaves } from './allParsersTreeYield.test';
 
 describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
   describe('Preset 1: Symmetric Separating Grammar (Classic Aho & Ullman / Dragon Book)', () => {
@@ -61,15 +62,19 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
 
       const sim1 = simulateLRParse(['a', 'c', 'd'], g, ielrTable);
       expect(sim1.accepted).toBe(true);
+      expect(extractTreeLeaves(sim1.finalTree)).toEqual(['a', 'c', 'd']);
 
       const sim2 = simulateLRParse(['b', 'c', 'e'], g, ielrTable);
       expect(sim2.accepted).toBe(true);
+      expect(extractTreeLeaves(sim2.finalTree)).toEqual(['b', 'c', 'e']);
 
       const sim3 = simulateLRParse(['a', 'c', 'e'], g, ielrTable);
       expect(sim3.accepted).toBe(true);
+      expect(extractTreeLeaves(sim3.finalTree)).toEqual(['a', 'c', 'e']);
 
       const sim4 = simulateLRParse(['b', 'c', 'd'], g, ielrTable);
       expect(sim4.accepted).toBe(true);
+      expect(extractTreeLeaves(sim4.finalTree)).toEqual(['b', 'c', 'd']);
 
       // Invalid input should be rejected
       const simFail = simulateLRParse(['a', 'c', 'x'], g, ielrTable);
@@ -114,10 +119,25 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       expect(splitGroup!.spuriousConflicts.length).toBeGreaterThan(0);
 
       // Parses all 4 valid statement structures
-      expect(simulateLRParse(['print', 'id', ';'], g, ielrTable).accepted).toBe(true);
-      expect(simulateLRParse(['expr', 'id', '='], g, ielrTable).accepted).toBe(true);
-      expect(simulateLRParse(['print', 'id', '='], g, ielrTable).accepted).toBe(true);
-      expect(simulateLRParse(['expr', 'id', ';'], g, ielrTable).accepted).toBe(true);
+      const w1 = ['print', 'id', ';'];
+      const r1 = simulateLRParse(w1, g, ielrTable);
+      expect(r1.accepted).toBe(true);
+      expect(extractTreeLeaves(r1.finalTree)).toEqual(w1);
+
+      const w2 = ['expr', 'id', '='];
+      const r2 = simulateLRParse(w2, g, ielrTable);
+      expect(r2.accepted).toBe(true);
+      expect(extractTreeLeaves(r2.finalTree)).toEqual(w2);
+
+      const w3 = ['print', 'id', '='];
+      const r3 = simulateLRParse(w3, g, ielrTable);
+      expect(r3.accepted).toBe(true);
+      expect(extractTreeLeaves(r3.finalTree)).toEqual(w3);
+
+      const w4 = ['expr', 'id', ';'];
+      const r4 = simulateLRParse(w4, g, ielrTable);
+      expect(r4.accepted).toBe(true);
+      expect(extractTreeLeaves(r4.finalTree)).toEqual(w4);
 
       // Rejects invalid strings
       expect(simulateLRParse(['print', 'id'], g, ielrTable).accepted).toBe(false);
@@ -140,7 +160,10 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       expect(ielr.states.length).toBe(lalr.states.length);
       const ielrTable = buildLRTable(ielr, g, analysis);
       expect(ielrTable.isConflictFree).toBe(true);
-      expect(simulateLRParse(['id', '+', 'id', '*', 'id'], g, ielrTable).accepted).toBe(true);
+      const arithTokens = ['id', '+', 'id', '*', 'id'];
+      const arithRes = simulateLRParse(arithTokens, g, ielrTable);
+      expect(arithRes.accepted).toBe(true);
+      expect(extractTreeLeaves(arithRes.finalTree)).toEqual(arithTokens);
     });
   });
 

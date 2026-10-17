@@ -172,6 +172,7 @@ export function simulateALLParse(
 
   const MAX_PARSE_STEPS = 500;
   let stepCounter = 0;
+  const activeCallsAtPos = new Set<string>();
 
   function parseNonTerminal(nt: string, treeNode: DerivationNode): boolean {
     if (stepCounter++ > MAX_PARSE_STEPS) {
@@ -187,8 +188,8 @@ export function simulateALLParse(
       return false;
     }
 
-    const recDepth = callStack.filter(s => s === nt).length;
-    if (recDepth > 8) {
+    const callKey = `${nt}@${tokenIdx}`;
+    if (activeCallsAtPos.has(callKey)) {
       steps.push({
         stepIndex: steps.length,
         inputIndex: tokenIdx,
@@ -200,6 +201,29 @@ export function simulateALLParse(
       });
       return false;
     }
+
+    if (callStack.length > 50) {
+      steps.push({
+        stepIndex: steps.length,
+        inputIndex: tokenIdx,
+        remainingTokens: tokens.slice(tokenIdx),
+        callStack: [...callStack],
+        action: `Parsing halted: maximum call stack depth exceeded (50)`,
+        actionCz: `Rozklad zastaven: překročena maximální hloubka zásobníku volání (50)`,
+        derivationTree: cloneTree(rootNode)
+      });
+      return false;
+    }
+
+    activeCallsAtPos.add(callKey);
+    try {
+      return doParseNonTerminal(nt, treeNode);
+    } finally {
+      activeCallsAtPos.delete(callKey);
+    }
+  }
+
+  function doParseNonTerminal(nt: string, treeNode: DerivationNode): boolean {
 
     const prods = grammar.productions.filter(p => p.lhs === nt);
     if (prods.length === 0) {

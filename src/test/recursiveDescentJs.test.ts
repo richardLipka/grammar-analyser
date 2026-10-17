@@ -5,6 +5,7 @@ import { buildLLTable } from '../core/ll/llTable';
 import { generateRecursiveDescent } from '../core/codegen/recursiveDescent';
 import { simulateRecursiveDescent } from '../core/codegen/rdSimulator';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { extractTreeLeaves } from './allParsersTreeYield.test';
 
 describe('Recursive Descent in JavaScript', () => {
   it('generates valid, runnable JavaScript parser code matching LL(1) left parse', () => {
@@ -63,6 +64,7 @@ describe('Recursive Descent in JavaScript', () => {
 
     expect(sim.accepted).toBe(true);
     expect(sim.steps.length).toBeGreaterThan(5);
+    expect(extractTreeLeaves(sim.finalTree)).toEqual(sampleTokens);
 
     // Check step 0
     expect(sim.steps[0].actionDescription).toContain('Starting recursive descent');

@@ -862,5 +862,24 @@ Owner's request: a name that is missing in the symbol table fails the recursive 
 **5. Earley & ETTP Derivation Tree Verification & Visualization Fix.**
 - Problem: In ETTP (`ettpParser.ts`), state-pair transition traversal compounded children, causing exponential prefix duplication in the derivation trees. In `EarleyView.tsx`, the tree visualizer only showed the complete parse tree on the final step (`isLastStep`), displaying isolated, partial step fragments during step navigation.
 - Fix: ETTP derivation tree extraction now produces exact trees matching the parsed tokens without distortion. `EarleyView.tsx` defaults to displaying the full derivation tree of the accepted word (with leaves matching the input word 100%), adds a segmented toggle between Full Tree and Step Subtree, and highlights active step nodes directly within the tree.
-- Tests: Added automated test in `src/test/earleyParser.test.ts` verifying that `extractLeaves(tree)` exactly equals `tokens` across all presets and generated words for both Earley and ETTP. All 37 test suites and 633 tests pass.
+- Tests: Added automated test in `src/test/earleyParser.test.ts` verifying that `extractLeaves(tree)` exactly equals `tokens` across all presets and generated words for both Earley and ETTP.
+
+**6. Universal Derivation Tree Leaf Yield Verification across All Parsers.**
+- Problem & Scope: Verified derivation tree leaf correspondence (`extractTreeLeaves(tree)` equals input `tokens`) across every parser in the platform for all supported grammars using at least 3 non-trivial words of reasonable length (length $\ge 3$, or maximal words for finite languages like `ll1_not_slr1`).
+- Engines tested:
+  1. LL(1) simulator (`simulateLLParse`)
+  2. LL(2) simulator (`simulateLLParse` with $k=2$ strong and local lookahead contexts)
+  3. Deterministic LR parsers: LR(0), SLR(1), LALR(1), IELR(1), LR(1) (`simulateLRParse`)
+  4. GLR with GSS (`simulateGLRParse`), verifying every parse tree produced in ambiguous and unambiguous modes
+  5. ALL(*) adaptive top-down parser (`simulateALLParse`)
+  6. Classic Earley (1970) (`simulateEarleyParse`)
+  7. ETTP (2025/2026) (`simulateETTPParse`)
+  8. CYK chart parser (`simulateCYKParse`, `extractCYKTrees`)
+  9. Recursive descent simulator (`simulateRecursiveDescent`)
+  10. General membership & derivation attempt (`testMembership`, `explainWord`)
+- Algorithmic Fixes:
+  - In `src/core/all/allPredictor.ts`: Fixed ATN lookahead prediction closure on rule stop states for start symbol recursion (e.g., nested sub-expressions `F -> '(' E ')'`). Previously, follower return states were ignored when `ruleName === atn.startSymbol`, causing lookahead predictions to fail on closing parentheses.
+  - In `src/core/all/allParser.ts`: Replaced hardcoded fixed-depth call-stack recursion check with token-position cycle detection (`activeCallsAtPos`), allowing legitimate deep right derivations while safely preventing non-productive left loops.
+- Tests: Comprehensive master test suite in `src/test/allParsersTreeYield.test.ts` plus direct leaf yield assertions in `src/test/all.test.ts`, `src/test/glr.test.ts`, `src/test/ielr.test.ts`, `src/test/recursiveDescentJs.test.ts`, and `src/test/rdSampleGrammars.test.ts`. All 38 test suites (717 tests) pass.
+
 

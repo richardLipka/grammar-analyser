@@ -15,6 +15,7 @@ import {
   tokenClasses
 } from '../core/codegen/symbolTable';
 import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
+import { extractTreeLeaves } from './allParsersTreeYield.test';
 
 describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
   // Test 1: Global properties of all sample grammars
@@ -47,6 +48,7 @@ describe('Recursive Descent Sample Grammars - Comprehensive Suite', () => {
         // Derivation parse tree check
         expect(sim.finalTree).toBeDefined();
         expect(sim.finalTree!.symbol).toBe(grammar.startSymbol);
+        expect(extractTreeLeaves(sim.finalTree)).toEqual(tokenized.tokens);
 
         // Symbol Table & Scope Tree check
         const lastStep = sim.steps[sim.steps.length - 1];

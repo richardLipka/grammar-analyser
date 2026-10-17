@@ -10,6 +10,7 @@ import { createLookaheadDFA, adaptivePredict } from '../core/all/allPredictor';
 import { checkALLCompatibility, simulateALLParse } from '../core/all/allParser';
 import { ALL_PRIMARY_REFERENCES } from '../ui/views/ALLView';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { extractTreeLeaves } from './allParsersTreeYield.test';
 
 describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
   describe('ATN Construction', () => {
@@ -71,11 +72,13 @@ describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
       const sim1 = simulateALLParse(['a', 'a', 'b', 'x'], g, atn);
       expect(sim1.accepted).toBe(true);
       expect(sim1.finalTree).toBeDefined();
+      expect(extractTreeLeaves(sim1.finalTree)).toEqual(['a', 'a', 'b', 'x']);
 
       // Word with prefix length 5
       const sim2 = simulateALLParse(['a', 'a', 'a', 'a', 'b', 'y'], g, atn);
       expect(sim2.accepted).toBe(true);
       expect(sim2.maxLookaheadDepth).toBeGreaterThanOrEqual(6);
+      expect(extractTreeLeaves(sim2.finalTree)).toEqual(['a', 'a', 'a', 'a', 'b', 'y']);
 
       // Invalid word rejected
       const simFail = simulateALLParse(['a', 'a', 'b', 'z'], g, atn);
@@ -129,6 +132,7 @@ describe('ALL(*) Parsing Algorithm (Parr, Harwell, Fisher 2014)', () => {
       expect(sim.finalTree).toBeDefined();
       expect(sim.finalTree!.symbol).toBe('E');
       expect(sim.finalTree!.children!.length).toBe(2);
+      expect(extractTreeLeaves(sim.finalTree)).toEqual(['id', '+', 'id', '*', 'id']);
     });
   });
 

@@ -108,8 +108,8 @@ export function computeClosure(initialConfigs: ATNConfig[], atn: ATN): ATNConfig
           result.push(nextConfig);
           queue.push(nextConfig);
         }
-      } else if (state.ruleName !== atn.startSymbol) {
-        // Empty context on non-start rule: follow caller return states
+      } else {
+        // Empty context: follow caller return states (even for startSymbol if called recursively)
         const callers = atn.ruleFollowers.get(state.ruleName) ?? [];
         for (const retState of callers) {
           const nextConfig: ATNConfig = {

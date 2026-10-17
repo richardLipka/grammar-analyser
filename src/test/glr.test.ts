@@ -9,6 +9,7 @@ import { buildLR0Automaton, buildSLR1Automaton, buildLALR1Automaton, buildLR1Aut
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateGLRParse } from '../core/lr/glrParser';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { extractTreeLeaves } from './allParsersTreeYield.test';
 
 describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
   describe('Unambiguous Grammars (Consistency with Standard LR)', () => {
@@ -30,6 +31,7 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
       expect(res.trees.length).toBe(1);
       expect(res.trees[0].symbol).toBe('E');
       expect(res.steps.length).toBeGreaterThan(5);
+      expect(extractTreeLeaves(res.trees[0])).toEqual(tokens);
     });
   });
 
@@ -56,6 +58,9 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
       expect(res.trees.length).toBe(2);
       expect(res.conflictsEncountered).toBeGreaterThan(0);
       expect(res.maxSimultaneousHeads).toBeGreaterThan(1);
+      for (const t of res.trees) {
+        expect(extractTreeLeaves(t)).toEqual(tokens);
+      }
     });
 
     it('parses unprioritized ambiguous arithmetic expressions and finds 2 trees for "id + id * id"', () => {
@@ -75,6 +80,9 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
       // Both (id + id) * id and id + (id * id) are valid derivations
       expect(res.totalTrees).toBe(2);
       expect(res.trees.length).toBe(2);
+      for (const t of res.trees) {
+        expect(extractTreeLeaves(t)).toEqual(tokens);
+      }
     });
   });
 
@@ -96,11 +104,13 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
       const res1 = simulateGLRParse(['a', 'c', 'd'], g, table, 'dragon');
       expect(res1.accepted).toBe(true);
       expect(res1.totalTrees).toBe(1);
+      expect(extractTreeLeaves(res1.trees[0])).toEqual(['a', 'c', 'd']);
 
       // Parse 'b c d'
       const res2 = simulateGLRParse(['b', 'c', 'd'], g, table, 'dragon');
       expect(res2.accepted).toBe(true);
       expect(res2.totalTrees).toBe(1);
+      expect(extractTreeLeaves(res2.trees[0])).toEqual(['b', 'c', 'd']);
     });
   });
 
@@ -118,6 +128,9 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
       const res = simulateGLRParse(tokens, g, table, 'dragon');
       expect(res.accepted).toBe(true);
       expect(res.totalTrees).toBeGreaterThanOrEqual(1);
+      for (const t of res.trees) {
+        expect(extractTreeLeaves(t)).toEqual(tokens);
+      }
     });
   });
 
@@ -136,6 +149,11 @@ describe('Generalized LR (GLR) Parser & GSS Simulation', () => {
           const res = simulateGLRParse(sampleWords, g, table, 'dragon');
           expect(res.steps).toBeDefined();
           expect(res.steps.length).toBeGreaterThan(0);
+          if (res.accepted) {
+            for (const t of res.trees) {
+              expect(extractTreeLeaves(t)).toEqual(sampleWords);
+            }
+          }
         }
       }
     });
