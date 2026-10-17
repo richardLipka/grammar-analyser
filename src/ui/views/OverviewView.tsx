@@ -94,8 +94,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     const resolved = b.resolvedCount > 0
       ? (cz ? `${b.resolvedCount} konfl. vyřešeno prioritami` : `${b.resolvedCount} conflict(s) resolved by precedence`)
       : '';
-    if (b.table.isConflictFree) return [b.resolvedCount > 0 ? (cz ? 'Ne, ale tabulka je s prioritami bez konfliktů' : 'No, but the table is conflict-free with precedence') : t.passZeroConflicts, resolved, states].filter(Boolean).join(' · ');
-    return [t.conflictsCount.replace('{count}', b.conflictCount.toString()), resolved, states].filter(Boolean).join(' · ');
+    // IELR(1) is not a class of its own: its table has a conflict exactly where canonical LR(1) has one
+    const ielrNote = b.variant === 'IELR(1)'
+      ? (cz ? 'tabulka IELR(1) je bez kolizí právě tehdy, když je gramatika LR(1); má méně stavů' : 'the IELR(1) table is conflict-free exactly when the grammar is LR(1); it has fewer states')
+      : '';
+    if (b.table.isConflictFree) return [b.resolvedCount > 0 ? (cz ? 'Ne, ale tabulka je s prioritami bez konfliktů' : 'No, but the table is conflict-free with precedence') : t.passZeroConflicts, resolved, states, ielrNote].filter(Boolean).join(' · ');
+    return [t.conflictsCount.replace('{count}', b.conflictCount.toString()), resolved, states, ielrNote].filter(Boolean).join(' · ');
   };
   const ll2Unknown = !llTable.isLL1 && !llTable.ll2Complete;
   const uselessNts = [...grammar.nonTerminals].filter(nt => !analysis.endable.has(nt) || !analysis.reachable.has(nt));

@@ -51,8 +51,9 @@ describe('Analysis as a job', () => {
       }
     }
     expect(result).not.toBeNull();
-    expect(result!.stopped).toEqual(['LR(1)', 'ambiguity']);
+    expect(result!.stopped).toEqual(['LR(1)', 'IELR(1)', 'ambiguity']);
     expect(result!.lr1Table).toBeUndefined();
+    expect(result!.ielr1Table).toBeUndefined();
     expect(result!.lalr1Table.states.length).toBeGreaterThan(1000);
   });
 

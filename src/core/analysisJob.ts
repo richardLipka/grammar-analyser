@@ -45,7 +45,7 @@ export interface AnalysisDataResult {
   /** The grammar is unambiguous because its LL(1) or LR(1) table has no conflict */
   provenUnambiguous?: 'LL(1)' | 'LR(1)';
   /** Parts not computed because the user stopped the computation */
-  stopped?: ('LL(2)' | 'LR(1)' | 'ambiguity')[];
+  stopped?: ('LL(2)' | 'LR(1)' | 'IELR(1)' | 'ambiguity')[];
 }
 
 /** Synchronous analysis (tests, small grammars). */
@@ -90,23 +90,25 @@ export function* analyzeAllSteps(grammar: Grammar, control: JobControl): Job<Ana
 
   // The exact LL(2) test (tables T(A, L)); stopped, it is incomplete (ll2Complete = false)
   result.llTable = yield* buildLLTableSteps(grammar, analysis, control);
-  if (control.stop) return stopped('LL(2)', 'LR(1)', 'ambiguity');
+  if (control.stop) return stopped('LL(2)', 'LR(1)', 'IELR(1)', 'ambiguity');
 
   // Canonical LR(1)
   const lr1Automaton = yield* buildLR1AutomatonSteps(grammar, analysis, control);
-  if (!lr1Automaton) return stopped('LR(1)', 'ambiguity');
+  if (!lr1Automaton) return stopped('LR(1)', 'IELR(1)', 'ambiguity');
   attachMergedLR1States(lalr1Automaton, lr1Automaton);
   result.lr1Automaton = lr1Automaton;
   result.lr1Table = buildLRTable(lr1Automaton, grammar, analysis);
 
-  // IELR(1) (Inadequacy Elimination LR(1) - Denny & Malloy 2008, 2010)
+  // IELR(1) (Denny & Malloy 2010): the LR(1) states merged by cores wherever no action changes
   const ielr1Automaton = yield* buildIELR1AutomatonSteps(grammar, analysis, control, lr1Automaton);
-  if (ielr1Automaton) {
-    result.ielr1Automaton = ielr1Automaton;
-    result.ielr1Table = buildLRTable(ielr1Automaton, grammar, analysis);
-    if (hasPrecedence && result.rawTables) {
-      result.rawTables['IELR(1)'] = buildLRTable(ielr1Automaton, grammar, analysis, { usePrecedence: false });
-    }
+  if (!ielr1Automaton) return stopped('IELR(1)', 'ambiguity');
+  result.ielr1Automaton = ielr1Automaton;
+  result.ielr1Table = buildLRTable(ielr1Automaton, grammar, analysis);
+  if (hasPrecedence && result.rawTables) {
+    // Without precedence IELR(1) merges by the default resolution only: its own automaton
+    const ielrRaw = yield* buildIELR1AutomatonSteps(grammar, analysis, control, lr1Automaton, { usePrecedence: false });
+    if (!ielrRaw) return stopped('ambiguity');
+    result.rawTables['IELR(1)'] = buildLRTable(ielrRaw, grammar, analysis, { usePrecedence: false });
   }
 
   // Ambiguity: an LL(1) or LR(1) grammar is unambiguous; otherwise look for a witness

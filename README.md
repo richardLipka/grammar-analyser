@@ -74,12 +74,12 @@
   - Agreement is reported as a hint only (equivalence of context-free grammars is undecidable)
   - The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the violating rules
 - **Earley (1970) & ETTP (Scott & Johnstone 2025/2026) Chart Parsers** (tab *Earley / ETTP*):
-  - General context-free parsing for arbitrary CFGs (including left/right recursion, ambiguities, and cycles) in $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ unambiguous, and $\mathcal{O}(n)$ deterministic time
-  - **Classic Earley (1970)** with Aycock & Horspool (2002) nullable $\varepsilon$-rule optimization to prevent cyclic chart looping
-  - **Earley Table Traversing Parsers (ETTP 2025/2026)**: precomputed Earley transition table eliminating all runtime prediction steps (0 predictor steps at runtime), maintaining compact $(q, j)$ state-origin pairs
-  - Interactive step simulator with color-coded operation badges (Scanner, Predictor, Completer, Transition), state set chart visualization, ETTP transition table inspector, and synchronized derivation tree generation
+  - General context-free parsing for arbitrary CFGs (including left/right recursion, ambiguities, and cycles) in $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ for unambiguous and $\mathcal{O}(n)$ for bounded-state grammars
+  - **Classic Earley (1970)** with the Aycock & Horspool (2002) fix for $\varepsilon$-rules (the predictor moves the dot over nullable non-terminals, so the completer misses no item)
+  - **Earley Table Traversing Parsers (ETTP 2025/2026)**: a precomputed table split into kernel and predicted states (as in Aycock & Horspool's split automaton); the sets hold pairs $(q, j)$ = all items of state $q$ with origin $j$, no rule is expanded at runtime; trees from the parser's own chart
+  - Interactive step simulator: each step marks the new item and the items it came from, explains acceptance or rejection, highlights the used transition in the automaton graph and the derived subtree in the derivation tree; ETTP transition table inspector
 - **ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)** (tab *ALL(*)*):
-  - Implements the dynamic non-backtracking adaptive LL(*) algorithm powering ANTLR 4
+  - Implements the adaptive LL(*) prediction of ANTLR 4: SLL prediction with a cached lookahead DFA, conflict detection and fallback to full-LL prediction with the parser's real stack; ambiguities resolved by the minimal alternative; left recursion refused as not applicable
   - Augmented Transition Networks (ATN) with rule call and return transitions
   - Dynamic Lookahead DFA synthesis: caching deterministic lookahead decisions computed via ATN subparser $\varepsilon$-closure simulations
   - Interactive step simulator with Lookahead DFA Dagre SVG graph visualization, micro-step lookahead tracing, and derivation tree building

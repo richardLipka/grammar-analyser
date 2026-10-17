@@ -8,7 +8,7 @@
  * belongs to the language when S ∈ V(1, n).
  */
 
-import { Grammar, Production, formatProduction } from '../ast/grammar';
+import { Grammar, Production } from '../ast/grammar';
 import { DerivationNode } from '../generator/wordGenerator';
 
 /** Why A is in a cell: a rule A → a, or A → B C with the split point k. */
@@ -20,7 +20,7 @@ export interface CykWitness {
 
 export interface CykTable {
   n: number;
-  /** cells[i][j] for 1 ≤ i ≤ j ≤ n: non-terminal -> its witnesses */
+  /** cells[i][j] for 1 ≤ i ≤ j ≤ n: non-terminal -> its witnesses (in the order of k) */
   cells: Map<string, CykWitness[]>[][];
   accepted: boolean;
 }
@@ -30,22 +30,34 @@ export interface CykCellCoordinate {
   j: number;
 }
 
+/**
+ * One step of the computation: the initialisation, one cell of length 1, one
+ * split point k of a longer cell, or the final check of V(1, n). What the
+ * table holds at a step is given by `cykCellAtStep` (the table is filled in a
+ * fixed order, so no copy of it is stored per step).
+ */
 export interface CYKStep {
   stepIndex: number;
   phase: 'init' | 'base' | 'combine' | 'accept';
+  /** Length of the part of the word (j − i + 1) */
   length: number;
   i: number;
   j: number;
   k?: number;
   token?: string;
-  targetCell: CykCellCoordinate;
+  /** The cell being filled (absent for the initialisation) */
+  targetCell?: CykCellCoordinate;
   leftCell?: CykCellCoordinate;
   rightCell?: CykCellCoordinate;
+  /** Non-terminals that enter the target cell in this step */
   addedNonTerminals: string[];
+  /** Non-terminals derived again in this step although already in the cell (another derivation of the part) */
+  repeatedNonTerminals: string[];
+  /** The rules applied in this step */
   activeWitnesses?: CykWitness[];
   descriptionEn: string;
   descriptionCz: string;
-  tableSnapshot: { [coordKey: string]: string[] };
+  /** Subtrees built in this step (a forest root when there are several); the full tree in the final step */
   derivationTree?: DerivationNode;
 }
 
@@ -54,7 +66,10 @@ export interface CYKSimulationResult {
   totalSteps: number;
   steps: CYKStep[];
   table: CykTable;
+  /** The first derivation trees (at most 5) */
   trees: DerivationNode[];
+  /** The number of all derivation trees of the word */
+  treeCount: bigint;
 }
 
 /** Rules that are not in Chomsky normal form (empty for a grammar in CNF). */
@@ -67,6 +82,8 @@ export function cnfViolations(g: Grammar): Production[] {
     return true;
   });
 }
+
+const hasStartEpsilon = (g: Grammar) => g.productions.some(p => p.lhs === g.startSymbol && p.rhs.length === 0);
 
 export function cykTable(g: Grammar, w: string[]): CykTable {
   const n = w.length;
@@ -92,156 +109,240 @@ export function cykTable(g: Grammar, w: string[]): CykTable {
       }
     }
   }
-  const accepted = n === 0
-    ? g.productions.some(p => p.lhs === g.startSymbol && p.rhs.length === 0)
-    : cells[1][n].has(g.startSymbol);
+  const accepted = n === 0 ? hasStartEpsilon(g) : cells[1][n].has(g.startSymbol);
   return { n, cells, accepted };
 }
 
 /**
- * Extracts derivation parse trees for word w from the computed CYK table.
- * Supports ambiguous grammars by extracting up to maxTrees distinct derivation trees.
+ * The number of derivation trees of the word (every witness is one choice of
+ * the rule and of k; in CNF a part never depends on itself, so it is finite).
  */
-export function extractCYKTrees(g: Grammar, w: string[], table: CykTable, maxTrees: number = 5): DerivationNode[] {
-  if (w.length === 0) {
-    if (table.accepted) {
-      return [{
-        id: 'cyk_eps_root',
-        symbol: g.startSymbol,
-        isTerminal: false,
-        children: [{ id: 'cyk_eps_leaf', symbol: 'ε', isTerminal: true }]
-      }];
+export function countCYKTrees(g: Grammar, table: CykTable): bigint {
+  if (table.n === 0) return BigInt(g.productions.filter(p => p.lhs === g.startSymbol && p.rhs.length === 0).length);
+  const memo = new Map<string, bigint>();
+  const count = (A: string, i: number, j: number): bigint => {
+    const key = `${A}\u0000${i}\u0000${j}`;
+    const m = memo.get(key);
+    if (m !== undefined) return m;
+    let total = 0n;
+    for (const wit of table.cells[i][j].get(A) || []) {
+      total += wit.k === undefined ? 1n : count(wit.production.rhs[0], i, wit.k) * count(wit.production.rhs[1], wit.k + 1, j);
     }
-    return [];
-  }
-
-  let counter = 0;
-  function buildTrees(i: number, j: number, A: string, depth: number = 0): DerivationNode[] {
-    if (depth > 25) return [];
-    const wits = table.cells[i]?.[j]?.get(A);
-    if (!wits || wits.length === 0) return [];
-
-    const trees: DerivationNode[] = [];
-    for (const wit of wits) {
-      if (trees.length >= maxTrees) break;
-      if (wit.k === undefined) {
-        trees.push({
-          id: `cyk_node_${counter++}_${A}_${i}`,
-          symbol: A,
-          isTerminal: false,
-          children: [{
-            id: `cyk_tok_${counter++}_${wit.production.rhs[0]}`,
-            symbol: wit.production.rhs[0],
-            isTerminal: true
-          }]
-        });
-      } else {
-        const B = wit.production.rhs[0];
-        const C = wit.production.rhs[1];
-        const bTrees = buildTrees(i, wit.k, B, depth + 1);
-        const cTrees = buildTrees(wit.k + 1, j, C, depth + 1);
-
-        for (const bTree of bTrees) {
-          for (const cTree of cTrees) {
-            trees.push({
-              id: `cyk_node_${counter++}_${A}_${i}_${j}`,
-              symbol: A,
-              isTerminal: false,
-              children: [bTree, cTree]
-            });
-            if (trees.length >= maxTrees) break;
-          }
-          if (trees.length >= maxTrees) break;
-        }
-      }
-    }
-    return trees;
-  }
-
-  return buildTrees(1, table.n, g.startSymbol);
+    memo.set(key, total);
+    return total;
+  };
+  return count(g.startSymbol, 1, table.n);
 }
 
 /**
- * Simulates the Cocke-Younger-Kasami (CYK) algorithm step-by-step.
- * Generates an interactive trace explaining:
- * 1. Base layer (len = 1): matching terminal rules A → w_i into V(i, i).
- * 2. Higher layers (len = 2 … n): combining V(i, k) and V(k+1, j) across split points k.
- * 3. Final root check at V(1, n) for start symbol S.
+ * Derivation trees of w in the CNF grammar read from the witnesses of the
+ * table: distinct trees, at most `maxTrees`. The trees of every (A, i, j) are
+ * built once (a part is shorter in every child, so there is no cycle and no
+ * depth limit is needed).
  */
-export function simulateCYKParse(g: Grammar, w: string[]): CYKSimulationResult {
+export function extractCYKTrees(g: Grammar, w: string[], table: CykTable, maxTrees: number = 5): DerivationNode[] {
+  if (w.length === 0) {
+    if (!table.accepted) return [];
+    return [{
+      id: 'cyk_eps_root',
+      symbol: g.startSymbol,
+      isTerminal: false,
+      children: [{ id: 'cyk_eps_leaf', symbol: 'ε', isTerminal: true }]
+    }];
+  }
+  let counter = 0;
+  const memo = new Map<string, DerivationNode[]>();
+  const build = (A: string, i: number, j: number): DerivationNode[] => {
+    const key = `${A}\u0000${i}\u0000${j}`;
+    const m = memo.get(key);
+    if (m) return m;
+    const trees: DerivationNode[] = [];
+    for (const wit of table.cells[i]?.[j]?.get(A) || []) {
+      if (trees.length >= maxTrees) break;
+      if (wit.k === undefined) {
+        trees.push({
+          id: `cyk_${counter++}`,
+          symbol: A,
+          isTerminal: false,
+          children: [{ id: `cyk_${counter++}`, symbol: wit.production.rhs[0], isTerminal: true }]
+        });
+        continue;
+      }
+      const left = build(wit.production.rhs[0], i, wit.k);
+      const right = build(wit.production.rhs[1], wit.k + 1, j);
+      combine: for (const l of left) {
+        for (const r of right) {
+          trees.push({ id: `cyk_${counter++}`, symbol: A, isTerminal: false, children: [l, r] });
+          if (trees.length >= maxTrees) break combine;
+        }
+      }
+    }
+    memo.set(key, trees);
+    return trees;
+  };
+  return build(g.startSymbol, 1, table.n);
+}
+
+/**
+ * The content of cell V(i, j) at a step of the simulation: null when the cell
+ * has not been computed yet; for the cell being filled only the witnesses
+ * with a split point up to the current k.
+ */
+export function cykCellAtStep(table: CykTable, step: CYKStep, i: number, j: number): Map<string, CykWitness[]> | null {
+  const full = table.cells[i]?.[j];
+  if (!full) return null;
+  const len = j - i + 1;
+  switch (step.phase) {
+    case 'init':
+      return null;
+    case 'accept':
+      return full;
+    case 'base':
+      return len === 1 && i <= step.i ? full : null;
+    case 'combine': {
+      if (len < step.length || (len === step.length && i < step.i)) return full;
+      if (i !== step.i || j !== step.j) return null;
+      const partial = new Map<string, CykWitness[]>();
+      for (const [A, wits] of full) {
+        const upTo = wits.filter(wit => wit.k !== undefined && wit.k <= step.k!);
+        if (upTo.length > 0) partial.set(A, upTo);
+      }
+      return partial;
+    }
+  }
+}
+
+const SUBSCRIPT = '₀₁₂₃₄₅₆₇₈₉';
+const sub = (x: number) => String(x).replace(/\d/g, d => SUBSCRIPT[Number(d)]);
+/** w₁ or w₂…w₄ */
+const partName = (i: number, j: number) => (i === j ? `w${sub(i)}` : `w${sub(i)}…w${sub(j)}`);
+const V = (i: number, j: number) => `V(${i}, ${j})`;
+const setText = (xs: Iterable<string>) => {
+  const a = [...xs];
+  return a.length === 0 ? '∅' : `{${a.join(', ')}}`;
+};
+const rule = (p: Production) => `${p.lhs} → ${p.rhs.join(' ') || 'ε'}`;
+
+/** A copy of a tree with fresh ids (subtrees are shared between the trees of the steps). */
+function cloneTree(n: DerivationNode, prefix: string, ids: { next: number }): DerivationNode {
+  return {
+    ...n,
+    id: `${prefix}_${ids.next++}`,
+    children: n.children?.map(c => cloneTree(c, prefix, ids))
+  };
+}
+
+/** One tree, or a forest root grouping several. */
+function forest(trees: DerivationNode[], id: string): DerivationNode | undefined {
+  if (trees.length === 0) return undefined;
+  if (trees.length === 1) return trees[0];
+  return { id, symbol: '', isTerminal: false, isForestRoot: true, children: trees };
+}
+
+/** At most this many subtrees are shown for one step. */
+const MAX_STEP_TREES = 6;
+
+/** A step whose texts and subtrees are computed on first access (and then kept). */
+function lazyStep(
+  base: Omit<CYKStep, 'descriptionEn' | 'descriptionCz' | 'derivationTree'>,
+  en: () => string,
+  cz: () => string,
+  tree: () => DerivationNode | undefined
+): CYKStep {
+  const cache: { en?: string; cz?: string; tree?: DerivationNode; treeDone?: boolean } = {};
+  return Object.defineProperties(base as CYKStep, {
+    descriptionEn: { enumerable: true, get: () => (cache.en ??= en()) },
+    descriptionCz: { enumerable: true, get: () => (cache.cz ??= cz()) },
+    derivationTree: {
+      enumerable: true,
+      get: () => {
+        if (!cache.treeDone) {
+          cache.tree = tree();
+          cache.treeDone = true;
+        }
+        return cache.tree;
+      }
+    }
+  });
+}
+
+/**
+ * Simulates the Cocke–Younger–Kasami (CYK) algorithm step by step:
+ * 1. length 1: the rules A → w_i give V(i, i);
+ * 2. lengths 2 … n: for every part w_i … w_j and every split k = i … j−1 the
+ *    rules A → B C with B ∈ V(i, k), C ∈ V(k+1, j);
+ * 3. the check S ∈ V(1, n).
+ * `converted` says that g is the CNF G′ of the user's grammar G (texts then say L(G′) = L(G)).
+ */
+export function simulateCYKParse(g: Grammar, w: string[], opts: { converted?: boolean } = {}): CYKSimulationResult {
   const n = w.length;
   const table = cykTable(g, w);
   const trees = extractCYKTrees(g, w, table);
+  const treeCount = countCYKTrees(g, table);
   const steps: CYKStep[] = [];
-
-  const cellsSnapshot: { [key: string]: string[] } = {};
-  function getSnap(): { [key: string]: string[] } {
-    return { ...cellsSnapshot };
-  }
+  const S = g.startSymbol;
+  const G = opts.converted ? 'G′' : 'G';
+  const LG = opts.converted ? 'L(G′) = L(G)' : 'L(G)';
+  const word = (i: number, j: number) => w.slice(i - 1, j).join(' ');
 
   if (n === 0) {
-    const hasEps = g.productions.some(p => p.lhs === g.startSymbol && p.rhs.length === 0);
+    const hasEps = table.accepted;
     steps.push({
-      stepIndex: 1,
+      stepIndex: 0,
       phase: 'accept',
       length: 0,
       i: 1,
       j: 0,
-      targetCell: { i: 1, j: 0 },
-      addedNonTerminals: hasEps ? [g.startSymbol] : [],
-      descriptionEn: hasEps
-        ? `Empty word: grammar has start production ${g.startSymbol} → ε. Word belongs to language.`
-        : `Empty word: grammar lacks start production ${g.startSymbol} → ε. Word rejected.`,
-      descriptionCz: hasEps
-        ? `Prázdné slovo: gramatika obsahuje pravidlo ${g.startSymbol} → ε. Slovo patří do jazyka.`
-        : `Prázdné slovo: gramatika neobsahuje pravidlo ${g.startSymbol} → ε. Slovo nepatří do jazyka.`,
-      tableSnapshot: {},
+      addedNonTerminals: hasEps ? [S] : [],
+      repeatedNonTerminals: [],
+      descriptionEn: `The empty word w = ε has no cells in the table: ε ∈ ${LG} iff ${G} has the rule ${S} → ε (in CNF allowed only for the start symbol, which then occurs on no right-hand side). ${hasEps ? `${G} has it, so ε ∈ ${LG}.` : `${G} does not have it, so ε ∉ ${LG}.`}`,
+      descriptionCz: `Prázdné slovo w = ε nemá v tabulce žádné buňky: ε ∈ ${LG}, právě když ${G} obsahuje pravidlo ${S} → ε (v CNF povolené jen pro počáteční symbol, který se pak nevyskytuje na žádné pravé straně). ${hasEps ? `${G} je obsahuje, proto ε ∈ ${LG}.` : `${G} je neobsahuje, proto ε ∉ ${LG}.`}`,
       derivationTree: trees[0]
     });
-    return {
-      accepted: hasEps,
-      totalSteps: steps.length,
-      steps,
-      table,
-      trees
-    };
+    return { accepted: hasEps, totalSteps: steps.length, steps, table, trees, treeCount };
   }
 
-  // Initial Step 0: start CYK matrix
+  // One derivation tree for every (A, i, j), from its first witness; built once and shared by the steps
+  // (within one tree a part occurs once, so the ids stay unique; in a forest of several trees the others are copied)
+  const firstMemo = new Map<string, DerivationNode>();
+  let firstId = 0;
+  const firstTree = (A: string, i: number, j: number): DerivationNode => {
+    const key = `${A}\u0000${i}\u0000${j}`;
+    const m = firstMemo.get(key);
+    if (m) return m;
+    const wit = table.cells[i][j].get(A)![0];
+    const node: DerivationNode = {
+      id: `cyk_f${firstId++}`,
+      symbol: A,
+      isTerminal: false,
+      children: wit.k === undefined
+        ? [{ id: `cyk_f${firstId++}`, symbol: wit.production.rhs[0], isTerminal: true }]
+        : [firstTree(wit.production.rhs[0], i, wit.k), firstTree(wit.production.rhs[1], wit.k + 1, j)]
+    };
+    firstMemo.set(key, node);
+    return node;
+  };
+
   steps.push({
     stepIndex: 0,
     phase: 'init',
     length: 0,
     i: 1,
     j: n,
-    targetCell: { i: 1, j: 1 },
     addedNonTerminals: [],
-    descriptionEn: `Initialize CYK table for input of length n = ${n} tokens: [${w.join(', ')}].`,
-    descriptionCz: `Inicializace tabulky CYK pro vstup o délce n = ${n} symbolů: [${w.join(', ')}].`,
-    tableSnapshot: getSnap()
+    repeatedNonTerminals: [],
+    descriptionEn: `The CYK table for w = ${w.join(' ')} (n = ${n}) in the grammar ${G} in Chomsky normal form. V(i, j) will hold the non-terminals that derive the part wᵢ…wⱼ. The table is filled by the length of the part: first length 1 (rules A → a), then lengths 2 … ${n} (rules A → B C over all splits k = i … j−1).`,
+    descriptionCz: `Tabulka CYK pro slovo w = ${w.join(' ')} (n = ${n}) v gramatice ${G} v Chomského normální formě. V(i, j) bude obsahovat neterminály, které generují úsek wᵢ…wⱼ. Tabulka se plní podle délky úseku: nejprve délka 1 (pravidla A → a), pak délky 2 … ${n} (pravidla A → B C přes všechna dělení k = i … j−1).`
   });
 
-  // Phase 1: Base layer (length 1: V(i, i))
+  // Length 1: V(i, i)
   for (let i = 1; i <= n; i++) {
     const token = w[i - 1];
-    const cellWits = table.cells[i][i];
-    const addedNts = [...cellWits.keys()];
-    cellsSnapshot[`${i},${i}`] = addedNts;
-
-    let leafTree: DerivationNode | undefined = undefined;
-    if (addedNts.length > 0) {
-      const firstA = addedNts[0];
-      leafTree = {
-        id: `cyk_step_leaf_${i}`,
-        symbol: firstA,
-        isTerminal: false,
-        children: [{ id: `cyk_step_tok_${i}`, symbol: token, isTerminal: true }]
-      };
-    }
-
-    const matchedProds = [...cellWits.values()].flat().map(w => `${w.production.lhs} → '${token}'`);
-    const rulesStr = matchedProds.join(', ');
-
+    const cell = table.cells[i][i];
+    const nts = [...cell.keys()];
+    const wits = [...cell.values()].flat();
+    const stepTrees = nts.slice(0, MAX_STEP_TREES).map(A => firstTree(A, i, i));
+    const rules = wits.map(x => rule(x.production)).join(', ');
     steps.push({
       stepIndex: steps.length,
       phase: 'base',
@@ -250,89 +351,95 @@ export function simulateCYKParse(g: Grammar, w: string[]): CYKSimulationResult {
       j: i,
       token,
       targetCell: { i, j: i },
-      addedNonTerminals: addedNts,
-      activeWitnesses: [...cellWits.values()].flat(),
-      descriptionEn: addedNts.length > 0
-        ? `Base layer len=1 at position i=${i} (token '${token}'): matched rule(s) ${rulesStr}. Adding {${addedNts.join(', ')}} to V(${i}, ${i}).`
-        : `Base layer len=1 at position i=${i} (token '${token}'): no terminal rule derives '${token}'. V(${i}, ${i}) = ∅.`,
-      descriptionCz: addedNts.length > 0
-        ? `Základní vrstva délky 1 na pozici i=${i} (token '${token}'): nalezena pravidla ${rulesStr}. Vkládáme {${addedNts.join(', ')}} do V(${i}, ${i}).`
-        : `Základní vrstva délky 1 na pozici i=${i} (token '${token}'): žádné terminální pravidlo negeneruje '${token}'. V(${i}, ${i}) = ∅.`,
-      tableSnapshot: getSnap(),
-      derivationTree: leafTree
+      addedNonTerminals: nts,
+      repeatedNonTerminals: [],
+      activeWitnesses: wits,
+      descriptionEn: nts.length > 0
+        ? `Length 1, ${partName(i, i)} = ${token}. Rules with the right-hand side ${token}: ${rules}. So ${V(i, i)} = ${setText(nts)}.`
+        : `Length 1, ${partName(i, i)} = ${token}. There is no rule A → ${token}, so ${V(i, i)} = ∅.`,
+      descriptionCz: nts.length > 0
+        ? `Délka 1, ${partName(i, i)} = ${token}. Pravidla s pravou stranou ${token}: ${rules}. Proto ${V(i, i)} = ${setText(nts)}.`
+        : `Délka 1, ${partName(i, i)} = ${token}. Neexistuje pravidlo A → ${token}, proto ${V(i, i)} = ∅.`,
+      derivationTree: forest(stepTrees, `cyk_b${i}_forest`)
     });
   }
 
-  // Helper to extract a single partial tree from current cells
-  function buildSubtree(startI: number, endJ: number, A: string): DerivationNode | undefined {
-    const cellWits = table.cells[startI]?.[endJ]?.get(A);
-    if (!cellWits || cellWits.length === 0) return undefined;
-    const wit = cellWits[0];
-    if (wit.k === undefined) {
-      return {
-        id: `cyk_part_${startI}_${A}`,
-        symbol: A,
-        isTerminal: false,
-        children: [{ id: `cyk_tok_${startI}`, symbol: wit.production.rhs[0], isTerminal: true }]
-      };
-    }
-    const B = wit.production.rhs[0];
-    const C = wit.production.rhs[1];
-    const leftChild = buildSubtree(startI, wit.k, B);
-    const rightChild = buildSubtree(wit.k + 1, endJ, C);
-    return {
-      id: `cyk_part_${startI}_${endJ}_${A}`,
-      symbol: A,
-      isTerminal: false,
-      children: [
-        leftChild ?? { id: `dummy_b`, symbol: B, isTerminal: false },
-        rightChild ?? { id: `dummy_c`, symbol: C, isTerminal: false }
-      ]
-    };
-  }
-
-  // Phase 2: Higher layers (length 2 … n)
-  const binaryProds = g.productions.filter(p => p.rhs.length === 2);
+  // Lengths 2 … n: V(i, j) over the splits k
+  const binary = g.productions.filter(p => p.rhs.length === 2);
   for (let len = 2; len <= n; len++) {
     for (let i = 1; i + len - 1 <= n; i++) {
       const j = i + len - 1;
-      const key = `${i},${j}`;
-      const cumulativeAdded: Set<string> = new Set();
-
+      const inCell = new Set<string>();
       for (let k = i; k < j; k++) {
-        const leftKey = `${i},${k}`;
-        const rightKey = `${k + 1},${j}`;
-        const leftNts = table.cells[i][k];
-        const rightNts = table.cells[k + 1][j];
-
-        const matchedAtSplit: CykWitness[] = [];
-        const addedThisSplit: string[] = [];
-
-        for (const p of binaryProds) {
-          const B = p.rhs[0];
-          const C = p.rhs[1];
-          if (leftNts.has(B) && rightNts.has(C)) {
-            matchedAtSplit.push({ production: p, k });
-            if (!cumulativeAdded.has(p.lhs)) {
-              cumulativeAdded.add(p.lhs);
-              addedThisSplit.push(p.lhs);
-            }
+        const left = table.cells[i][k];
+        const right = table.cells[k + 1][j];
+        const matched: CykWitness[] = [];
+        const added: string[] = [];
+        const repeated: string[] = [];
+        /** for every matched rule: whether its left-hand side was new in the cell */
+        const isNew: boolean[] = [];
+        for (const p of binary) {
+          if (!left.has(p.rhs[0]) || !right.has(p.rhs[1])) continue;
+          matched.push({ production: p, k });
+          isNew.push(!inCell.has(p.lhs));
+          if (!inCell.has(p.lhs)) {
+            inCell.add(p.lhs);
+            added.push(p.lhs);
+          } else if (!repeated.includes(p.lhs)) {
+            repeated.push(p.lhs);
           }
         }
+        const soFar = [...inCell];
 
-        // Update snapshot
-        cellsSnapshot[key] = [...cumulativeAdded];
+        // The texts and the subtrees are built when the step is shown (a word of 60 symbols has 36 000 steps)
+        const describe = (en: boolean): string => {
+          const head =
+            `${en ? 'Length' : 'Délka'} ${len}, ${en ? 'part' : 'úsek'} ${partName(i, j)} = ${word(i, j)}, ${en ? 'split' : 'dělení'} k = ${k}: ` +
+            `${partName(i, k)} = ${word(i, k)} | ${partName(k + 1, j)} = ${word(k + 1, j)}. ` +
+            `${V(i, k)} = ${setText(left.keys())}, ${V(k + 1, j)} = ${setText(right.keys())}.`;
+          let body: string;
+          if (left.size === 0 || right.size === 0) {
+            const both = left.size === 0 && right.size === 0;
+            body = en
+              ? `${both ? 'Both cells are' : left.size === 0 ? 'The left cell is' : 'The right cell is'} empty, so no rule A → B C applies for this k.`
+              : `${both ? 'Obě buňky jsou prázdné' : left.size === 0 ? 'Levá buňka je prázdná' : 'Pravá buňka je prázdná'}, pro toto k proto nelze použít žádné pravidlo A → B C.`;
+          } else if (matched.length === 0) {
+            body = en
+              ? `There is no rule A → B C with B ∈ ${V(i, k)} and C ∈ ${V(k + 1, j)}.`
+              : `Neexistuje pravidlo A → B C s B ∈ ${V(i, k)} a C ∈ ${V(k + 1, j)}.`;
+          } else {
+            body = matched.map(({ production: p }, idx) => {
+              const [B, C] = p.rhs;
+              const A = p.lhs;
+              const why = `${rule(p)} (${B} ∈ ${V(i, k)}, ${C} ∈ ${V(k + 1, j)})`;
+              if (isNew[idx]) return en ? `${why}: ${A} is added to ${V(i, j)}.` : `${why}: ${A} přidáme do ${V(i, j)}.`;
+              const first = table.cells[i][j].get(A)![0];
+              const from = first.k! < k
+                ? (en ? `from k = ${first.k}` : `z k = ${first.k}`)
+                : (en ? `from the rule ${rule(first.production)} at this k` : `z pravidla ${rule(first.production)} při tomto k`);
+              return en
+                ? `${why}: ${A} is already in ${V(i, j)} (${from}). This is another derivation of ${partName(i, j)} from ${A}, so ${A} derives this part by more than one derivation tree.`
+                : `${why}: ${A} už ve ${V(i, j)} je (${from}). Jde o další derivaci úseku ${partName(i, j)} z ${A}, ${A} tedy generuje tento úsek více derivačními stromy.`;
+            }).join(' ');
+          }
+          const tail = k === j - 1
+            ? (en ? `This was the last split: ${V(i, j)} = ${setText(soFar)}.` : `Toto bylo poslední dělení: ${V(i, j)} = ${setText(soFar)}.`)
+            : (en ? `So far ${V(i, j)} = ${setText(soFar)}.` : `Zatím ${V(i, j)} = ${setText(soFar)}.`);
+          return `${head} ${body} ${tail}`;
+        };
+        const subtrees = (): DerivationNode | undefined => {
+          const prefix = `cyk_c${i}_${j}_${k}`;
+          const ids = { next: 0 };
+          const roots = matched.slice(0, MAX_STEP_TREES).map(({ production: p }) => ({
+            id: `${prefix}_${ids.next++}`,
+            symbol: p.lhs,
+            isTerminal: false,
+            children: [firstTree(p.rhs[0], i, k), firstTree(p.rhs[1], k + 1, j)]
+          }));
+          return forest(roots.map((t, idx) => (idx === 0 ? t : cloneTree(t, prefix, ids))), `${prefix}_forest`);
+        };
 
-        let activeStepTree: DerivationNode | undefined = undefined;
-        if (addedThisSplit.length > 0) {
-          activeStepTree = buildSubtree(i, j, addedThisSplit[0]);
-        }
-
-        const leftStr = `V(${i}, ${k}) = {${[...leftNts.keys()].join(', ') || '∅'}}`;
-        const rightStr = `V(${k + 1}, ${j}) = {${[...rightNts.keys()].join(', ') || '∅'}}`;
-        const rulesStr = matchedAtSplit.map(m => `${m.production.lhs} → ${m.production.rhs.join(' ')}`).join(', ');
-
-        steps.push({
+        steps.push(lazyStep({
           stepIndex: steps.length,
           phase: 'combine',
           length: len,
@@ -342,25 +449,21 @@ export function simulateCYKParse(g: Grammar, w: string[]): CYKSimulationResult {
           targetCell: { i, j },
           leftCell: { i, j: k },
           rightCell: { i: k + 1, j },
-          addedNonTerminals: addedThisSplit,
-          activeWitnesses: matchedAtSplit,
-          descriptionEn: matchedAtSplit.length > 0
-            ? `Length ${len}, substring [${i}…${j}] split at k=${k}: ${leftStr} and ${rightStr}. Matched rule(s) ${rulesStr}. Adding {${addedThisSplit.join(', ')}} to V(${i}, ${j}).`
-            : `Length ${len}, substring [${i}…${j}] split at k=${k}: ${leftStr} and ${rightStr}. No binary rules A → B C match this split.`,
-          descriptionCz: matchedAtSplit.length > 0
-            ? `Délka ${len}, úsek [${i}…${j}] dělený v k=${k}: ${leftStr} a ${rightStr}. Nalezena pravidla ${rulesStr}. Vkládáme {${addedThisSplit.join(', ')}} do V(${i}, ${j}).`
-            : `Délka ${len}, úsek [${i}…${j}] dělený v k=${k}: ${leftStr} a ${rightStr}. Žádné binární pravidlo A → B C pro toto dělení neodpovídá.`,
-          tableSnapshot: getSnap(),
-          derivationTree: activeStepTree
-        });
+          addedNonTerminals: added,
+          repeatedNonTerminals: repeated,
+          activeWitnesses: matched
+        }, () => describe(true), () => describe(false), subtrees));
       }
     }
   }
 
-  // Phase 3: Final Acceptance check
-  const isAccepted = table.cells[1][n].has(g.startSymbol);
-  const rootTree = trees.length > 0 ? trees[0] : undefined;
-
+  // The final check: S ∈ V(1, n)
+  const accepted = table.accepted;
+  const top = setText(table.cells[1][n].keys());
+  const countText = treeCount.toString();
+  const partial = trees.length > 0 && BigInt(trees.length) < treeCount;
+  const shownEn = partial ? ` The first ${trees.length} are shown.` : '';
+  const shownCz = partial ? ` Zobrazeno je prvních ${trees.length}.` : '';
   steps.push({
     stepIndex: steps.length,
     phase: 'accept',
@@ -368,22 +471,16 @@ export function simulateCYKParse(g: Grammar, w: string[]): CYKSimulationResult {
     i: 1,
     j: n,
     targetCell: { i: 1, j: n },
-    addedNonTerminals: isAccepted ? [g.startSymbol] : [],
-    descriptionEn: isAccepted
-      ? `Completed CYK parsing: start symbol '${g.startSymbol}' ∈ V(1, ${n}). The word belongs to the language L(G). Valid derivation tree constructed.`
-      : `Completed CYK parsing: start symbol '${g.startSymbol}' ∉ V(1, ${n}). The word does not belong to the language L(G).`,
-    descriptionCz: isAccepted
-      ? `Dokončen rozklad CYK: startovací symbol '${g.startSymbol}' ∈ V(1, ${n}). Slovo patří do jazyka L(G). Sestrojen platný derivační strom.`
-      : `Dokončen rozklad CYK: startovací symbol '${g.startSymbol}' ∉ V(1, ${n}). Slovo nepatří do jazyka L(G).`,
-    tableSnapshot: getSnap(),
-    derivationTree: rootTree
+    addedNonTerminals: accepted ? [S] : [],
+    repeatedNonTerminals: [],
+    descriptionEn: accepted
+      ? `The table is complete. ${V(1, n)} = ${top} contains the start symbol ${S}, so w = ${w.join(' ')} ∈ ${LG}. Number of derivation trees in ${G}: ${countText}.${shownEn}`
+      : `The table is complete. ${V(1, n)} = ${top} does not contain the start symbol ${S}, so w = ${w.join(' ')} ∉ ${LG}.`,
+    descriptionCz: accepted
+      ? `Výpočet tabulky CYK dokončen. ${V(1, n)} = ${top} obsahuje počáteční symbol ${S}, proto w = ${w.join(' ')} ∈ ${LG}. Počet derivačních stromů v ${G}: ${countText}.${shownCz}`
+      : `Výpočet tabulky CYK dokončen. ${V(1, n)} = ${top} neobsahuje počáteční symbol ${S}, proto w = ${w.join(' ')} ∉ ${LG}.`,
+    derivationTree: trees[0]
   });
 
-  return {
-    accepted: isAccepted,
-    totalSteps: steps.length,
-    steps,
-    table,
-    trees
-  };
+  return { accepted, totalSteps: steps.length, steps, table, trees, treeCount };
 }

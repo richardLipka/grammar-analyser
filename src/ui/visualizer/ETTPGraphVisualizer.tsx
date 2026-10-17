@@ -22,7 +22,8 @@ import {
   ETTPTransitionReason,
   isETTPKernelItem,
   getETTPTransitionReason,
-  findPredictionTriggers
+  findPredictionTriggers,
+  formatETTPItem
 } from '../../core/earley/ettpParser';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 import { Language } from '../../i18n/translations';
@@ -47,6 +48,8 @@ interface ETTPGraphVisualizerProps {
   onSelectState?: (stateId: number) => void;
   activeStateId?: number | null;
   activeSymbol?: string | null;
+  /** State the current step's transition (or ε-link) leaves. */
+  activeFromStateId?: number | null;
   lang?: Language;
   height?: string;
   filename?: string;
@@ -62,7 +65,7 @@ export interface ETTPDisplayItem {
   isComplete: boolean;
   nextSymbol?: string;
   targetStateId?: number;
-  predictedBy?: ETTPItem[];
+  predictedBy?: { stateId: number; item: ETTPItem }[];
 }
 
 interface ETTPLayoutNode {
@@ -82,7 +85,7 @@ interface ETTPLayoutEdge {
   from: number;
   to: number;
   symbols: string[];
-  originKind: 'kernel' | 'predicted' | 'both';
+  originKind: 'kernel' | 'predicted' | 'eps';
   reasons: ETTPTransitionReason[];
   points: { x: number; y: number }[];
   labelPos: { x: number; y: number };
@@ -104,6 +107,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
   onSelectState,
   activeStateId,
   activeSymbol,
+  activeFromStateId,
   lang = 'en',
   height = '500px',
   filename = 'ettp_automaton_graph'
@@ -159,10 +163,10 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
 
     for (const state of table.states) {
       const allItems: ETTPDisplayItem[] = state.items.map(it => {
-        const isKernel = isETTPKernelItem(it, state.id, table.startStateId);
+        const isKernel = isETTPKernelItem(it, state);
         const nextSymbol = it.dot < it.production.rhs.length ? it.production.rhs[it.dot] : undefined;
         const targetStateId = nextSymbol ? state.transitions.get(nextSymbol)?.targetStateId : undefined;
-        const predictedBy = !isKernel ? findPredictionTriggers(state, it) : undefined;
+        const predictedBy = !isKernel ? findPredictionTriggers(table, state, it) : undefined;
 
         return {
           production: it.production,
@@ -182,8 +186,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
       const closureItems = allItems.filter(i => !i.isKernel);
       const hasSeparator = kernelItems.length > 0 && closureItems.length > 0;
 
-      const sepLabel = isCz ? 'Zbývající pravidla (predikce)' : 'Remaining rules (closure)';
-      let maxLineLen = Math.max(16, sepLabel.length);
+      let maxLineLen = 22;
       for (const it of allItems) {
         const text = formatDisplayItem(it);
         if (text.length > maxLineLen) maxLineLen = text.length;
@@ -211,7 +214,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
         to: number;
         symbols: string[];
         reasons: ETTPTransitionReason[];
-        originKind: 'kernel' | 'predicted' | 'both';
+        originKind: 'kernel' | 'predicted' | 'eps';
       }
     >();
 
@@ -233,12 +236,22 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
           const entry = mergedEdges.get(key)!;
           if (!entry.symbols.includes(sym)) entry.symbols.push(sym);
           if (reason) entry.reasons.push(reason);
-          if (entry.originKind !== trans.originKind) entry.originKind = 'both';
         }
+      }
+      // ε-link: a kernel state brings its predicted state (origin = the current set) along.
+      if (state.predictedStateId !== undefined) {
+        mergedEdges.set(`${state.id}=>${state.predictedStateId}`, {
+          from: state.id,
+          to: state.predictedStateId,
+          symbols: ['ε'],
+          reasons: [],
+          originKind: 'eps'
+        });
       }
     }
 
     for (const e of mergedEdges.values()) {
+      if (e.originKind === 'eps' && mergedEdges.has(`${e.from}->${e.to}`)) continue;
       const label = e.symbols.join(', ');
       g.setEdge(String(e.from), String(e.to), {
         name: label,
@@ -270,6 +283,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
 
     const edges: ETTPLayoutEdge[] = [];
     for (const e of mergedEdges.values()) {
+      if (e.originKind === 'eps' && mergedEdges.has(`${e.from}->${e.to}`)) continue;
       const edgeInfo = g.edge(String(e.from), String(e.to));
       if (edgeInfo && edgeInfo.points) {
         edges.push({
@@ -293,7 +307,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
     };
   }, [table, isCz]);
 
-  const { view, fit, zoomBy, reveal, onPointerDown, wasDragged } = usePanZoom(
+  const { view, fit, zoomBy, reveal, focus, onPointerDown, wasDragged } = usePanZoom(
     containerRef,
     { width: layout.width, height: layout.height },
     layout.nodes.length > 0
@@ -316,6 +330,18 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
         : undefined;
     if (n) reveal(n.x - n.width / 2, n.y - n.height / 2, n.width, n.height);
   }, [activeSelectedId, layout, reveal]);
+
+  // While stepping: zoom to a readable scale around the transition the step used.
+  useEffect(() => {
+    if (activeStateId === null || activeStateId === undefined) return;
+    const shown = layout.nodes.filter(node => node.id === activeStateId || node.id === activeFromStateId);
+    if (shown.length === 0) return;
+    const x0 = Math.min(...shown.map(node => node.x - node.width / 2));
+    const y0 = Math.min(...shown.map(node => node.y - node.height / 2));
+    const x1 = Math.max(...shown.map(node => node.x + node.width / 2));
+    const y1 = Math.max(...shown.map(node => node.y + node.height / 2));
+    focus(x0, y0, x1 - x0, y1 - y0, 0.85);
+  }, [activeStateId, activeFromStateId, layout, focus]);
 
   // Export handlers
   const exportBounds = { width: Math.ceil(layout.width), height: Math.ceil(layout.height) };
@@ -343,7 +369,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
     const list: {
       fromStateId: number;
       symbol: string;
-      originKind: 'kernel' | 'predicted' | 'both';
+      originKind: 'kernel' | 'predicted';
       reason?: ETTPTransitionReason;
     }[] = [];
 
@@ -363,7 +389,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
     const list: {
       symbol: string;
       targetStateId: number;
-      originKind: 'kernel' | 'predicted' | 'both';
+      originKind: 'kernel' | 'predicted';
       reason?: ETTPTransitionReason;
     }[] = [];
 
@@ -467,9 +493,11 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             {layout.edges.map((e, idx) => {
               const isSelectedTarget = selectedState.id === e.to;
               const isSelectedSource = selectedState.id === e.from;
-              const isActiveEdge = activeStateId === e.from && e.symbols.includes(activeSymbol ?? '');
-              const isPredicted = e.originKind === 'predicted';
-              const isBoth = e.originKind === 'both';
+              const isActiveEdge =
+                activeFromStateId !== undefined && activeFromStateId !== null &&
+                activeFromStateId === e.from && activeStateId === e.to &&
+                (e.originKind === 'eps' ? !activeSymbol : e.symbols.includes(activeSymbol ?? ''));
+              const isEps = e.originKind === 'eps';
 
               let strokeColor = 'var(--color-border)';
               let strokeWidth = 1.3;
@@ -489,7 +517,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                 markerKind = 'arrow-active';
               }
 
-              const strokeDasharray = isPredicted ? '4 3' : isBoth ? '7 3 2 3' : undefined;
+              const strokeDasharray = isEps ? '4 3' : undefined;
 
               return (
                 <g key={`edge-${idx}`}>
@@ -516,12 +544,14 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                           targetRect,
                           <div style={{ maxWidth: '320px', fontSize: '11.5px', lineHeight: '1.4' }}>
                             <div style={{ fontWeight: 700, color: 'var(--color-primary)', marginBottom: '4px' }}>
-                              {isCz ? 'Přechod přechodového automatu ETTP' : 'ETTP Automaton Transition'}
+                              {isEps
+                                ? (isCz ? 'ε-odkaz na predikční stav' : 'ε-link to the predicted state')
+                                : (isCz ? 'Přechod automatu ETTP' : 'ETTP automaton transition')}
                             </div>
                             <div style={{ fontFamily: 'monospace', fontSize: '12px', marginBottom: '6px' }}>
                               q{e.from} ──[ <strong>{e.symbols.join(', ')}</strong> ]──&gt; q{e.to}
                             </div>
-                            <div style={{ marginBottom: '4px' }}>
+                            {!isEps && <div style={{ marginBottom: '4px' }}>
                               <strong>{isCz ? 'Důvod přechodu (spouštěcí položky):' : 'Triggering items:'}</strong>
                               <ul style={{ margin: '3px 0 6px 16px', padding: 0 }}>
                                 {e.reasons.flatMap(r => r.triggerItems).map((it, i) => (
@@ -531,13 +561,15 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                                   </li>
                                 ))}
                               </ul>
-                            </div>
+                            </div>}
                             <div style={{ fontSize: '10.5px', color: 'var(--color-text-secondary)' }}>
-                              {e.originKind === 'kernel'
-                                ? (isCz ? 'Jádrový přechod: zachovává počáteční index j z předchůdce.' : 'Kernel shift: inherits origin j from predecessor.')
-                                : e.originKind === 'predicted'
-                                ? (isCz ? 'Predikovaný přechod: zakládá nový počáteční index i na aktuální pozici.' : 'Predicted shift: initializes origin i to current token index.')
-                                : (isCz ? 'Hybridní přechod (jádrový i predikovaný).' : 'Hybrid shift (both kernel and predicted).')}
+                              {isEps
+                                ? (isCz
+                                    ? `Pár (q${e.from}, j) v Sᵢ s sebou přináší pár (q${e.to}, i): pravidla predikovaná ze stavu q${e.from} začínají na aktuální pozici i. Je to vyhledání v tabulce, za běhu se nic nepredikuje.`
+                                    : `A pair (q${e.from}, j) in Sᵢ brings the pair (q${e.to}, i): the rules predicted from q${e.from} start at the current position i. A table lookup — nothing is predicted at runtime.`)
+                                : (isCz
+                                    ? `Pár (q${e.from}, j) dává pár (q${e.to}, j): počátek j se kopíruje, protože všechny položky stavu mají týž počátek.`
+                                    : `The pair (q${e.from}, j) gives the pair (q${e.to}, j): the origin j is copied, all items of a state have the same origin.`)}
                             </div>
                           </div>,
                           100
@@ -565,9 +597,6 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                         fill={isActiveEdge ? 'var(--color-primary)' : 'var(--color-text-primary)'}
                       >
                         {e.symbols.join(', ')}
-                        <tspan fontSize="8" fill="var(--color-text-secondary)" dx="3">
-                          [{e.originKind === 'kernel' ? 'K' : e.originKind === 'predicted' ? 'P' : 'K+P'}]
-                        </tspan>
                       </text>
                     </g>
                   )}
@@ -630,7 +659,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                   {/* Header Background */}
                   <path
                     d={`M 0,7 Q 0,0 7,0 L ${n.width - 7},0 Q ${n.width},0 ${n.width},7 L ${n.width},${HEADER_H} L 0,${HEADER_H} Z`}
-                    fill={isSelected || isActive ? 'var(--color-primary-subtle)' : 'var(--color-bg-subtle)'}
+                    fill={isSelected || isActive ? 'var(--color-primary-subtle)' : 'var(--color-bg-card)'}
                   />
 
                   {/* Header Title: State ID */}
@@ -643,6 +672,9 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                     fill={isSelected || isActive ? 'var(--color-primary)' : 'var(--color-text-primary)'}
                   >
                     q{n.id}
+                    <tspan fontSize="9" fontWeight={500} fill="var(--color-text-secondary)" dx="6">
+                      {n.state.kind === 'kernel' ? (isCz ? 'jádro' : 'kernel') : (isCz ? 'predikce' : 'predicted')}
+                    </tspan>
                   </text>
 
                   {/* Badges: Start / Accept / Completions */}
@@ -826,17 +858,21 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                                 {isCz ? 'Zbývající pravidlo (Predikovaný uzávěr)' : 'Remaining Rule (Prediction Closure)'}
                               </div>
                               <div style={{ fontFamily: 'monospace', fontSize: '11.5px', marginBottom: '4px' }}>
-                                {it.lhs} → • {it.after.join(' ')}
+                                {formatDisplayItem(it)}
                               </div>
                               <div style={{ color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
-                                {isCz
-                                  ? `Pravidlo bylo do stavu doplněno prediktorem, protože neterminál '${it.lhs}' následuje za tečkou v jiné položce stavu.`
-                                  : `This rule was expanded by the predictor because non-terminal '${it.lhs}' appears after the dot in another item of this state.`}
+                                {it.dot > 0
+                                  ? (isCz
+                                      ? `Tečka přeskočila ${it.before.join(' ')}, protože ${it.before.length > 1 ? 'tyto neterminály generují' : 'tento neterminál generuje'} ε (Aycock & Horspool).`
+                                      : `The dot skipped ${it.before.join(' ')}, which derive${it.before.length > 1 ? '' : 's'} ε (Aycock & Horspool).`)
+                                  : isCz
+                                  ? `Predikované pravidlo: neterminál '${it.lhs}' je za tečkou v položce tohoto stavu nebo jádrového stavu, z něhož sem vede ε-odkaz. Počátek položky je index aktuální množiny.`
+                                  : `Predicted rule: '${it.lhs}' is after the dot in an item of this state or of a kernel state with an ε-link here. Its origin is the index of the current set.`}
                               </div>
                               {it.predictedBy && it.predictedBy.length > 0 && (
-                                <div style={{ fontSize: '10px', color: 'var(--color-text-tertiary)' }}>
+                                <div style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
                                   <strong>{isCz ? 'Vyvoláno z položky:' : 'Triggered by:'}</strong>{' '}
-                                  {it.predictedBy.map(p => `${p.production.lhs} → ... • ${it.lhs} ...`).join(', ')}
+                                  {it.predictedBy.map(p => `q${p.stateId}: ${formatETTPItem(p.item)}`).join(', ')}
                                 </div>
                               )}
                             </div>,
@@ -852,8 +888,10 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                           fontFamily="monospace"
                           fill="var(--color-text-secondary)"
                         >
-                          <tspan fill="var(--color-text-tertiary)">↳ </tspan>
-                          <tspan fontWeight={500}>{it.lhs}</tspan> → <tspan fill="var(--color-primary)" fontWeight={700}>•</tspan>
+                          <tspan fill="var(--color-text-muted)">↳ </tspan>
+                          <tspan fontWeight={500}>{it.lhs}</tspan> → {it.before.join(' ')}
+                          {it.before.length > 0 ? ' ' : ''}
+                          <tspan fill="var(--color-primary)" fontWeight={700}>•</tspan>
                           {it.after.length > 0 ? ` ${it.after.join(' ')}` : ''}
                         </text>
                       </g>
@@ -900,7 +938,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             )}
             {selectedState.isAcceptState && (
               <span className="badge badge-success">
-                {isCz ? 'Přijímající stav (S\' → S •)' : 'Accepting State (S\' → S •)'}
+                {isCz ? 'Přijímající stav' : 'Accepting state'} ({table.augmentedProduction.lhs} → {table.grammar.startSymbol} •)
               </span>
             )}
             {selectedState.completions.length > 0 && (
@@ -910,14 +948,13 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             )}
           </div>
           <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
-            <strong>
-              {selectedState.items.filter(it => isETTPKernelItem(it, selectedState.id, table.startStateId)).length}
-            </strong>{' '}
-            {isCz ? 'jádrových položek (core)' : 'kernel items'} +{' '}
-            <strong>
-              {selectedState.items.filter(it => !isETTPKernelItem(it, selectedState.id, table.startStateId)).length}
-            </strong>{' '}
-            {isCz ? 'zbývajících pravidel (predikovaný uzávěr)' : 'remaining prediction rules'}
+            {selectedState.kind === 'kernel'
+              ? (isCz
+                  ? `Jádrový stav: ${selectedState.items.length} položek, všechny mají počátek j páru (q${selectedState.id}, j).`
+                  : `Kernel state: ${selectedState.items.length} items, all with the origin j of the pair (q${selectedState.id}, j).`)
+              : (isCz
+                  ? `Predikční stav: ${selectedState.items.length} položek, počátek = index množiny, do níž byl pár přidán.`
+                  : `Predicted state: ${selectedState.items.length} items, origin = the index of the set the pair was added to.`)}
           </span>
         </div>
 
@@ -956,16 +993,33 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             {selectedState.id === table.startStateId ? (
               <div style={{ fontSize: '11.5px', lineHeight: '1.45' }}>
                 <p style={{ margin: '0 0 4px', fontWeight: 600 }}>
-                  [S' → • {table.grammar.startSymbol}]
+                  [{table.augmentedProduction.lhs} → • {table.grammar.startSymbol}]
                 </p>
                 <span style={{ color: 'var(--color-text-secondary)', fontSize: '11px' }}>
                   {isCz
-                    ? 'Počáteční stav q0 vznikl inicializací rozšířené gramatiky v nulté stavové množině S₀.'
-                    : 'Initial state q0 was created by initializing the augmented axiom in the start set S₀.'}
+                    ? `Počáteční stav q${table.startStateId} obsahuje položku přidaného pravidla ${table.augmentedProduction.lhs} → ${table.grammar.startSymbol}; parser začíná párem (q${table.startStateId}, 0) v S₀.`
+                    : `The start state q${table.startStateId} holds the item of the added rule ${table.augmentedProduction.lhs} → ${table.grammar.startSymbol}; the parser starts with the pair (q${table.startStateId}, 0) in S₀.`}
                 </span>
               </div>
+            ) : selectedState.kind === 'predicted' ? (
+              <div style={{ fontSize: '11.5px', lineHeight: '1.45' }}>
+                {isCz ? 'Predikční stav jádrových stavů ' : 'Predicted state of the kernel states '}
+                {table.states.filter(s => s.predictedStateId === selectedState.id).map((s, idx) => (
+                  <span key={s.id}>
+                    {idx > 0 ? ', ' : ''}
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer', color: 'var(--color-primary)' }} onClick={() => onSelectState?.(s.id)}>
+                      q{s.id}
+                    </span>
+                  </span>
+                ))}
+                <div style={{ color: 'var(--color-text-secondary)', fontSize: '11px', marginTop: '4px' }}>
+                  {isCz
+                    ? 'Obsahuje pravidla neterminálů za tečkou v těchto stavech (a dále predikovaná). Pár s tímto stavem se do Sᵢ přidá spolu s párem jádrového stavu, s počátkem i.'
+                    : 'It holds the rules of the non-terminals after the dots in those states (and the rules predicted from them). Its pair is added to Sᵢ together with the kernel pair, with origin i.'}
+                </div>
+              </div>
             ) : incomingTransitions.length === 0 ? (
-              <span style={{ fontSize: '11.5px', color: 'var(--color-text-tertiary)' }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
                 {isCz ? 'Žádné přímé vstupní přechody' : 'No direct incoming transitions'}
               </span>
             ) : (
@@ -990,7 +1044,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                         q{tr.fromStateId} ──[ '{tr.symbol}' ]──&gt; q{selectedState.id}
                       </span>
                       <span className="badge badge-info" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                        {tr.originKind}
+                        {isCz ? `z ${tr.originKind === 'kernel' ? 'jádra' : 'predikce'}` : `from ${tr.originKind}`}
                       </span>
                     </div>
 
@@ -1025,19 +1079,30 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                 marginBottom: '6px'
               }}
             >
-              {isCz ? '2. Zbývající pravidla (Predikovaný uzávěr)' : '2. Remaining Rules (Prediction Closure)'}
+              {isCz ? '2. Predikce (položky s počátkem i)' : '2. Predictions (items with origin i)'}
             </div>
 
-            {selectedState.items.filter(it => !isETTPKernelItem(it, selectedState.id, table.startStateId)).length === 0 ? (
-              <span style={{ fontSize: '11.5px', color: 'var(--color-text-tertiary)' }}>
-                {isCz ? 'Tento stav neobsahuje žádná další predikovaná pravidla (uzávěr je prázdný).' : 'No prediction rules in this state (empty closure).'}
+            {selectedState.kind === 'kernel' ? (
+              <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)' }}>
+                {selectedState.predictedStateId === undefined
+                  ? (isCz ? 'Za tečkou není žádný neterminál, nic se nepredikuje.' : 'No non-terminal after a dot, nothing is predicted.')
+                  : (
+                    <>
+                      {isCz ? 'Pravidla predikovaná z tohoto stavu jsou v predikčním stavu ' : 'The rules predicted from this state are in the predicted state '}
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, cursor: 'pointer', color: 'var(--color-primary)' }} onClick={() => onSelectState?.(selectedState.predictedStateId!)}>
+                        q{selectedState.predictedStateId}
+                      </span>
+                      {isCz
+                        ? ' (ε-odkaz). Mají jiný počátek než položky tohoto stavu, proto jsou ve zvláštním stavu.'
+                        : ' (ε-link). Their origin differs from this state\'s items, so they form a separate state.'}
+                    </>
+                  )}
               </span>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                 {selectedState.items
-                  .filter(it => !isETTPKernelItem(it, selectedState.id, table.startStateId))
                   .map((it, idx) => {
-                    const triggers = findPredictionTriggers(selectedState, it);
+                    const triggers = findPredictionTriggers(table, selectedState, it);
                     return (
                       <div
                         key={idx}
@@ -1051,12 +1116,12 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                         }}
                       >
                         <div style={{ fontWeight: 600 }}>
-                          {it.production.lhs} → • {it.production.rhs.join(' ') || 'ε'}
+                          {formatETTPItem(it)}
                         </div>
                         {triggers.length > 0 && (
-                          <div style={{ fontSize: '9.5px', color: 'var(--color-text-tertiary)', marginTop: '2px' }}>
+                          <div style={{ fontSize: '9.5px', color: 'var(--color-text-muted)', marginTop: '2px' }}>
                             {isCz ? 'Vyvoláno z položky:' : 'Predicted from:'}{' '}
-                            {triggers.map(t => `${t.production.lhs} → ... • ${it.production.lhs} ...`).join(', ')}
+                            {triggers.map(t => `q${t.stateId}: ${formatETTPItem(t.item)}`).join(', ')}
                           </div>
                         )}
                       </div>
@@ -1087,8 +1152,8 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             </div>
 
             {outgoingTransitions.length === 0 ? (
-              <span style={{ fontSize: '11.5px', color: 'var(--color-text-tertiary)' }}>
-                {isCz ? 'Koncový stav bez dalších výstupních přechodů' : 'Leaf state with no outgoing transitions'}
+              <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
+                {isCz ? 'Stav nemá žádné přechody' : 'The state has no transitions'}
               </span>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1111,9 +1176,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                       >
                         '{tr.symbol}' ──&gt; q{tr.targetStateId}
                       </span>
-                      <span className="badge badge-secondary" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                        {tr.originKind}
-                      </span>
+
                     </div>
 
                     {tr.reason && (
@@ -1149,7 +1212,7 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
             </div>
 
             {selectedState.completions.length === 0 ? (
-              <span style={{ fontSize: '11.5px', color: 'var(--color-text-tertiary)' }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--color-text-muted)' }}>
                 {isCz ? 'Žádné pravidlo zde nekončí (žádná redukce)' : 'No rule reduces in this state'}
               </span>
             ) : (
@@ -1170,15 +1233,15 @@ export const ETTPGraphVisualizer: React.FC<ETTPGraphVisualizerProps> = ({
                     ✓ {c.production.lhs} → {c.production.rhs.join(' ') || 'ε'}
                     {c.isEmpty && (
                       <span style={{ fontSize: '9.5px', color: 'var(--color-text-secondary)', marginLeft: '6px' }}>
-                        (ε-redukce)
+                        {isCz ? '(ε-pravidlo)' : '(ε-rule)'}
                       </span>
                     )}
                   </div>
                 ))}
                 <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
                   {isCz
-                    ? 'Při dokončení pravidla [A → γ •, j] vyhledá Earleyho kompletor v množině S_j položky s tečkou před A a posune v nich tečku do aktuální množiny.'
-                    : 'When rule [A → γ •, j] completes, the Earley Completer scans back to set S_j to advance all items waiting for A into the current set.'}
+                    ? 'Pár (q, j) v Sᵢ s dokončeným pravidlem A → γ •: kompletor projde páry (p, k) v Sⱼ a pro každý přechod δ(p, A) = r přidá do Sᵢ pár (r, k). Je-li j = i (pravidlo generuje ε), nic se nepřidává — posun přes A už udělal uzávěr stavu.'
+                    : 'A pair (q, j) in Sᵢ with the finished rule A → γ •: the completer goes through the pairs (p, k) in Sⱼ and for each transition δ(p, A) = r adds (r, k) to Sᵢ. With j = i (the rule derives ε) nothing is added — the closure of the state already moved over A.'}
                 </div>
               </div>
             )}

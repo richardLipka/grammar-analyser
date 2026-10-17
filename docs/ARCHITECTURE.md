@@ -96,7 +96,7 @@ Transformations preserve language equivalence $L(G) = L(G')$ and yield step-by-s
   - **SLR(1)**: $FOLLOW_1$-restricted reductions.
   - **LALR(1)**: Dragon Book lookahead propagation directly on the LR(0) kernel graph.
   - **LR(1)**: Full canonical collection.
-  - **IELR(1)**: Lane-tracing lookahead resolution reference and literature citation.
+  - **IELR(1)** (`buildIELR1Automaton`): the result of Denny & Malloy's IELR(1), computed more simply from the canonical LR(1) automaton. LR(1) states with the same LR(0) core are merged (as in LALR(1)), and a group is split only where merging would change a resolved action: precedence/associativity, otherwise Bison's default (shift before reduce, the earlier rule in a reduce/reduce conflict). Groups whose transitions lead to different groups are split too, and the states are numbered breadth-first like the other automata. The parser behaves like canonical LR(1) after conflict resolution. It has the states of LALR(1) when merging changes no resolved action, and it never adds a conflict on a symbol where none of its LR(1) states has one. Each split records its reason (`splitReasons`, shown by `ielrSplitGroups` / `IELRPanel`). Without precedence declarations the automaton is built with the default resolution only (`rawTables['IELR(1)']`).
 - **Table Layouts**: Dual mode support:
   - University Lecture Layout (states named by entry symbol $E_1$, $f$ for reduce/shift, $g$ transition table).
   - Classical Dragon Book ACTION/GOTO layout.

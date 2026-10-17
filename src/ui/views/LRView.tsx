@@ -83,7 +83,7 @@ export const LR_TECHNIQUE_REFERENCES = [
   {
     authorYear: 'Denny & Malloy (2010)',
     topicEn: 'IELR(1) Inadequacy Elimination',
-    topicCz: 'IELR(1) eliminace nejednoznačností',
+    topicCz: 'IELR(1) – odstranění kolizí vzniklých slučováním stavů',
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
     url: 'https://doi.org/10.1016/j.scico.2009.09.006'
   },
@@ -223,7 +223,14 @@ export const LRView: React.FC<LRViewProps> = ({
   const [glrPlaySpeed, setGLRPlaySpeed] = useState<number>(700);
   const glrTraceRef = useRef<HTMLDivElement>(null);
 
-  const activeAutomaton = (selectedVariant === 'LR(0)' ? lr0Automaton : selectedVariant === 'LR(1)' ? lr1Automaton : lalr1Automaton) || slr1Automaton || lr0Automaton;
+  // The automaton of the table shown (state ids must match): without precedence,
+  // IELR(1) has its own automaton (built with the default conflict resolution only)
+  const activeAutomaton = activeTable.automaton ?? ((
+    selectedVariant === 'LR(0)' ? lr0Automaton
+      : selectedVariant === 'LR(1)' ? lr1Automaton
+        : selectedVariant === 'IELR(1)' ? (ielr1Table ? ielr1Automaton : lalr1Automaton)
+          : lalr1Automaton
+  ) || slr1Automaton || lr0Automaton);
   const [selectedGSSNodeId, setSelectedGSSNodeId] = useState<number | null>(null);
 
   const glrSimulation: GLRSimulationResult = useMemo(

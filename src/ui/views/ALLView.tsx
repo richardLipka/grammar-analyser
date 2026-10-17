@@ -1,33 +1,33 @@
 /**
  * ALLView: Interactive ALL(*) (Adaptive LL(*)) Parsing Demonstration View.
  *
- * Visualizes:
- * 1. Augmented Transition Network (ATN) decision points.
- * 2. Dynamic Lookahead DFA cache materialized on demand (Interactive Graph & Table).
- * 3. Step-by-step top-down simulation with dynamic lookahead scanning and sub-step traces.
- * 4. Interactive Derivation Tree construction.
- * 5. Primary literature citations and comprehensive educational mechanics (Parr, Harwell, Fisher 2014).
+ * Visualizes (Parr, Harwell & Fisher 2014):
+ * 1. Step-by-step top-down parsing with adaptive prediction: SLL with the
+ *    lookahead DFA cache, fallback to full LL with the parser's call stack,
+ *    ambiguity resolution by the minimum alternative.
+ * 2. The lookahead DFA of the active decision as it was at the shown step;
+ *    DFA states are sets of ATN configurations (p, i, γ) shown as dotted items.
+ * 3. The derivation tree built so far.
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { buildATN, ATN } from '../../core/all/allAtn';
-import { createLookaheadDFA, LookaheadDFA } from '../../core/all/allPredictor';
+import { describeConfig, displaySymbol, ATNConfig, LookaheadDFA } from '../../core/all/allPredictor';
 import { checkALLCompatibility, simulateALLParse, ALLParseStep, ALLSimulationResult } from '../../core/all/allParser';
 import { tokenizeInput } from '../../core/parser/inputTokenizer';
 import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
-import { LookaheadDFAGraphVisualizer } from '../visualizer/LookaheadDFAGraphVisualizer';
+import { LookaheadDFAGraphVisualizer, dfaAtClock, dfaStateStatus, dfaStateStatusLabel } from '../visualizer/LookaheadDFAGraphVisualizer';
 import { LatexExportButton } from '../components/LatexExportButton';
 import { exportParseTreeToTikz } from '../../core/export/latexExport';
 import { ReferenceBar } from '../components/ReferenceBar';
-import { Language, TRANSLATIONS } from '../../i18n/translations';
+import { Language } from '../../i18n/translations';
 import {
   Network, CheckCircle2, AlertTriangle, Eye, Sparkles,
-  GitBranch, ArrowRight, ExternalLink, HelpCircle, Layers,
-  BookOpen, ChevronDown, ChevronRight, List
+  GitBranch, BookOpen, ChevronDown, ChevronRight, HelpCircle
 } from 'lucide-react';
 
 interface ALLViewProps {
@@ -43,15 +43,58 @@ export const ALL_PRIMARY_REFERENCES = [
     authorYear: 'Parr, Harwell & Fisher (2014)',
     citation: 'Parr, T., Harwell, S., Fisher, K.: Adaptive LL(*) parsing: The power of dynamic analysis. In: Proceedings of the 35th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI \'14), pp. 579–589, 2014.',
     url: 'https://doi.org/10.1145/2594291.2594326',
-    sections: '§2 (Overview & Architecture), §3 (ATN Model), §4 (Dynamic Prediction), §5 (SLL vs LL), §6 (Left-Recursion)'
+    sections: '§2.2 (left recursion), §3 (SLL vs LL, two-stage parsing), §4.3–4.4 (ATN, lookahead DFA), §5.2 (Functions 1–7), §5.3 (conflicts and ambiguities), §6 (correctness)'
   },
   {
     authorYear: 'Parr & Fisher (2011)',
     citation: 'Parr, T., Fisher, K.: LL(*): The foundation of the ANTLR parser generator. ACM SIGPLAN Notices 46(1), 425–436, 2011.',
     url: 'https://doi.org/10.1145/1926385.1926432',
-    sections: '§1–4 (Static Lookahead DFA Construction & Grammar Classes)'
+    sections: 'static LL(*) lookahead DFA (the predecessor of ALL(*))'
   }
 ];
+
+const MAX_INSPECTED_CONFIGS = 80;
+
+const VIEW_CSS = `
+.allv-host { container-type: inline-size; }
+.allv-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr) minmax(0, 0.7fr);
+  gap: 12px;
+  align-items: start;
+}
+@container (max-width: 1150px) {
+  .allv-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+  .allv-grid > .allv-log { grid-column: 1 / -1; }
+}
+@container (max-width: 720px) {
+  .allv-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.allv-panel { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 8px; min-width: 0; }
+.allv-panel-title { font-weight: 600; font-size: 12.5px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.allv-step { min-height: 92px; max-height: 190px; overflow-y: auto; margin: 10px 0; font-size: 13px; padding: 8px 10px;
+  border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-bg-surface); }
+.allv-step.info { border-color: var(--color-primary); background: var(--color-primary-subtle); }
+.allv-step.ll { border-color: var(--color-warning); background: var(--color-warning-subtle); }
+.allv-step.ok { border-color: var(--color-success); background: var(--color-success-subtle); }
+.allv-step.bad { border-color: var(--color-danger); background: var(--color-danger-subtle); }
+.allv-configs { max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.allv-config { padding: 1px 4px; border-radius: 3px; background: var(--color-bg-base); white-space: nowrap; }
+.allv-log { position: relative; max-height: 470px; overflow-y: auto; font-size: 11.5px; padding: 0; }
+.allv-log-row { padding: 4px 8px; border-bottom: 1px solid var(--color-border-subtle); cursor: pointer; }
+.allv-log-row.active { background: var(--color-primary-subtle); }
+.allv-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--color-text-muted); margin: 6px 0 0 0; }
+.allv-stats strong { color: var(--color-text); }
+.allv-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.allv-tabs .btn { font-size: 11px; padding: 2px 7px; height: 24px; }
+`;
+
+const modeBadge = (mode: 'SLL' | 'LL' | undefined, cz: boolean) =>
+  mode === 'LL'
+    ? <span className="badge badge-warning">{cz ? 'plné LL (zásobník γ0)' : 'full LL (stack γ0)'}</span>
+    : mode === 'SLL'
+      ? <span className="badge badge-info">{cz ? 'SLL (zásobník #)' : 'SLL (stack #)'}</span>
+      : null;
 
 export const ALLView: React.FC<ALLViewProps> = ({
   grammar,
@@ -60,83 +103,29 @@ export const ALLView: React.FC<ALLViewProps> = ({
   lang,
   onAttemptLeftRecursionRemoval
 }) => {
-  const t = TRANSLATIONS[lang];
   const cz = lang === 'cz';
 
   const [inputText, setInputText] = useState(defaultInput);
   useEffect(() => setInputText(defaultInput), [defaultInput]);
 
-  // Precomputed ATN and compatibility assessment
   const atn: ATN = useMemo(() => buildATN(grammar), [grammar]);
   const compatibility = useMemo(() => checkALLCompatibility(grammar, analysis), [grammar, analysis]);
 
-  // Pre-warmed DFA cache for all decision points (computed only when grammar is compatible with top-down parsing)
-  const dfaCache = useMemo(() => {
-    const map = new Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>();
-    if (!compatibility.canParse) {
-      return map;
-    }
-    for (const dp of atn.decisionPoints) {
-      map.set(dp.decisionNumber, createLookaheadDFA(dp, atn));
-    }
-    return map;
-  }, [atn, compatibility.canParse]);
-
-  // Selected decision point for Lookahead DFA inspection
-  const [selectedDecisionNum, setSelectedDecisionNum] = useState<number>(
-    atn.decisionPoints[0]?.decisionNumber ?? 1
-  );
-
-  // DFA visualization mode: 'graph' or 'table'
-  const [dfaViewMode, setDfaViewMode] = useState<'graph' | 'table'>('graph');
-  const [selectedDfaStateId, setSelectedDfaStateId] = useState<number>(0);
-
-  // Toggle for educational literature guide
   const [showTheoryGuide, setShowTheoryGuide] = useState(false);
-  // Toggle for lookahead step trace walkthrough
-  const [showLookaheadTrace, setShowLookaheadTrace] = useState(true);
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [detailedLookahead, setDetailedLookahead] = useState(true);
 
-  useEffect(() => {
-    if (atn.decisionPoints.length > 0) {
-      setSelectedDecisionNum(atn.decisionPoints[0].decisionNumber);
-      setSelectedDfaStateId(0);
-    }
-  }, [atn]);
-
-  const activeDecision = atn.decisionPoints.find(dp => dp.decisionNumber === selectedDecisionNum);
-  const activeDfaEntry = activeDecision ? dfaCache.get(activeDecision.decisionNumber) : undefined;
-  const inspectedDfaState = activeDfaEntry?.dfa.states.find(s => s.id === selectedDfaStateId) ?? activeDfaEntry?.dfa.states[0];
-
-  // Simulator state: guarded against running on left-recursive grammars
-  const [detailedLookahead, setDetailedLookahead] = useState(false);
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
-  const simulation: ALLSimulationResult = useMemo(() => {
-    if (!compatibility.canParse) {
-      return {
-        accepted: false,
-        steps: [{
-          stepIndex: 0,
-          inputIndex: 0,
-          currentToken: tokenized.tokens[0],
-          remainingTokens: [...tokenized.tokens],
-          callStack: [grammar.startSymbol],
-          action: `Parsing halted: Grammar contains left-recursive rule(s) [${compatibility.leftRecursiveRules.join(', ')}]. ALL(*) top-down parsing requires eliminating left recursion first (Parr, Harwell, Fisher 2014, §3).`,
-          actionCz: `Rozklad zastaven: Gramatika obsahuje levě rekurzivní pravidla [${compatibility.leftRecursiveRules.join(', ')}]. Algoritmus ALL(*) shora dolů vyžaduje nejprve odstranit levou rekurzi (Parr, Harwell, Fisher 2014, §3).`,
-          derivationTree: undefined
-        }],
-        maxLookaheadDepth: 0,
-        decisionsMade: 0,
-        error: compatibility.reasons.join('\n'),
-        errorCz: compatibility.reasonsCz.join('\n')
-      };
-    }
-    return simulateALLParse(tokenized.tokens, grammar, atn, dfaCache, { detailedLookaheadSteps: detailedLookahead });
-  }, [tokenized, grammar, atn, dfaCache, compatibility, detailedLookahead]);
+  // Every run starts with fresh lookahead DFAs, so the graph shows what this input built.
+  const simulation: ALLSimulationResult = useMemo(
+    () => simulateALLParse(tokenized.tokens, grammar, atn, undefined, { detailedLookaheadSteps: detailedLookahead }),
+    [tokenized, grammar, atn, detailedLookahead]
+  );
 
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(600);
-  const traceRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCurrentStepIdx(0);
@@ -145,76 +134,123 @@ export const ALLView: React.FC<ALLViewProps> = ({
 
   useAutoPlay(isPlaying, currentStepIdx, simulation.steps.length, playSpeed, setCurrentStepIdx, () => setIsPlaying(false));
 
+  // Keep the active log row visible by scrolling the log only (not the page)
   useEffect(() => {
-    const row = traceRef.current?.querySelector('.trace-row-active') as HTMLElement | null;
-    row?.scrollIntoView({ block: 'nearest' });
+    const log = logRef.current;
+    const row = log?.querySelector('.allv-log-row.active') as HTMLElement | null;
+    if (!log || !row) return;
+    const top = row.offsetTop;
+    if (top < log.scrollTop + 30) log.scrollTop = Math.max(0, top - 30);
+    else if (top + row.offsetHeight > log.scrollTop + log.clientHeight) log.scrollTop = top + row.offsetHeight - log.clientHeight;
   }, [currentStepIdx]);
 
   const currentStep: ALLParseStep | undefined = simulation.steps[currentStepIdx];
-  const lastStep = simulation.steps[simulation.steps.length - 1];
+  const isLastStep = currentStepIdx === simulation.steps.length - 1;
 
-  // Dynamically synchronize the active Lookahead DFA decision point and DFA state with the simulation step
+  // Decision shown in the DFA panel: the one of the current step, else the latest one before it
+  const [selectedDecisionNum, setSelectedDecisionNum] = useState<number>(atn.decisionPoints[0]?.decisionNumber ?? 1);
+  const [selectedDfaStateId, setSelectedDfaStateId] = useState<number | null>(null);
+  useEffect(() => {
+    setSelectedDecisionNum(atn.decisionPoints[0]?.decisionNumber ?? 1);
+    setSelectedDfaStateId(null);
+  }, [atn]);
   useEffect(() => {
     if (currentStep?.activeDecisionNumber !== undefined) {
       setSelectedDecisionNum(currentStep.activeDecisionNumber);
-    }
-    if (currentStep?.activeDfaStateId !== undefined) {
-      setSelectedDfaStateId(currentStep.activeDfaStateId);
+      setSelectedDfaStateId(null);
     }
   }, [currentStep]);
 
+  const activeDecision = atn.decisionPoints.find(dp => dp.decisionNumber === selectedDecisionNum);
+  const activeDfa: LookaheadDFA | undefined = activeDecision ? simulation.dfaCache.get(activeDecision.decisionNumber)?.dfa : undefined;
+  const stepClock = currentStep?.dfaClock;
+  const stepIsOnShownDecision = currentStep?.activeDecisionNumber === selectedDecisionNum;
+  const activeStateId = stepIsOnShownDecision ? currentStep?.activeDfaStateId : undefined;
+  const visibleDfa = activeDfa ? dfaAtClock(activeDfa, stepClock) : undefined;
+  const inspectedState = visibleDfa?.states.find(s => s.id === (selectedDfaStateId ?? activeStateId ?? -1));
+
+  // Configurations shown under the graph: LL configurations of an LL step, else the inspected DFA state
+  const llConfigs = stepIsOnShownDecision ? currentStep?.llConfigs : undefined;
+  const shownConfigs: ATNConfig[] | undefined = llConfigs ?? inspectedState?.configs;
+
+  const stepClass = !currentStep ? '' :
+    currentStep.subStepType === 'error' || currentStep.subStepType === 'limit' ? 'bad' :
+      currentStep.subStepType === 'accept' || currentStep.isMatch ? 'ok' :
+        currentStep.predictionMode === 'LL' ? 'll' :
+          currentStep.activeDecisionNumber !== undefined ? 'info' : '';
+
+  const outcomeBanner = () => {
+    const word = tokenized.tokens.join(' ') || 'ε';
+    switch (simulation.outcome) {
+      case 'accepted':
+        return (
+          <div className="report-box success" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <CheckCircle2 size={16} />
+            <span><strong>{word} ∈ L(G).</strong> {cz ? 'ALL(*) slovo přijalo a sestrojilo derivační strom.' : 'ALL(*) accepted the word and built a derivation tree.'}
+              {simulation.ambiguities > 0 && (cz
+                ? ` Gramatika je pro toto slovo nejednoznačná (${simulation.ambiguities}× konflikt LL), zobrazen je strom s nejmenšími alternativami.`
+                : ` The grammar is ambiguous for this word (${simulation.ambiguities} LL conflict(s)); the tree with the minimum alternatives is shown.`)}
+            </span>
+          </div>
+        );
+      case 'rejected':
+        return (
+          <div className="report-box danger" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <AlertTriangle size={16} />
+            <span><strong>{word} ∉ L(G).</strong> {cz
+              ? 'Syntaktická chyba. Pro gramatiku bez levé rekurze je ALL(*) přesné (Parr et al. 2014, Věta 6.1), takže slovo do jazyka nepatří.'
+              : 'Syntax error. For a grammar without left recursion ALL(*) is exact (Parr et al. 2014, Theorem 6.1), so the word is not in the language.'}</span>
+          </div>
+        );
+      case 'limit':
+        return (
+          <div className="report-box warning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <HelpCircle size={16} />
+            <span><strong>{cz ? 'Nerozhodnuto.' : 'Undecided.'}</strong> {cz
+              ? 'Simulace narazila na bezpečnostní limit; o příslušnosti slova k jazyku nic netvrdí.'
+              : 'The simulation hit a safety limit; it says nothing about membership of the word.'}</span>
+          </div>
+        );
+      default:
+        return (
+          <div className="report-box warning" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+            <AlertTriangle size={16} />
+            <span><strong>{cz ? 'ALL(*) nelze použít.' : 'ALL(*) is not applicable.'}</strong> {cz
+              ? 'Gramatika je levě rekurzivní, slovo proto nebylo testováno (nic se netvrdí o jeho příslušnosti k jazyku).'
+              : 'The grammar is left-recursive, so the word was not tested (nothing is claimed about its membership).'}</span>
+          </div>
+        );
+    }
+  };
+
   return (
-    <div>
-      {/* Compatibility & Classification Card */}
+    <div className="allv-host">
+      <style>{VIEW_CSS}</style>
+
+      {/* Simulator: step explanation, derivation tree, lookahead DFA and log side by side */}
       <div className="card">
-        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Network size={18} color="var(--color-primary)" />
-            {cz ? 'ALL(*) Adaptivní analyzátor shora dolů (ANTLR v4)' : 'ALL(*) Adaptive Top-Down Parser (ANTLR v4)'}
+            <Eye size={18} color="var(--color-primary)" />
+            {cz ? 'ALL(*) – krokování rozkladu s adaptivní predikcí' : 'ALL(*) – step-by-step parsing with adaptive prediction'}
           </span>
           <span className={`badge ${compatibility.canParse ? 'badge-success' : 'badge-warning'}`}>
             {compatibility.canParse
-              ? (cz ? 'ALL(*) kompatibilní' : 'ALL(*) Compatible')
-              : (cz ? 'Obsahuje levou rekurzi' : 'Contains Left Recursion')}
+              ? (cz ? 'bez levé rekurze: ALL(*) použitelné' : 'no left recursion: ALL(*) applicable')
+              : (cz ? 'levá rekurze: ALL(*) nelze použít' : 'left recursion: ALL(*) not applicable')}
           </span>
         </div>
 
-        <p className="hint-text" style={{ marginBottom: '12px' }}>
-          {cz
-            ? 'Algoritmus ALL(*) (Parr, Harwell, Fisher 2014) překonává statické limity LL(1) a LL(k) tím, že nedeterministické větvení řeší za běhu. Simulací rozšířené přechodové sítě (ATN) na tok vstupních symbolů dynamicky vytváří a ukládá do mezipaměti stavy deterministického automatu (Lookahead DFA) s libovolnou potřebnou hloubkou pohledu.'
-            : 'The ALL(*) algorithm (Parr, Harwell, Fisher 2014) overcomes the static limits of LL(1) and LL(k) by resolving non-deterministic branches at runtime. By simulating an Augmented Transition Network (ATN) across the input token stream, it dynamically materializes and caches deterministic Lookahead DFA states with arbitrary lookahead depth.'}
-        </p>
-
-        {/* Metrics Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '12px' }}>
-          <div className="stat-card" style={{ padding: '8px 12px' }}>
-            <div className="stat-label">{cz ? 'Stavy sítě ATN' : 'ATN States'}</div>
-            <div className="stat-value">{compatibility.atnStateCount}</div>
-          </div>
-          <div className="stat-card" style={{ padding: '8px 12px' }}>
-            <div className="stat-label">{cz ? 'Rozhodovací body' : 'Decision Points'}</div>
-            <div className="stat-value">{compatibility.decisionPointCount}</div>
-          </div>
-          <div className="stat-card" style={{ padding: '8px 12px' }}>
-            <div className="stat-label">{cz ? 'Max. hloubka pohledu' : 'Max Lookahead Depth'}</div>
-            <div className="stat-value">{simulation.maxLookaheadDepth} {cz ? 'tokenů' : 'tokens'}</div>
-          </div>
-          <div className="stat-card" style={{ padding: '8px 12px' }}>
-            <div className="stat-label">{cz ? 'Dynamická rozhodnutí' : 'Decisions Evaluated'}</div>
-            <div className="stat-value">{simulation.decisionsMade}</div>
-          </div>
-        </div>
-
         {!compatibility.canParse && (
-          <div className="notice-box warning" style={{ marginBottom: '12px' }}>
+          <div className="notice-box warning" style={{ marginBottom: '10px' }}>
             <div className="notice-title">
               <AlertTriangle size={15} />
-              <span>{cz ? 'Omezení levé rekurze' : 'Left Recursion Restriction'}</span>
+              <span>{cz ? 'Levá rekurze' : 'Left recursion'}</span>
             </div>
             <p style={{ margin: '4px 0 8px 0', fontSize: '13px' }}>
               {cz
-                ? `Gramatika obsahuje levě rekurzivní pravidla (${compatibility.leftRecursiveRules.join(', ')}). Algoritmus ALL(*) shora dolů vyžaduje předchozí odstranění levé rekurze (nebo přepis do precedenčního tvaru), aby se zabránilo zacyklení uzávěru ATN.`
-                : `The grammar contains left-recursive rules (${compatibility.leftRecursiveRules.join(', ')}). The top-down ALL(*) algorithm requires eliminating left recursion (or rewriting to precedence form) to prevent ATN closure cycles.`}
+                ? `Levě rekurzivní neterminály: ${compatibility.leftRecursiveRules.join(', ')} (přímá, nepřímá nebo skrytá levá rekurze přes vypustitelný prefix). ALL(*) predikuje i rozkládá shora dolů, uzávěr ATN by se zacyklil; článek levou rekurzi nepodporuje a ANTLR 4 umí přepsat jen přímou (Parr et al. 2014, §2.2). Nejprve levou rekurzi odstraňte.`
+                : `Left-recursive non-terminals: ${compatibility.leftRecursiveRules.join(', ')} (immediate, indirect or hidden behind a nullable prefix). ALL(*) predicts and parses top-down, so the ATN closure would loop; the paper does not support left recursion and ANTLR 4 only rewrites the immediate kind (Parr et al. 2014, §2.2). Remove the left recursion first.`}
             </p>
             {onAttemptLeftRecursionRemoval && (
               <button className="btn btn-secondary btn-sm" onClick={onAttemptLeftRecursionRemoval}>
@@ -225,7 +261,278 @@ export const ALLView: React.FC<ALLViewProps> = ({
           </div>
         )}
 
-        {/* Primary Literature Reference Bar */}
+        <input
+          type="text"
+          className="grammar-textarea"
+          style={{ minHeight: 'unset', height: '36px', padding: '6px 12px', marginBottom: '6px' }}
+          value={inputText}
+          onChange={e => setInputText(e.target.value)}
+          placeholder={cz ? 'Zadejte slovo pro simulaci...' : 'Enter word to simulate...'}
+          aria-label={cz ? 'Slovo pro rozklad' : 'Word to parse'}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap', gap: '8px' }}>
+          <TokenizedInputNote tokenized={tokenized} lang={lang} />
+          <label className="precedence-switch" style={{ margin: 0, fontSize: '12px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input type="checkbox" checked={detailedLookahead} onChange={e => setDetailedLookahead(e.target.checked)} />
+              {cz ? 'Krokovat i predikci (jednotlivé symboly pohledu dopředu, SLL i LL)' : 'Step through prediction too (each lookahead symbol, SLL and LL)'}
+            </span>
+          </label>
+        </div>
+
+        <SimulatorControls
+          stepIdx={currentStepIdx}
+          total={simulation.steps.length}
+          isPlaying={isPlaying}
+          speed={playSpeed}
+          lang={lang}
+          onStep={setCurrentStepIdx}
+          onTogglePlay={() => setIsPlaying(!isPlaying)}
+          onSpeed={setPlaySpeed}
+        />
+        <div className="allv-stats">
+          <span>{cz ? 'Rozhodnutí' : 'Decisions'}: <strong>{simulation.decisionsMade}</strong></span>
+          <span>{cz ? 'Konflikty SLL → LL' : 'SLL conflicts → LL'}: <strong>{simulation.llFallbacks}</strong></span>
+          <span>{cz ? 'Nejednoznačnosti (konflikt LL)' : 'Ambiguities (LL conflict)'}: <strong>{simulation.ambiguities}</strong></span>
+          <span>{cz ? 'Max. pohled dopředu' : 'Max lookahead'}: <strong>{simulation.maxLookaheadDepth}</strong> {cz ? 'symbolů' : 'symbols'}</span>
+          <span>{cz ? 'Stavy ATN / rozhodovací body' : 'ATN states / decision points'}: <strong>{compatibility.atnStateCount} / {compatibility.decisionPointCount}</strong></span>
+        </div>
+
+        {/* Step explanation */}
+        {currentStep && (
+          <div className={`allv-step ${stepClass}`}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '4px', flexWrap: 'wrap' }}>
+              <strong>{cz ? `Krok ${currentStepIdx + 1} z ${simulation.steps.length}` : `Step ${currentStepIdx + 1} of ${simulation.steps.length}`}</strong>
+              <span style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {modeBadge(currentStep.predictionMode, cz)}
+                {currentStep.lookaheadTokens && (
+                  <span className="badge badge-secondary">{cz ? 'pohled dopředu' : 'lookahead'}: [{currentStep.lookaheadTokens.join(' ')}]</span>
+                )}
+                {currentStep.viableAlts && (
+                  <span className="badge badge-secondary">{cz ? 'alternativy' : 'alternatives'}: {'{'}{currentStep.viableAlts.join(', ')}{'}'}</span>
+                )}
+              </span>
+            </div>
+            <div>{cz ? currentStep.actionCz : currentStep.action}</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--color-text-muted)', marginTop: '4px', fontFamily: 'monospace' }}>
+              {cz ? 'zbývá' : 'remaining'}: {currentStep.remainingTokens.join(' ') || 'ε'} $
+              {currentStep.atnStack !== undefined && <> · γ = {currentStep.atnStack}</>}
+            </div>
+            {currentStep.decisionEvent && (
+              <div style={{ marginTop: '6px', fontSize: '12px' }}>
+                <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: '11px', padding: '1px 6px', height: '22px' }}
+                  onClick={() => setShowWalkthrough(!showWalkthrough)}>
+                  {showWalkthrough ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {cz ? ' Průběh predikce (adaptivePredict)' : ' Prediction walkthrough (adaptivePredict)'}
+                </button>
+                {showWalkthrough && (
+                  <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
+                    {currentStep.decisionEvent.trace?.map((tr, i) => (
+                      <li key={i} style={{ marginBottom: '2px' }}>
+                        <code>{tr.mode}</code> {cz ? tr.actionCz : tr.action}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="allv-grid">
+          {/* Derivation tree */}
+          <div className="allv-panel">
+            <div className="allv-panel-title">
+              <span>{cz ? 'Derivační strom (shora dolů)' : 'Derivation tree (top-down)'}</span>
+              {currentStep?.derivationTree && (
+                <LatexExportButton
+                  getLatex={() => exportParseTreeToTikz(currentStep.derivationTree!)}
+                  filename={`all_tree_step_${currentStepIdx}.tex`}
+                  label={cz ? 'TikZ strom' : 'TikZ Tree'}
+                  title={cz ? 'Export derivačního stromu do LaTeXu (TikZ)' : 'Export derivation tree to LaTeX (TikZ)'}
+                  lang={lang}
+                />
+              )}
+            </div>
+            {currentStep?.derivationTree ? (
+              <DerivationTreeVisualizer rootNode={currentStep.derivationTree} height="420px" filename={`all_tree_step_${currentStepIdx}`} lang={lang} />
+            ) : (
+              <div style={{ height: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
+                {cz ? 'Žádný strom k zobrazení' : 'No tree to display'}
+              </div>
+            )}
+          </div>
+
+          {/* Lookahead DFA of the active decision, as it was at this step */}
+          <div className="allv-panel">
+            <div className="allv-panel-title">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <GitBranch size={14} color="var(--color-primary)" />
+                {activeDecision
+                  ? (cz ? `Lookahead DFA rozhodnutí D${activeDecision.decisionNumber} (${activeDecision.nonTerminal}) v tomto kroku` : `Lookahead DFA of decision D${activeDecision.decisionNumber} (${activeDecision.nonTerminal}) at this step`)
+                  : (cz ? 'Lookahead DFA' : 'Lookahead DFA')}
+              </span>
+              {atn.decisionPoints.length > 1 && (
+                <span className="allv-tabs">
+                  {atn.decisionPoints.map(dp => (
+                    <button key={dp.decisionNumber}
+                      className={`btn ${selectedDecisionNum === dp.decisionNumber ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => { setSelectedDecisionNum(dp.decisionNumber); setSelectedDfaStateId(null); }}>
+                      D{dp.decisionNumber}: {dp.nonTerminal}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+            {!compatibility.canParse ? (
+              <div className="hint-text" style={{ padding: '10px' }}>
+                {cz ? 'Pro levě rekurzivní gramatiku se predikce nespouští, DFA se nevytváří.' : 'For a left-recursive grammar prediction does not run and no DFA is built.'}
+              </div>
+            ) : !activeDecision || !activeDfa ? (
+              <div className="hint-text" style={{ padding: '10px' }}>
+                {cz ? 'Gramatika nemá žádný neterminál s více pravidly, rozklad nic nepredikuje.' : 'No non-terminal has more than one production, nothing has to be predicted.'}
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: '11.5px', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px 10px' }}>
+                  {activeDecision.alternatives.map(a => (
+                    <code key={a.alt}>{a.alt}: {formatProduction(a.production)}</code>
+                  ))}
+                </div>
+                <LookaheadDFAGraphVisualizer
+                  dfa={activeDfa}
+                  atn={atn}
+                  upToClock={stepClock}
+                  selectedStateId={selectedDfaStateId}
+                  onSelectState={setSelectedDfaStateId}
+                  activeStateId={activeStateId}
+                  activeEdge={stepIsOnShownDecision ? currentStep?.activeEdge : undefined}
+                  lang={lang}
+                  height="330px"
+                  filename={`all_dfa_D${activeDecision.decisionNumber}_${activeDecision.nonTerminal}`}
+                />
+                <div style={{ fontSize: '12px', marginTop: '6px' }}>
+                  {llConfigs ? (
+                    <strong>{cz
+                      ? `Konfigurace LL (p, i, γ) s přesným zásobníkem – neukládají se do DFA (${llConfigs.length})`
+                      : `LL configurations (p, i, γ) with exact stacks – not stored in the DFA (${llConfigs.length})`}</strong>
+                  ) : inspectedState ? (
+                    <strong>
+                      {cz ? `Stav s${inspectedState.id}: ${dfaStateStatusLabel(inspectedState, true)}, ${inspectedState.configs.length} konfigurací (p, i, γ)` : `State s${inspectedState.id}: ${dfaStateStatusLabel(inspectedState, false)}, ${inspectedState.configs.length} configurations (p, i, γ)`}
+                      {dfaStateStatus(inspectedState) === 'conflict' && (cz ? ' – konflikt: stejné (p, γ) s různými alternativami' : ' – conflict: same (p, γ) with different alternatives')}
+                    </strong>
+                  ) : (
+                    <span className="hint-text">{cz ? 'Kliknutím na stav zobrazíte všechny jeho konfigurace. # = libovolný volající (SLL), [] = konec vstupu.' : 'Click a state to list all its configurations. # = any caller (SLL), [] = end of input.'}</span>
+                  )}
+                  {shownConfigs && (
+                    <div className="allv-configs">
+                      {shownConfigs.slice(0, MAX_INSPECTED_CONFIGS).map((c, i) => (
+                        <span key={i} className="allv-config">{describeConfig(atn, c)}</span>
+                      ))}
+                      {shownConfigs.length > MAX_INSPECTED_CONFIGS && (
+                        <span className="hint-text">{cz ? `… a dalších ${shownConfigs.length - MAX_INSPECTED_CONFIGS}` : `… and ${shownConfigs.length - MAX_INSPECTED_CONFIGS} more`}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Step log */}
+          <div className="allv-panel allv-log" ref={logRef}>
+            <div style={{ position: 'sticky', top: 0, backgroundColor: 'var(--color-bg-surface)', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', fontWeight: 600, fontSize: '12.5px' }}>
+              {cz ? 'Protokol kroků' : 'Step log'}
+            </div>
+            {simulation.steps.map((s, idx) => (
+              <div key={idx} className={`allv-log-row ${idx === currentStepIdx ? 'active' : ''}`}
+                onClick={() => { setCurrentStepIdx(idx); setIsPlaying(false); }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>#{idx + 1} </span>
+                {s.predictionMode && <code style={{ fontSize: '10px' }}>{s.predictionMode} </code>}
+                {cz ? s.actionCz : s.action}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {isLastStep && <div style={{ marginTop: '10px' }}>{outcomeBanner()}</div>}
+      </div>
+
+      {/* Lookahead DFA cache table (state at the shown step) */}
+      {compatibility.canParse && activeDecision && visibleDfa && (
+        <div className="card">
+          <div className="card-title">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <GitBranch size={16} color="var(--color-primary)" />
+              {cz ? `Mezipaměť lookahead DFA rozhodnutí D${activeDecision.decisionNumber} (${activeDecision.nonTerminal}) – tabulka stavů` : `Lookahead DFA cache of decision D${activeDecision.decisionNumber} (${activeDecision.nonTerminal}) – state table`}
+            </span>
+          </div>
+          <p className="hint-text" style={{ marginBottom: '8px' }}>
+            {cz
+              ? 'Stav DFA je množina konfigurací ATN (p, i, γ): stav ATN zapsaný jako položka s tečkou, číslo predikované alternativy a zásobník návratových stavů (# = libovolný volající v režimu SLL). Tabulka ukazuje DFA ve zvoleném kroku; stavy a hrany vznikají až při predikci na skutečném vstupu.'
+              : 'A DFA state is a set of ATN configurations (p, i, γ): the ATN state written as a dotted item, the predicted alternative and the stack of return states (# = any caller in SLL mode). The table shows the DFA at the shown step; states and edges appear only when prediction meets real input.'}
+          </p>
+          <div className="table-responsive">
+            <table className="data-table" style={{ fontSize: '12px' }}>
+              <thead>
+                <tr>
+                  <th style={{ width: '70px' }}>{cz ? 'Stav' : 'State'}</th>
+                  <th>{cz ? 'Konfigurace (p, i, γ)' : 'Configurations (p, i, γ)'}</th>
+                  <th style={{ width: '160px' }}>{cz ? 'Přechody' : 'Transitions'}</th>
+                  <th style={{ width: '150px' }}>{cz ? 'Výsledek' : 'Outcome'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleDfa.states.map(s => {
+                  const edges = visibleDfa.edges.filter(e => e.from === s.id);
+                  const status = dfaStateStatus(s);
+                  return (
+                    <tr key={s.id} onClick={() => setSelectedDfaStateId(s.id)}
+                      style={{ cursor: 'pointer', backgroundColor: (selectedDfaStateId ?? activeStateId) === s.id ? 'var(--color-primary-subtle)' : undefined }}>
+                      <td><strong>s{s.id}</strong>{s.id === activeDfa?.startStateId && <span className="badge badge-secondary" style={{ fontSize: '10px', marginLeft: '4px' }}>D0</span>}</td>
+                      <td>
+                        <div style={{ maxHeight: '64px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '11px' }}>
+                          {s.configs.slice(0, MAX_INSPECTED_CONFIGS).map(c => describeConfig(atn, c)).join('  ')}
+                          {s.configs.length > MAX_INSPECTED_CONFIGS && ` … (+${s.configs.length - MAX_INSPECTED_CONFIGS})`}
+                        </div>
+                      </td>
+                      <td>
+                        {edges.length === 0 ? <span style={{ color: 'var(--color-text-muted)' }}>—</span> : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {edges.map(e => (
+                              <span key={e.symbol} className="badge badge-secondary" style={{ fontSize: '11px' }}>
+                                {displaySymbol(e.symbol)} → s{e.to}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`badge ${status === 'accept' ? 'badge-success' : status === 'conflict' ? 'badge-warning' : 'badge-secondary'}`} style={{ fontSize: '11px' }}>
+                          {dfaStateStatusLabel(s, cz)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* About ALL(*) */}
+      <div className="card">
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Network size={18} color="var(--color-primary)" />
+          {cz ? 'ALL(*) – adaptivní analýza LL(*) (ANTLR 4)' : 'ALL(*) – Adaptive LL(*) parsing (ANTLR 4)'}
+        </div>
+        <p className="hint-text" style={{ marginBottom: '10px' }}>
+          {cz
+            ? 'ALL(*) je analýza shora dolů (rekurzivní sestup), která na každém neterminálu s více pravidly zavolá predikci adaptivePredict. Ta nepoužívá rozkladovou tabulku s pevným k: simuluje síť ATN na skutečném vstupu tak daleko, jak je potřeba, a výsledky ukládá do lookahead DFA. Pro každou gramatiku bez levé rekurze rozpozná přesně jazyk L(G) (Parr, Harwell, Fisher 2014, Věta 6.1); u nejednoznačné gramatiky vybere jeden strom.'
+            : 'ALL(*) is top-down (recursive-descent) parsing that calls the prediction adaptivePredict at every non-terminal with several productions. Instead of a parsing table with a fixed k it simulates the ATN on the actual input as far as needed and caches the results in a lookahead DFA. For every grammar without left recursion it recognizes exactly L(G) (Parr, Harwell, Fisher 2014, Theorem 6.1); for an ambiguous grammar it chooses one tree.'}
+        </p>
+
         <ReferenceBar
           references={ALL_PRIMARY_REFERENCES}
           lang={lang}
@@ -243,579 +550,95 @@ export const ALLView: React.FC<ALLViewProps> = ({
           }
         />
 
-        {/* Educational Theory & Architectural Guide (Expandable) */}
         {showTheoryGuide && (
           <div style={{ marginTop: '14px', padding: '14px', backgroundColor: 'var(--color-bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', fontSize: '13px' }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <BookOpen size={16} />
-              {cz ? 'Formální principy algoritmu ALL(*) (Parr et al. 2014)' : 'Formal Principles of the ALL(*) Algorithm (Parr et al. 2014)'}
-            </h4>
-
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-              {/* Pillar 1: Two-tier architecture */}
-              <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                <strong style={{ display: 'block', marginBottom: '4px' }}>
-                  {cz ? '1. Dvouvrstvá architektura (Parr et al. §2, Obr. 1)' : '1. Two-Tier Architecture (Parr et al. §2, Fig. 1)'}
-                </strong>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {cz
-                    ? 'ALL(*) striktně odděluje rozkladový automat shora dolů (LL parse stack) od predikčního stroje. Rozkladový automat provádí expanze a čte vstup. Pouze v místech větvení (rozhodovací body) volá predikční stroj adaptivePredict, který simuluje ATN a vrátí vítěznou alternativu.'
-                    : 'ALL(*) strictly decouples top-down parsing execution from the lookahead prediction engine. The LL parser performs rule expansions and matches tokens. Only at non-deterministic decision points does it query adaptivePredict, which simulates the ATN to choose the winning alternative.'}
-                </p>
-              </div>
-
-              {/* Pillar 2: Dynamic ATN Simulation & DFA Caching */}
-              <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                <strong style={{ display: 'block', marginBottom: '4px' }}>
-                  {cz ? '2. Dynamická mezipaměť DFA (Parr et al. §4, Alg. 1–3)' : '2. Dynamic DFA Caching (Parr et al. §4, Alg. 1–3)'}
-                </strong>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {cz
-                    ? 'Stavy Lookahead DFA nejsou počítány staticky předem (což by vedlo k exponenciální explozi). Místo toho se vytvářejí za běhu (on-demand) podél tokenů skutečně se vyskytujících ve vstupu a ukládají do mezipaměti. Následující rozhodnutí na stejném prefixu proběhnou v čase O(1).'
-                    : 'Lookahead DFA states are not precomputed ahead-of-time (which would cause exponential state explosion). Instead, they are materialized on-demand along token paths actually encountered in the input and cached. Future decisions on identical prefixes execute in O(1) time.'}
-                </p>
-              </div>
-
-              {/* Pillar 3: SLL vs LL Context */}
-              <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                <strong style={{ display: 'block', marginBottom: '4px' }}>
-                  {cz ? '3. SLL(*) vs. plné LL(*) (Parr et al. §5)' : '3. SLL(*) vs. Full LL(*) (Parr et al. §5)'}
-                </strong>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {cz
-                    ? 'Strong LL(*) simuluje ATN s prázdným kontextem volání (kontextově volně), což vyřeší přes 90 % rozhodnutí v programovacích jazycích. Pokud vznikne nejednoznačnost, ALL(*) přejde na plné LL(*) a zapojí skutečný zásobník návratových stavů γ.'
-                    : 'Strong LL(*) evaluates ATN configurations without calling context (context-free), which resolves >90% of real-world grammar decisions. When ambiguity arises, ALL(*) falls back to full LL(*), restoring the caller return stack γ to distinguish valid paths.'}
-                </p>
-              </div>
-
-              {/* Pillar 4: Left-Recursion Barrier */}
-              <div style={{ padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                <strong style={{ display: 'block', marginBottom: '4px' }}>
-                  {cz ? '4. Omezení levé rekurze (Parr et al. §3 & §6)' : '4. Left-Recursion Barrier (Parr et al. §3 & §6)'}
-                </strong>
-                <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>
-                  {cz
-                    ? 'Protože ALL(*) simuluje uzávěr pravidel shora dolů, přímá či nepřímá levá rekurze (A =>+ A α) vytváří nekonečný cyklus v ATN bez konzumace tokenu. Proto vyžaduje předchozí odstranění levé rekurze nebo precedenční stratifikaci.'
-                    : 'Because ALL(*) computes ATN closures top-down, direct or indirect left recursion (A =>+ A α) induces an infinite cycle without token consumption. Therefore, top-down simulation requires eliminating left recursion or precedence stratification first.'}
-                </p>
-              </div>
+              {[
+                {
+                  titleCz: '1. Síť ATN a rozklad (§4.3, §5.2, Function 1)',
+                  titleEn: '1. ATN and the parser (§4.3, §5.2, Function 1)',
+                  cz: 'Každý neterminál A má podsíť p_A → p_A,i → … → p\'_A: pro každé pravidlo cestu se stavem před každým symbolem pravé strany (položka s tečkou). Terminál je hrana se symbolem, neterminál B hrana p –B→ q, která si pamatuje návratový stav q. Analyzátor jde po pravidlech shora dolů, terminály porovnává se vstupem a při volání B uloží q na zásobník volání γ.',
+                  en: 'Every non-terminal A has a submachine p_A → p_A,i → … → p\'_A: for every production a path with a state before each right-hand-side symbol (a dotted item). A terminal is an edge labelled with it, a non-terminal B an edge p –B→ q that remembers the return state q. The parser follows productions top-down, matches terminals against the input and pushes q on the call stack γ when it calls B.'
+                },
+                {
+                  titleCz: '2. Predikce SLL a lookahead DFA (§3, §4.4, Function 4–5)',
+                  titleEn: '2. SLL prediction and the lookahead DFA (§3, §4.4, Function 4–5)',
+                  cz: 'Predikce simuluje všechny alternativy současně jako konfigurace (p, i, γ). Režim SLL (Strong LL) nezná volajícího: zásobník je # a na konci A pokračuje u všech míst volání A (obdoba množiny FOLLOW). Stavy DFA jsou množiny konfigurací po přečtení symbolu (move + uzávěr). Vznikají až pro symboly, které se na vstupu skutečně objeví, a hrany se ukládají: další stejné rozhodnutí už jen projde existující hrany DFA. Predikce končí, když všechny konfigurace předpovídají stejnou alternativu.',
+                  en: 'Prediction simulates all alternatives at once as configurations (p, i, γ). SLL (Strong LL) does not know the caller: the stack is # and at the end of A it continues at every call site of A (like the FOLLOW set). DFA states are configuration sets after reading a symbol (move + closure). They are created only for symbols that really occur in the input and the edges are cached: a later identical decision just follows existing DFA edges. Prediction stops when all configurations predict the same alternative.'
+                },
+                {
+                  titleCz: '3. Konflikt SLL → plné LL, nejednoznačnost (§3.1, §5.3, Function 6, 8, 9)',
+                  titleEn: '3. SLL conflict → full LL, ambiguity (§3.1, §5.3, Function 6, 8, 9)',
+                  cz: 'Konflikt nastane, když konfigurace se stejným (p, γ) předpovídají různé alternativy a žádný stav ATN nepředpovídá jedinou – další pohled dopředu nepomůže. SLL pak neví, zda jde o nejednoznačnost, nebo o rozhodnutí závislé na volajícím (např. S → x B | y C, B → A a, C → A b a, A → b | ε: na vstupu „b a“ rozhodne až volající). Proto se predikce zopakuje v režimu LL se skutečným zásobníkem γ0 (výsledek se do DFA neukládá). Konflikt i v LL znamená nejednoznačnost vstupu: zvolí se nejmenší alternativa.',
+                  en: 'A conflict occurs when configurations with the same (p, γ) predict different alternatives and no ATN state predicts just one – more lookahead cannot help. SLL then cannot tell an ambiguity from a decision that depends on the caller (e.g. S → x B | y C, B → A a, C → A b a, A → b | ε: on input "b a" only the caller decides). So prediction is repeated in LL mode with the real stack γ0 (the result is not cached in the DFA). A conflict in LL as well means the input is ambiguous: the minimum alternative is chosen.'
+                },
+                {
+                  titleCz: '4. Levá rekurze a správnost (§2.2, §6)',
+                  titleEn: '4. Left recursion and correctness (§2.2, §6)',
+                  cz: 'Pro gramatiku bez levé rekurze ALL(*) přijme slovo, právě když patří do L(G) (Věta 6.1). Levá rekurze (A ⇒+ A α, přímá, nepřímá i skrytá) podporována není: uzávěr by se zacyklil. ANTLR 4 před generováním přepisuje jen přímou levou rekurzi; zde je nutné ji odstranit v záložce Úpravy. ANTLR navíc nejdřív zkouší celý vstup jen v SLL a LL použije až při chybě (dvoufázový rozklad, §3.2); tento simulátor používá optimalizované LL pro každé rozhodnutí.',
+                  en: 'For a grammar without left recursion ALL(*) accepts a word iff it is in L(G) (Theorem 6.1). Left recursion (A ⇒+ A α: immediate, indirect or hidden) is not supported: the closure would loop. ANTLR 4 rewrites only immediate left recursion before generating the parser; here it has to be removed in the Transformations tab. ANTLR also first parses the whole input in SLL-only mode and uses LL only after an error (two-stage parsing, §3.2); this simulator uses optimized LL per decision.'
+                }
+              ].map(p => (
+                <div key={p.titleEn} style={{ padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                  <strong style={{ display: 'block', marginBottom: '4px' }}>{cz ? p.titleCz : p.titleEn}</strong>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--color-text-muted)' }}>{cz ? p.cz : p.en}</p>
+                </div>
+              ))}
             </div>
 
-            {/* Parsing Families Comparison Table */}
             <div style={{ marginTop: '14px' }}>
               <strong style={{ display: 'block', marginBottom: '6px', fontSize: '12px' }}>
-                {cz ? 'Srovnání rodin syntaktických analyzátorů:' : 'Comparison of Parser Families:'}
+                {cz ? 'Srovnání syntaktických analyzátorů:' : 'Comparison of parsers:'}
               </strong>
               <div className="table-responsive">
                 <table className="data-table" style={{ fontSize: '11px' }}>
                   <thead>
                     <tr>
                       <th>{cz ? 'Analyzátor' : 'Parser'}</th>
-                      <th>{cz ? 'Směr rozkladu' : 'Direction'}</th>
-                      <th>{cz ? 'Hloubka pohledu (k)' : 'Lookahead (k)'}</th>
-                      <th>{cz ? 'Tabulka / Konstrukce' : 'Table / Construction'}</th>
-                      <th>{cz ? 'Levá rekurze' : 'Left Recursion'}</th>
+                      <th>{cz ? 'Směr' : 'Direction'}</th>
+                      <th>{cz ? 'Pohled dopředu' : 'Lookahead'}</th>
+                      <th>{cz ? 'Konstrukce' : 'Construction'}</th>
+                      <th>{cz ? 'Levá rekurze' : 'Left recursion'}</th>
                       <th>{cz ? 'Konflikty' : 'Conflicts'}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td><strong>LL(1)</strong></td>
-                      <td>{cz ? 'Shora dolů' : 'Top-Down'}</td>
-                      <td>k = 1 ({cz ? 'statické' : 'static'})</td>
-                      <td>{cz ? 'Statická tabulka M[A, a]' : 'Static table M[A, a]'}</td>
-                      <td>{cz ? 'Zakázána' : 'Prohibited'}</td>
-                      <td>{cz ? 'Selhání při kolizi FIRST/FOLLOW' : 'Fails on FIRST/FOLLOW clash'}</td>
+                      <td>{cz ? 'shora dolů' : 'top-down'}</td>
+                      <td>k = 1</td>
+                      <td>{cz ? 'rozkladová tabulka M[A, a] z FIRST/FOLLOW' : 'parsing table M[A, a] from FIRST/FOLLOW'}</td>
+                      <td>{cz ? 'nepodporuje' : 'not supported'}</td>
+                      <td>{cz ? 'gramatika není LL(1)' : 'grammar is not LL(1)'}</td>
                     </tr>
                     <tr>
                       <td><strong>LL(k)</strong></td>
-                      <td>{cz ? 'Shora dolů' : 'Top-Down'}</td>
-                      <td>k {cz ? 'pevné' : 'fixed'} (1, 2, ...)</td>
-                      <td>{cz ? 'Exponenciální velikost O(|T|^k)' : 'Exponential size O(|T|^k)'}</td>
-                      <td>{cz ? 'Zakázána' : 'Prohibited'}</td>
-                      <td>{cz ? 'Selhání, pokud k nestačí' : 'Fails if depth exceeds k'}</td>
+                      <td>{cz ? 'shora dolů' : 'top-down'}</td>
+                      <td>{cz ? 'pevné k' : 'fixed k'}</td>
+                      <td>{cz ? 'tabulka s řetězci délky k (až |T|^k sloupců)' : 'table over strings of length k (up to |T|^k columns)'}</td>
+                      <td>{cz ? 'nepodporuje' : 'not supported'}</td>
+                      <td>{cz ? 'gramatika není LL(k)' : 'grammar is not LL(k)'}</td>
                     </tr>
                     <tr>
-                      <td><strong>LR(k) / LALR(1)</strong></td>
-                      <td>{cz ? 'Zdola nahoru' : 'Bottom-Up'}</td>
+                      <td><strong>LR(1) / LALR(1)</strong></td>
+                      <td>{cz ? 'zdola nahoru' : 'bottom-up'}</td>
                       <td>k = 1</td>
-                      <td>{cz ? 'Statický automat položen (ACTION/GOTO)' : 'Static item set automaton'}</td>
-                      <td>{cz ? 'Přirozeně podporována' : 'Naturally supported'}</td>
-                      <td>{cz ? 'Shift/Reduce a Reduce/Reduce kolize' : 'Shift/Reduce & Reduce/Reduce'}</td>
+                      <td>{cz ? 'automat LR položek, tabulky ACTION/GOTO' : 'LR item automaton, ACTION/GOTO tables'}</td>
+                      <td>{cz ? 'podporuje' : 'supported'}</td>
+                      <td>{cz ? 'konflikty přesun/redukce a redukce/redukce' : 'shift/reduce and reduce/reduce conflicts'}</td>
                     </tr>
                     <tr style={{ backgroundColor: 'var(--color-primary-subtle)' }}>
                       <td><strong>ALL(*)</strong></td>
-                      <td>{cz ? 'Shora dolů' : 'Top-Down'}</td>
-                      <td>k ∈ [1, ∞) ({cz ? 'dynamické' : 'dynamic'})</td>
-                      <td>{cz ? 'On-demand mezipaměť Lookahead DFA' : 'On-demand Lookahead DFA cache'}</td>
-                      <td>{cz ? 'Vyžaduje odstranění / precedenci' : 'Requires elimination / precedence'}</td>
-                      <td>{cz ? 'Řešeno dynamicky simulací ATN' : 'Dynamically resolved via ATN'}</td>
+                      <td>{cz ? 'shora dolů' : 'top-down'}</td>
+                      <td>{cz ? 'libovolně dlouhý, určený za běhu' : 'any length, decided at run time'}</td>
+                      <td>{cz ? 'síť ATN + lookahead DFA budované za běhu' : 'ATN + lookahead DFA built at run time'}</td>
+                      <td>{cz ? 'nepodporuje (ANTLR 4 přepisuje přímou)' : 'not supported (ANTLR 4 rewrites immediate)'}</td>
+                      <td>{cz ? 'konflikt SLL → LL; nejednoznačnost → nejmenší alternativa' : 'SLL conflict → LL; ambiguity → minimum alternative'}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Decision Points & Lookahead DFA Cache Section */}
-      {atn.decisionPoints.length > 0 && (
-        <div className="card">
-          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <GitBranch size={16} color="var(--color-primary)" />
-              {cz ? 'Rozhodovací body a dynamická mezipaměť Lookahead DFA' : 'Decision Points & Dynamic Lookahead DFA Cache'}
-            </span>
-
-            {/* View Mode Toggle: Graph vs Table */}
-            {compatibility.canParse && activeDfaEntry && (
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${dfaViewMode === 'graph' ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ fontSize: '11px', padding: '3px 8px', height: '26px' }}
-                  onClick={() => setDfaViewMode('graph')}
-                >
-                  <GitBranch size={12} style={{ marginRight: '4px' }} />
-                  {cz ? 'Graf DFA' : 'DFA Graph'}
-                </button>
-                <button
-                  type="button"
-                  className={`btn btn-sm ${dfaViewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ fontSize: '11px', padding: '3px 8px', height: '26px' }}
-                  onClick={() => setDfaViewMode('table')}
-                >
-                  <List size={12} style={{ marginRight: '4px' }} />
-                  {cz ? 'Tabulka stavů' : 'States Table'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <p className="hint-text" style={{ marginBottom: '10px' }}>
-            {cz
-              ? 'Každý neterminál s více než jednou alternativou představuje rozhodovací bod. Během rozkladu se pro něj postupně buduje deterministický automat (Lookahead DFA), který se ukládá do mezipaměti.'
-              : 'Every non-terminal with more than one alternative represents a decision point. During parsing, a deterministic Lookahead DFA is lazily constructed and cached for it.'}
-          </p>
-
-          {/* Decision point tabs */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-            {atn.decisionPoints.map(dp => (
-              <button
-                key={dp.decisionNumber}
-                className={`btn btn-sm ${selectedDecisionNum === dp.decisionNumber ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => {
-                  setSelectedDecisionNum(dp.decisionNumber);
-                  setSelectedDfaStateId(0);
-                }}
-              >
-                D{dp.decisionNumber}: <strong>{dp.nonTerminal}</strong> ({dp.alternatives.length} {cz ? 'alt.' : 'alts'})
-              </button>
-            ))}
-          </div>
-
-          {activeDecision && (
-            <div style={{ backgroundColor: 'var(--color-bg-base)', padding: '12px', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontWeight: 600, marginBottom: '8px', fontSize: '13px' }}>
-                {cz ? `Rozhodnutí D${activeDecision.decisionNumber} pro neterminál ` : `Decision D${activeDecision.decisionNumber} for non-terminal `}
-                <code>{activeDecision.nonTerminal}</code>:
-              </div>
-
-              {/* Alternatives List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px', fontSize: '13px' }}>
-                {activeDecision.alternatives.map(alt => (
-                  <div key={alt.alt} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="badge badge-secondary" style={{ minWidth: '45px', textAlign: 'center' }}>
-                      Alt {alt.alt}
-                    </span>
-                    <code>{formatProduction(alt.production)}</code>
-                  </div>
-                ))}
-              </div>
-
-              {!compatibility.canParse ? (
-                <div style={{ fontSize: '12px', color: 'var(--color-warning)', padding: '8px 12px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                  {cz
-                    ? 'Stavy Lookahead DFA se nevytvářejí, protože neterminál se účastní levé rekurze. V souladu s teorií ALL(*) (Parr et al. 2014) je nutné předchozí odstranění levé rekurze.'
-                    : 'Lookahead DFA states are not materialized because this non-terminal participates in left recursion. Per ALL(*) theory (Parr et al. 2014), left recursion must be eliminated first.'}
-                </div>
-              ) : activeDfaEntry && (
-                <>
-                  {dfaViewMode === 'graph' ? (
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-muted)' }}>
-                          {cz ? 'Vizuální diagram automatu Lookahead DFA:' : 'Lookahead DFA State Graph:'}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>
-                          {cz ? 'Kliknutím na stav zobrazíte jeho konfigurace ATN' : 'Click a state to inspect its ATN configurations'}
-                        </div>
-                      </div>
-
-                      <LookaheadDFAGraphVisualizer
-                        dfa={activeDfaEntry.dfa}
-                        selectedStateId={selectedDfaStateId}
-                        onSelectState={setSelectedDfaStateId}
-                        activeStateId={currentStep?.decisionEvent?.dfaStateId}
-                        lang={lang}
-                        filename={`all_dfa_D${activeDecision.decisionNumber}_${activeDecision.nonTerminal}`}
-                      />
-                    </div>
-                  ) : (
-                    /* Table View */
-                    <div className="table-responsive">
-                      <table className="data-table" style={{ fontSize: '12px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ width: '70px' }}>{cz ? 'Stav' : 'State'}</th>
-                            <th>{cz ? 'Konfigurace ATN (stav, alt, kontext)' : 'ATN Configurations (state, alt, context)'}</th>
-                            <th style={{ width: '180px' }}>{cz ? 'Přechody na tokenech' : 'Transitions on Tokens'}</th>
-                            <th style={{ width: '130px' }}>{cz ? 'Předpověď' : 'Decision / Status'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {activeDfaEntry.dfa.states.map(s => {
-                            const edgesList = Object.entries(s.edges);
-                            const isSelected = selectedDfaStateId === s.id;
-                            return (
-                              <tr
-                                key={s.id}
-                                onClick={() => setSelectedDfaStateId(s.id)}
-                                style={{
-                                  cursor: 'pointer',
-                                  backgroundColor: isSelected ? 'var(--color-primary-subtle)' : undefined
-                                }}
-                              >
-                                <td>
-                                  <strong>s{s.id}</strong> {s.id === 0 && <span className="badge badge-secondary" style={{ fontSize: '10px' }}>start</span>}
-                                </td>
-                                <td>
-                                  <div style={{ maxHeight: '60px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '11px' }}>
-                                    {s.configs.map((c, idx) => (
-                                      <span key={idx} style={{ display: 'inline-block', marginRight: '8px', padding: '1px 4px', backgroundColor: 'var(--color-bg-subtle)', borderRadius: '3px' }}>
-                                        ({c.stateId}, alt:{c.alt}{c.context.length > 0 ? `, ctx:[${c.context.join(',')}]` : ''})
-                                      </span>
-                                    ))}
-                                  </div>
-                                </td>
-                                <td>
-                                  {edgesList.length === 0 ? (
-                                    <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-                                  ) : (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                      {edgesList.map(([tok, targetId]) => (
-                                        <span key={tok} className="badge badge-secondary" style={{ fontSize: '11px' }}>
-                                          '{tok}' → s{targetId}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </td>
-                                <td>
-                                  {s.isAcceptState && s.predictedAlt !== undefined ? (
-                                    <span className="badge badge-success" style={{ fontSize: '11px' }}>
-                                      <CheckCircle2 size={11} style={{ marginRight: '3px' }} />
-                                      Alt {s.predictedAlt}
-                                    </span>
-                                  ) : (
-                                    <span className="badge badge-secondary" style={{ fontSize: '11px' }}>
-                                      {cz ? 'Zkoumá se' : 'Pending'}
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Selected DFA State Inspector */}
-                  {inspectedDfaState && (
-                    <div style={{ marginTop: '10px', padding: '10px', backgroundColor: 'var(--color-bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '12px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <div>
-                          <strong>{cz ? `Detail stavu DFA s${inspectedDfaState.id}` : `DFA State s${inspectedDfaState.id} Details`}</strong>
-                          {inspectedDfaState.id === 0 && <span className="badge badge-secondary" style={{ marginLeft: '6px', fontSize: '10px' }}>start</span>}
-                          {inspectedDfaState.isAcceptState && (
-                            <span className="badge badge-success" style={{ marginLeft: '6px', fontSize: '10px' }}>
-                              {cz ? `Přijímací stav: Alt ${inspectedDfaState.predictedAlt}` : `Accept State: Alt ${inspectedDfaState.predictedAlt}`}
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ color: 'var(--color-text-muted)' }}>
-                          {cz ? `Celkem konfigurací ATN: ${inspectedDfaState.configs.length}` : `Total ATN configurations: ${inspectedDfaState.configs.length}`}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {inspectedDfaState.configs.map((c, idx) => (
-                          <div
-                            key={idx}
-                            style={{
-                              padding: '4px 8px',
-                              backgroundColor: 'var(--color-bg-base)',
-                              border: '1px solid var(--color-border)',
-                              borderRadius: '4px',
-                              fontFamily: 'monospace',
-                              fontSize: '11px'
-                            }}
-                          >
-                            <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>ATN #{c.stateId}</span>
-                            <span style={{ margin: '0 4px', color: 'var(--color-text-muted)' }}>|</span>
-                            <span>Alt {c.alt}</span>
-                            {c.context.length > 0 && (
-                              <span style={{ color: 'var(--color-text-muted)', marginLeft: '4px' }}>
-                                ctx:[{c.context.join(',')}]
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Interactive Simulator & Derivation Tree Section */}
-      <div className="card">
-        <div className="card-title">
-          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Eye size={18} color="var(--color-primary)" />
-            {cz ? 'Interaktivní krokovací simulátor ALL(*)' : 'Interactive ALL(*) Step Simulator'}
-          </span>
-        </div>
-        <p className="hint-text" style={{ marginBottom: '10px' }}>
-          {cz
-            ? 'Sledujte rozklad slova shora dolů s adaptivním pohledem dopředu a živou stavbou derivačního stromu.'
-            : 'Trace top-down parsing with adaptive lookahead scanning and live derivation tree construction.'}
-        </p>
-
-        {/* Word Input */}
-        <input
-          type="text"
-          className="grammar-textarea"
-          style={{ minHeight: 'unset', height: '38px', padding: '6px 12px', marginBottom: '10px' }}
-          value={inputText}
-          onChange={e => setInputText(e.target.value)}
-          placeholder={cz ? 'Zadejte slovo pro simulaci...' : 'Enter word to simulate...'}
-          aria-label={cz ? 'Slovo pro rozklad' : 'Word to parse'}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
-          <TokenizedInputNote tokenized={tokenized} lang={lang} />
-          <label className="precedence-switch" style={{ margin: 0, fontSize: '12px' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="checkbox"
-                checked={detailedLookahead}
-                onChange={e => setDetailedLookahead(e.target.checked)}
-              />
-              {cz
-                ? 'Podrobné krokování dopředného pohledu (včetně mikrokroků v Lookahead DFA)'
-                : 'Detailed lookahead stepping (including Lookahead DFA micro-steps)'}
-            </span>
-          </label>
-        </div>
-
-        {/* Simulator Controls */}
-        <SimulatorControls
-          stepIdx={currentStepIdx}
-          total={simulation.steps.length}
-          isPlaying={isPlaying}
-          speed={playSpeed}
-          lang={lang}
-          onStep={setCurrentStepIdx}
-          onTogglePlay={() => setIsPlaying(!isPlaying)}
-          onSpeed={setPlaySpeed}
-        />
-
-        {/* Step Callout Banner */}
-        {currentStep && (
-          <div
-            className={`report-box ${currentStep.subStepType === 'lookahead_scan' || currentStep.subStepType === 'decision_start' ? 'info' : currentStep.decisionEvent ? 'info' : currentStep.isMatch ? 'success' : 'neutral'}`}
-            style={{ margin: '12px 0', fontSize: '13px' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <strong>{cz ? `Krok ${currentStepIdx + 1} z ${simulation.steps.length}:` : `Step ${currentStepIdx + 1} of ${simulation.steps.length}:`}</strong>
-              {currentStep.subStepType === 'lookahead_scan' || currentStep.subStepType === 'decision_start' ? (
-                <span className="badge badge-info">
-                  {cz ? `Lookahead DFA: stav s${currentStep.activeDfaStateId}` : `Lookahead DFA: state s${currentStep.activeDfaStateId}`}
-                </span>
-              ) : currentStep.decisionEvent ? (
-                <span className="badge badge-primary">
-                  {cz ? `Dopředný pohled: hloubka ${currentStep.decisionEvent.lookaheadDepth}` : `Lookahead depth: ${currentStep.decisionEvent.lookaheadDepth}`}
-                </span>
-              ) : null}
-            </div>
-            <div>{cz ? currentStep.actionCz : currentStep.action}</div>
-
-            {/* Decision Event Summary & Lookahead Trace Walkthrough */}
-            {currentStep.decisionEvent && (
-              <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--color-border)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', fontSize: '12px' }}>
-                  <div>
-                    {cz ? 'Přečtené symboly dopředu: ' : 'Scanned lookahead tokens: '}
-                    <code>[{currentStep.decisionEvent.lookaheadTokens.join(', ')}]</code>
-                    {' → '}
-                    {cz ? 'Zvolena ' : 'Selected '}
-                    <strong>Alt {currentStep.decisionEvent.predictedAlt}</strong> (<code>{formatProduction(currentStep.decisionEvent.production)}</code>)
-                  </div>
-
-                  {currentStep.decisionEvent.trace && currentStep.decisionEvent.trace.length > 0 && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      style={{ fontSize: '11px', padding: '2px 6px', height: '22px' }}
-                      onClick={() => setShowLookaheadTrace(!showLookaheadTrace)}
-                    >
-                      {cz ? (showLookaheadTrace ? 'Skrýt podrobný pohled' : 'Zobrazit podrobný pohled') : (showLookaheadTrace ? 'Hide Lookahead Walkthrough' : 'Show Lookahead Walkthrough')}
-                    </button>
-                  )}
-                </div>
-
-                {/* Sub-step trace table showing how lookahead resolved alternatives */}
-                {showLookaheadTrace && currentStep.decisionEvent.trace && currentStep.decisionEvent.trace.length > 0 && (
-                  <div style={{ marginTop: '8px', backgroundColor: 'var(--color-bg-base)', padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
-                    <div style={{ fontWeight: 600, fontSize: '11px', marginBottom: '4px', color: 'var(--color-text-muted)' }}>
-                      {cz ? 'Průchod vyhodnocení dopředného pohledu (Parr et al. 2014, Alg. 1):' : 'Lookahead Evaluation Trace (Parr et al. 2014, Alg. 1):'}
-                    </div>
-                    <div className="table-responsive">
-                      <table className="data-table" style={{ fontSize: '11px', margin: 0 }}>
-                        <thead>
-                          <tr>
-                            <th style={{ width: '40px' }}>#</th>
-                            <th style={{ width: '70px' }}>{cz ? 'Symbol' : 'Token'}</th>
-                            <th style={{ width: '70px' }}>{cz ? 'Stav DFA' : 'DFA State'}</th>
-                            <th style={{ width: '130px' }}>{cz ? 'Živé alternativy' : 'Viable Alts'}</th>
-                            <th>{cz ? 'Provedená akce / stav' : 'Action / Status'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {currentStep.decisionEvent.trace.map((tr, idx) => (
-                            <tr key={idx}>
-                              <td>{idx + 1}</td>
-                              <td>{tr.token ? <code>'{tr.token}'</code> : <span style={{ color: 'var(--color-text-muted)' }}>—</span>}</td>
-                              <td><strong>s{tr.dfaStateId}</strong></td>
-                              <td>
-                                <span className={tr.remainingAlts.length === 1 ? 'badge badge-success' : 'badge badge-secondary'} style={{ fontSize: '10px' }}>
-                                  [{tr.remainingAlts.join(', ')}]
-                                </span>
-                              </td>
-                              <td>{cz ? tr.actionCz : tr.action}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Derivation Tree Visualizer & Trace Log Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '16px', marginTop: '14px' }}>
-          {/* Derivation Tree View */}
-          <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <div style={{ fontWeight: 600, fontSize: '13px' }}>
-                {cz ? 'Derivační strom (shora dolů)' : 'Derivation Tree (Top-Down)'}
-              </div>
-              {currentStep?.derivationTree && (
-                <LatexExportButton
-                  getLatex={() => exportParseTreeToTikz(currentStep.derivationTree!)}
-                  filename={`all_tree_step_${currentStepIdx}.tex`}
-                  label={cz ? 'TikZ strom' : 'TikZ Tree'}
-                  title={cz ? 'Export derivačního stromu do LaTeXu (TikZ)' : 'Export derivation tree to LaTeX (TikZ)'}
-                  lang={lang}
-                />
-              )}
-            </div>
-            {currentStep?.derivationTree ? (
-              <DerivationTreeVisualizer
-                rootNode={currentStep.derivationTree}
-                height="340px"
-                filename={`all_tree_step_${currentStepIdx}`}
-                lang={lang}
-              />
-            ) : (
-              <div style={{ height: '340px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>
-                {cz ? 'Žádný strom k zobrazení' : 'No tree to display'}
-              </div>
-            )}
-          </div>
-
-          {/* Trace Log */}
-          <div
-            ref={traceRef}
-            style={{
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-md)',
-              maxHeight: '390px',
-              overflowY: 'auto',
-              backgroundColor: 'var(--color-bg-base)',
-              fontSize: '12px'
-            }}
-          >
-            <div style={{ position: 'sticky', top: 0, backgroundColor: 'var(--color-bg-base)', padding: '8px 12px', borderBottom: '1px solid var(--color-border)', fontWeight: 600 }}>
-              {cz ? 'Protokol kroků simulace' : 'Simulation Trace Log'}
-            </div>
-            {simulation.steps.map((s, idx) => (
-              <div
-                key={idx}
-                className={`trace-row ${idx === currentStepIdx ? 'trace-row-active' : ''}`}
-                style={{
-                  padding: '6px 10px',
-                  borderBottom: '1px solid var(--color-border-subtle)',
-                  cursor: 'pointer',
-                  backgroundColor: idx === currentStepIdx ? 'var(--color-primary-subtle)' : undefined
-                }}
-                onClick={() => {
-                  setCurrentStepIdx(idx);
-                  setIsPlaying(false);
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-muted)', fontSize: '11px' }}>
-                  <span>#{idx + 1}</span>
-                  {s.decisionEvent && <span style={{ color: 'var(--color-primary)' }}>Lookahead k={s.decisionEvent.lookaheadDepth}</span>}
-                </div>
-                <div>{cz ? s.actionCz : s.action}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Final Result Acceptance Banner */}
-        {lastStep && currentStepIdx === simulation.steps.length - 1 && (
-          <div style={{ marginTop: '14px' }}>
-            {simulation.accepted ? (
-              <div className="report-box success" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle2 size={16} />
-                <span>
-                  <strong>{tokenized.tokens.join(' ') || 'ε'} ∈ L(G).</strong>{' '}
-                  {cz
-                    ? 'Slovo bylo úspěšně analyzováno a přijato algoritmem ALL(*).'
-                    : 'The word was successfully parsed and accepted by the ALL(*) algorithm.'}
-                </span>
-              </div>
-            ) : (
-              <div className="report-box error" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertTriangle size={16} />
-                <span>
-                  <strong>{tokenized.tokens.join(' ') || 'ε'} ∉ L(G).</strong>{' '}
-                  {cz
-                    ? 'Slovo bylo analyzátorem ALL(*) odmítnuto.'
-                    : 'The word was rejected by the ALL(*) parser.'}
-                </span>
-              </div>
-            )}
           </div>
         )}
       </div>

@@ -16,14 +16,16 @@ import {
   simulateEarleyParse,
   EarleySimulationResult,
   EarleyStep,
-  formatEarleyItem
+  formatEarleyItem,
+  subscript
 } from '../../core/earley/earleyParser';
 import {
   buildETTPTable,
   simulateETTPParse,
   ETTPSimulationResult,
   ETTPStep,
-  ETTPTable
+  ETTPTable,
+  formatETTPItem
 } from '../../core/earley/ettpParser';
 import {
   checkEarleyCompatibility,
@@ -123,6 +125,60 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   const activeSim = parserMode === 'classic' ? earleySim : ettpSim;
   const activeStep = parserMode === 'classic' ? activeEarleyStep : activeETTPStep;
 
+  /** Role of each item that caused the current step, keyed `${set}:${index}`. */
+  const sourceRoles = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const src of activeStep?.sources ?? []) m.set(`${src.setIndex}:${src.itemIndex}`, src.role);
+    return m;
+  }, [activeStep]);
+  const roleLabel = (role: string) =>
+    ({
+      parent: cz ? 'zdroj predikce' : 'predicted from',
+      scanned: cz ? 'čte se terminál' : 'scanned item',
+      completed: cz ? 'dokončená' : 'completed',
+      waiting: cz ? 'čekala na neterminál' : 'waited for it'
+    }[role] ?? role);
+  const roleColor = (role: string) => (role === 'completed' || role === 'scanned' ? 'var(--color-success)' : 'var(--color-warning)');
+
+  // Why the word is (not) accepted, shown with the last step.
+  const resultExplanation = useMemo(() => {
+    const n = tokenized.tokens.length;
+    const accept = `[${earleySim.augmentedStart} → ${grammar.startSymbol} •, 0]`;
+    if (activeSim.truncated) return undefined;
+    if (activeSim.accepted) {
+      return parserMode === 'classic'
+        ? (cz ? `S${subscript(n)} obsahuje ${accept}: z ${grammar.startSymbol} lze odvodit celé slovo, slovo patří do L(G).` : `S${subscript(n)} contains ${accept}: ${grammar.startSymbol} derives the whole word, the word is in L(G).`)
+        : (cz ? `S${subscript(n)} obsahuje pár (q, 0), jehož stav má položku ${earleySim.augmentedStart} → ${grammar.startSymbol} •: slovo patří do L(G).` : `S${subscript(n)} contains a pair (q, 0) whose state has ${earleySim.augmentedStart} → ${grammar.startSymbol} •: the word is in L(G).`);
+    }
+    const emptyAt = activeSim.sets.findIndex(set => set.items.length === 0);
+    if (emptyAt > 0) {
+      return cz
+        ? `Žádná položka v S${subscript(emptyAt - 1)} nemá za tečkou terminál w${subscript(emptyAt)} = '${tokenized.tokens[emptyAt - 1]}', proto je S${subscript(emptyAt)} prázdná a další množiny také. Slovo nepatří do L(G); jeho předpona ${tokenized.tokens.slice(0, emptyAt - 1).join(' ') || 'ε'} je nejdelší, kterou lze ještě doplnit na slovo jazyka.`
+        : `No item of S${subscript(emptyAt - 1)} has the terminal w${subscript(emptyAt)} = '${tokenized.tokens[emptyAt - 1]}' after its dot, so S${subscript(emptyAt)} and all later sets are empty. The word is not in L(G); its prefix ${tokenized.tokens.slice(0, emptyAt - 1).join(' ') || 'ε'} is the longest one that can still be extended to a word of the language.`;
+    }
+    return cz
+      ? `Všechny symboly byly přečteny, ale S${subscript(n)} neobsahuje ${parserMode === 'classic' ? accept : `pár (q, 0) se stavem obsahujícím ${earleySim.augmentedStart} → ${grammar.startSymbol} •`}: celé slovo je jen předponou slov jazyka, do L(G) nepatří.`
+      : `All symbols were read, but S${subscript(n)} has no ${parserMode === 'classic' ? accept : `pair (q, 0) whose state has ${earleySim.augmentedStart} → ${grammar.startSymbol} •`}: the word is only a prefix of words of the language, it is not in L(G).`;
+  }, [activeSim, parserMode, cz, tokenized, grammar, earleySim.augmentedStart]);
+
+  // Keep the active set and the new item in view while stepping.
+  const chartRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = chartRef.current?.querySelector('[data-latest="true"]') as HTMLElement | null;
+    el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [currentStepIdx, parserMode, ettpSubView]);
+
+  // The graph shows the transition (or ε-link) the current ETTP step used.
+  const graphActive = useMemo(() => {
+    if (parserMode !== 'ettp' || !activeETTPStep) return { stateId: undefined, fromStateId: undefined, symbol: undefined };
+    if (activeETTPStep.operation === 'predict') {
+      const parent = activeETTPStep.sources[0];
+      const parentState = parent ? ettpSim.sets[parent.setIndex].items[parent.itemIndex]?.stateId : undefined;
+      return { stateId: activeETTPStep.stateId, fromStateId: parentState, symbol: undefined };
+    }
+    return { stateId: activeETTPStep.stateId, fromStateId: activeETTPStep.fromStateId, symbol: activeETTPStep.triggerSymbol };
+  }, [parserMode, activeETTPStep, ettpSim]);
+
   // Derivation tree computation:
   // - Full completed tree for the parsed input word (leaves match tokens exactly)
   // - Active step subtree tracking local reductions/scans
@@ -152,6 +208,9 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   }, [treeDisplayMode, activeStep]);
 
   const theory = cz ? EARLEY_THEORY_GUIDE.cz : EARLEY_THEORY_GUIDE.en;
+
+  const operationName = (op: 'init' | 'predict' | 'scan' | 'complete') =>
+    ({ init: cz ? 'inicializace' : 'init', predict: cz ? 'prediktor' : 'predictor', scan: cz ? 'skener' : 'scanner', complete: cz ? 'kompletor' : 'completer' }[op]);
 
   const operationBadge = (op: 'init' | 'predict' | 'scan' | 'complete') => {
     switch (op) {
@@ -283,6 +342,8 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
         <TokenizedInputNote tokenized={tokenized} lang={lang} />
       </div>
 
+      {/* Playback controls and the step explanation stay in view while the chart is scrolled */}
+      <div className="sim-sticky">
       {/* Simulator Playback Controls */}
       <SimulatorControls
         stepIdx={currentStepIdx}
@@ -326,11 +387,24 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
           </div>
         </div>
 
-        <p style={{ margin: '8px 0 0', fontSize: '13px', lineHeight: '1.45', fontWeight: 500 }}>
+        <p style={{ margin: '8px 0 0', fontSize: '13px', lineHeight: '1.45', fontWeight: 500, minHeight: '3.9em' }}>
           {parserMode === 'classic'
             ? (cz ? activeEarleyStep?.descriptionCz : activeEarleyStep?.descriptionEn)
             : (cz ? activeETTPStep?.descriptionCz : activeETTPStep?.descriptionEn)}
         </p>
+        {isLastStep && resultExplanation && (
+          <p style={{ margin: '6px 0 0', fontSize: '12.5px', lineHeight: '1.45', color: activeSim.accepted ? 'var(--color-success)' : 'var(--color-danger)' }}>
+            {resultExplanation}
+          </p>
+        )}
+        {(activeStep?.sources.length ?? 0) > 0 && (
+          <div style={{ marginTop: '6px', display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '11px', color: 'var(--color-text-secondary)' }}>
+            <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, border: '2px solid var(--color-primary)', marginRight: 4, verticalAlign: 'middle' }} />{cz ? 'nová položka' : 'new item'}</span>
+            {[...new Set(activeStep!.sources.map(src => src.role))].map(role => (
+              <span key={role}><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, border: `2px dashed ${roleColor(role)}`, marginRight: 4, verticalAlign: 'middle' }} />{roleLabel(role)}</span>
+            ))}
+          </div>
+        )}
 
         {(parserMode === 'classic' ? earleySim.truncated : ettpSim.truncated) && (
           <div style={{ marginTop: '8px', padding: '6px 10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-danger-subtle)', color: 'var(--color-danger)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -338,6 +412,8 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
             <span>{cz ? (parserMode === 'classic' ? earleySim.errorMessageCz : ettpSim.errorMessageCz) : (parserMode === 'classic' ? earleySim.errorMessage : ettpSim.errorMessage)}</span>
           </div>
         )}
+      </div>
+
       </div>
 
       {/* Main Analysis Pane: State Chart / Graph & Derivation Tree */}
@@ -380,7 +456,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 </span>
               </div>
               <span style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-                {cz ? 'Jádra stavů (Core), zbývající pravidla (Closure) a důvody přechodů' : 'State cores, closure rules & transition reasons'}
+                {cz ? 'Jádrové a predikční stavy, ε-odkazy a důvody přechodů' : 'Kernel and predicted states, ε-links and transition reasons'}
               </span>
             </div>
             {parserMode === 'classic' && (
@@ -398,16 +474,17 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
               >
                 <Info size={13} style={{ display: 'inline', marginRight: '5px', verticalAlign: 'text-bottom' }} />
                 {cz
-                  ? 'Klasický Earleyův algoritmus (1970) generuje stavové množiny položek dynamicky za běhu. Scott & Johnstone (2025) a Aycock & Horspool (2002) ukázaly, že tyto množiny položek odpovídají stavům přechodového automatu, který lze staticky předpočítat.'
-                  : 'Classic Earley (1970) generates item sets dynamically at runtime. Scott & Johnstone (2025) and Aycock & Horspool (2002) showed that these item sets correspond to the states of a transition automaton that can be precomputed statically.'}
+                  ? 'Klasický Earleyův algoritmus (1970) vytváří položky za běhu. Aycock & Horspool (2002) a Scott & Johnstone (2025) ukázali, že položky se stejným počátkem lze seskupit do stavů automatu předpočítaného z gramatiky. Graf ukazuje tento automat; krok klasického algoritmu v něm zvýrazněn není (přepněte na ETTP).'
+                  : 'Classic Earley (1970) creates its items at runtime. Aycock & Horspool (2002) and Scott & Johnstone (2025) showed that items with the same origin can be grouped into states of an automaton precomputed from the grammar. The graph shows this automaton; the classic algorithm\'s step is not highlighted in it (switch to ETTP).'}
               </div>
             )}
             <ETTPGraphVisualizer
               table={ettpTable}
               selectedStateId={selectedGraphStateId}
               onSelectState={setSelectedGraphStateId}
-              activeStateId={activeETTPStep?.stateId}
-              activeSymbol={activeETTPStep?.triggerSymbol}
+              activeStateId={graphActive.stateId}
+              activeFromStateId={graphActive.fromStateId}
+              activeSymbol={graphActive.symbol}
               lang={lang}
               height="500px"
             />
@@ -429,6 +506,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
             </div>
 
             <div
+              ref={chartRef}
               style={{
                 display: 'flex',
                 gap: '12px',
@@ -441,9 +519,10 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 const tokenMatched = setIdx > 0 ? tokenized.tokens[setIdx - 1] : undefined;
                 const isCurrentActiveSet = (parserMode === 'classic' ? activeEarleyStep?.activeSetIndex : activeETTPStep?.activeSetIndex) === setIdx;
 
+                const shown = activeStep?.setSizes[setIdx] ?? 0;
                 const snapshotItems = parserMode === 'classic'
-                  ? (activeEarleyStep?.chartSnapshot[setIdx]?.items ?? [])
-                  : (activeETTPStep?.chartSnapshot[setIdx]?.items ?? []);
+                  ? earleySim.sets[setIdx].items.slice(0, shown)
+                  : ettpSim.sets[setIdx].items.slice(0, shown);
 
                 return (
                   <div
@@ -463,7 +542,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                     <div
                       style={{
                         padding: '6px 10px',
-                        backgroundColor: isCurrentActiveSet ? 'var(--color-primary-subtle)' : 'var(--color-bg-subtle)',
+                        backgroundColor: isCurrentActiveSet ? 'var(--color-primary-subtle)' : 'var(--color-bg-card)',
                         borderBottom: '1px solid var(--color-border)',
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -471,39 +550,41 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                       }}
                     >
                       <span style={{ fontWeight: 700, fontSize: '12px' }}>
-                        S<sub>{setIdx}</sub> {tokenMatched ? `(token: '${tokenMatched}')` : '(start)'}
+                        S<sub>{setIdx}</sub> {tokenMatched ? (cz ? `(po přečtení w${subscript(setIdx)} = '${tokenMatched}')` : `(after w${subscript(setIdx)} = '${tokenMatched}')`) : (cz ? '(začátek)' : '(start)')}
                       </span>
                       <span style={{ fontSize: '10.5px', color: 'var(--color-text-secondary)' }}>
-                        {snapshotItems.length} {cz ? 'pol.' : 'items'}
+                        {snapshotItems.length} {parserMode === 'classic' ? (cz ? 'pol.' : 'items') : (cz ? 'párů' : 'pairs')}
                       </span>
                     </div>
 
                     <div style={{ padding: '8px', overflowY: 'auto', maxHeight: '380px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       {snapshotItems.length === 0 ? (
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontStyle: 'italic', padding: '4px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic', padding: '4px' }}>
                           {cz ? 'Zatím prázdná množina' : 'Set empty so far'}
                         </span>
                       ) : parserMode === 'classic' ? (
                         (snapshotItems as typeof activeEarleyStep.item[]).map((it, itIdx) => {
-                          const isLatest = activeEarleyStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
+                          const isLatest = activeEarleyStep?.activeSetIndex === setIdx && itIdx === activeEarleyStep.itemIndex;
+                          const role = sourceRoles.get(`${setIdx}:${itIdx}`);
                           const tooltipText = `${formatEarleyItem(it)}\nOperation: ${it.operation}${it.triggerSymbol ? `\nTrigger: ${it.triggerSymbol}` : ''}${it.completedItemOrigin !== undefined ? `\nOrigin: ${it.completedItemOrigin}` : ''}`;
                           return (
                             <div
                               key={itIdx}
                               title={tooltipText}
+                              data-latest={isLatest ? 'true' : undefined}
                               style={{
                                 padding: '5px 8px',
                                 borderRadius: 'var(--radius-sm)',
                                 backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
-                                border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                border: isLatest ? '2px solid var(--color-primary)' : role ? `2px dashed ${roleColor(role)}` : '1px solid var(--color-border)',
                                 fontSize: '11px',
                                 fontFamily: 'monospace'
                               }}
                             >
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontWeight: 600 }}>{formatEarleyItem(it)}</span>
-                                <span style={{ fontSize: '9.5px', opacity: 0.8 }}>
-                                  {it.operation}
+                                <span style={{ fontSize: '9.5px', opacity: 0.8, whiteSpace: 'nowrap' }}>
+                                  {role ? roleLabel(role) : operationName(it.operation)}
                                 </span>
                               </div>
                             </div>
@@ -511,21 +592,22 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                         })
                       ) : (
                         (snapshotItems as { stateId: number; origin: number }[]).map((it, itIdx) => {
-                          const isLatest = activeETTPStep?.activeSetIndex === setIdx && itIdx === snapshotItems.length - 1;
+                          const isLatest = activeETTPStep?.activeSetIndex === setIdx && itIdx === activeETTPStep.itemIndex;
+                          const role = sourceRoles.get(`${setIdx}:${itIdx}`);
                           const stateObj = ettpTable.states[it.stateId];
-                          const stateItemsTooltip = `State q${it.stateId} (Items in closure):\n` +
+                          const stateItemsTooltip = (cz ? `Stav q${it.stateId} (${stateObj.kind === 'kernel' ? 'jádro' : 'predikce'}), položky s počátkem ${it.origin}:\n` : `State q${it.stateId} (${stateObj.kind}), items with origin ${it.origin}:\n`) +
                             stateObj.items.map(sIt => {
                               const rhs = [...sIt.production.rhs];
                               rhs.splice(sIt.dot, 0, '•');
                               return `${sIt.production.lhs} → ${rhs.join(' ') || '•'}`;
                             }).join('\n') +
-                            (stateObj.completions.length > 0 ? `\n\nCompletions: ${stateObj.completions.map(c => c.production.lhs).join(', ')}` : '') +
-                            `\n(Click to inspect state q${it.stateId} in Automaton Graph)`;
+                            (cz ? `\n(Klepnutím zobrazíte stav q${it.stateId} v grafu automatu)` : `\n(Click to inspect state q${it.stateId} in the automaton graph)`);
 
                           return (
                             <div
                               key={itIdx}
                               title={stateItemsTooltip}
+                              data-latest={isLatest ? 'true' : undefined}
                               onClick={() => {
                                 setSelectedGraphStateId(it.stateId);
                                 setSelectedTableStateId(it.stateId);
@@ -535,7 +617,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                                 padding: '6px 8px',
                                 borderRadius: 'var(--radius-sm)',
                                 backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)',
-                                border: isLatest ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                border: isLatest ? '2px solid var(--color-primary)' : role ? `2px dashed ${roleColor(role)}` : '1px solid var(--color-border)',
                                 fontSize: '11px',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease'
@@ -545,16 +627,17 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                                 <span style={{ fontWeight: 700, color: 'var(--color-primary)', fontFamily: 'monospace' }}>
                                   (q{it.stateId}, {it.origin})
                                 </span>
-                                {stateObj.isAcceptState && (
-                                  <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 4px' }}>
-                                    accept
-                                  </span>
-                                )}
+                                <span style={{ fontSize: '9.5px', opacity: 0.8, whiteSpace: 'nowrap' }}>
+                                  {role ? roleLabel(role) : stateObj.kind === 'kernel' ? (cz ? 'jádro' : 'kernel') : (cz ? 'predikce' : 'predicted')}
+                                </span>
                               </div>
-                              <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '2px', fontFamily: 'monospace' }}>
-                                {stateObj.completions.length > 0
-                                  ? `red: ${stateObj.completions.map(c => c.production.lhs).join(', ')}`
-                                  : `trans: ${[...stateObj.transitions.keys()].join(', ')}`}
+                              <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', marginTop: '2px', fontFamily: 'monospace', lineHeight: 1.35 }}>
+                                {stateObj.items.slice(0, 6).map((sIt, k) => (
+                                  <div key={k} style={{ color: sIt.dot === sIt.production.rhs.length ? 'var(--color-warning)' : undefined }}>
+                                    {formatETTPItem(sIt)}
+                                  </div>
+                                ))}
+                                {stateObj.items.length > 6 && <div>… +{stateObj.items.length - 6}</div>}
                               </div>
                             </div>
                           );
@@ -644,7 +727,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                   highlightNodeIds={highlightedNodeIds}
                 />
               ) : (
-                <div style={{ textAlign: 'center', color: 'var(--color-text-tertiary)', fontSize: '12px', padding: '24px' }}>
+                <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '12px', padding: '24px' }}>
                   {currentStepIdx === totalSteps - 1 && !(parserMode === 'classic' ? earleySim.accepted : ettpSim.accepted)
                     ? (cz ? 'Slovo nepatří do jazyka gramatiky (žádný derivační strom neexistuje).' : 'Word is not in the grammar language (no valid derivation tree exists).')
                     : (cz ? 'Derivační strom se vytváří postupně během skenování a redukcí.' : 'Derivation tree will form progressively as tokens are scanned and reduced.')}
@@ -666,10 +749,10 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                   {cz ? 'Klasický Earley (1970)' : 'Classic Earley (1970)'}
                 </div>
                 <div style={{ fontSize: '12px', fontWeight: 600 }}>
-                  {cz ? `Predikcí za běhu: ${earleySim.stats.predictCount}` : `Runtime predictions: ${earleySim.stats.predictCount}`}
+                  {cz ? `Položek v množinách: ${earleySim.stats.totalItems}` : `Items in the sets: ${earleySim.stats.totalItems}`}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-                  {cz ? `Položek: ${earleySim.stats.totalItems}` : `Total items: ${earleySim.stats.totalItems}`}
+                  {cz ? `z toho predikcí za běhu: ${earleySim.stats.predictCount}` : `of them runtime predictions: ${earleySim.stats.predictCount}`}
                 </div>
               </div>
 
@@ -677,19 +760,21 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 <div style={{ fontSize: '11px', color: 'var(--color-primary)', fontWeight: 600, marginBottom: '2px' }}>
                   {cz ? 'ETTP (Scott & Johnstone 2025)' : 'ETTP (2025)'}
                 </div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-success)' }}>
-                  {cz ? 'Predikcí za běhu: 0' : 'Runtime predictions: 0'}
+                <div style={{ fontSize: '12px', fontWeight: 700 }}>
+                  {cz ? `Párů (q, j): ${ettpSim.stats.totalRuntimePairs}` : `Pairs (q, j): ${ettpSim.stats.totalRuntimePairs}`}
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
-                  {cz ? `Předp. stavů: ${ettpTable.states.length}` : `Precomputed states: ${ettpTable.states.length}`}
+                  {cz
+                    ? `zastupují ${ettpSim.stats.representedItems} položek; ${ettpTable.states.length} stavů tabulky`
+                    : `standing for ${ettpSim.stats.representedItems} items; ${ettpTable.states.length} table states`}
                 </div>
               </div>
             </div>
 
             <p style={{ fontSize: '11px', color: 'var(--color-text-secondary)', margin: '8px 0 0', lineHeight: '1.4' }}>
               {cz
-                ? 'ETTP zcela eliminuje prediktor za běhu předvýpočtem přechodové tabulky. Tím dosahuje výrazně menší paměťové stopy a vyšší rychlosti při zachování plné bezkontextové obecnosti.'
-                : 'ETTP completely eliminates runtime predictions via precomputed transition tables, achieving smaller memory overhead and higher throughput while preserving general CFG parsing.'}
+                ? 'ETTP za běhu nerozvíjí pravidla: predikce jsou předpočítané stavy tabulky a pár (q, j) zastupuje všechny položky stavu q s počátkem j. Obě metody mají stejné množiny položek a rozpoznávají libovolnou bezkontextovou gramatiku; v experimentech autorů (gramatiky Javy a ANSI C) byly struktury ETTP výrazně menší a analýza rychlejší.'
+                : 'ETTP expands no rules at runtime: predictions are precomputed states of the table and a pair (q, j) stands for all items of state q with origin j. Both methods have the same item sets and recognise any context-free grammar; in the authors\' experiments (Java and ANSI C grammars) the ETTP structures were considerably smaller and parsing faster.'}
             </p>
           </div>
         </div>
@@ -713,7 +798,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
               <thead>
                 <tr>
                   <th style={{ width: '60px' }}>{cz ? 'Stav' : 'State'}</th>
-                  <th>{cz ? 'Položky stavu (predikční uzávěr)' : 'State Items (Prediction Closure)'}</th>
+                  <th>{cz ? 'Položky stavu' : 'State items'}</th>
                   <th>{cz ? 'Přechody δ(q, X)' : 'Transitions δ(q, X)'}</th>
                   <th>{cz ? 'Dokončená pravidla' : 'Completions'}</th>
                   <th style={{ width: '80px' }}>{cz ? 'Přijímající' : 'Accepting'}</th>
@@ -722,18 +807,28 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
               <tbody>
                 {ettpTable.states.map(st => (
                   <tr key={st.id} style={{ backgroundColor: selectedTableStateId === st.id ? 'var(--color-primary-subtle)' : undefined }}>
-                    <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>q{st.id}</td>
+                    <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>
+                      q{st.id}
+                      <div style={{ fontWeight: 400, fontSize: '10px', color: 'var(--color-text-secondary)' }}>
+                        {st.kind === 'kernel' ? (cz ? 'jádro' : 'kernel') : (cz ? 'predikce' : 'predicted')}
+                      </div>
+                    </td>
                     <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>
                       {st.items.map((it, idx) => {
                         const rhs = [...it.production.rhs];
                         rhs.splice(it.dot, 0, '•');
-                        return <div key={idx}>{`${it.production.lhs} → ${rhs.join(' ')}`}</div>;
+                        return <div key={idx}>{formatETTPItem(it)}</div>;
                       })}
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                      {st.predictedStateId !== undefined && (
+                        <span style={{ display: 'inline-block', marginRight: '8px', padding: '1px 4px', borderRadius: '3px', border: '1px dashed var(--color-border)' }}>
+                          ε → <strong>q{st.predictedStateId}</strong>
+                        </span>
+                      )}
                       {[...st.transitions.entries()].map(([sym, tr], idx) => (
                         <span key={idx} style={{ display: 'inline-block', marginRight: '8px', padding: '1px 4px', borderRadius: '3px', backgroundColor: 'var(--color-bg-base)' }}>
-                          {sym} → <strong>q{tr.targetStateId}</strong> ({tr.originKind})
+                          {sym} → <strong>q{tr.targetStateId}</strong>
                         </span>
                       ))}
                     </td>

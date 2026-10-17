@@ -6,7 +6,7 @@ import { LRTable, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } 
 import { explainItem, explainLookahead, incomingEdges, itemsMovingOver, stateCreators } from '../../core/lr/lrExplain';
 import { LRLayoutSwitch } from '../components/LRLayoutSwitch';
 import { constructionSteps, constructedSoFar, mergeSteps, ielrSplitGroups } from '../../core/lr/lrConstruction';
-import { ConstructionStepText, MergePanel, IELRPanel } from '../components/LRConstructionPanel';
+import { ConstructionStepText, MergePanel, IELRPanel, ielrReasonText, ielrResolutionNote } from '../components/LRConstructionPanel';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { AutomatonGraphVisualizer, DisplayItem, stateDisplayItems } from '../visualizer/AutomatonGraphVisualizer';
 import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReason, formatItem } from '../components/LRExplanation';
@@ -33,7 +33,7 @@ export const LR_GRAPH_PRIMARY_REFERENCES = [
     authorYear: 'Denny & Malloy (2010)',
     topicEn: 'IELR(1) State Splitting',
     topicCz: 'Štěpení stavů v IELR(1)',
-    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables. Science of Computer Programming 75(11), 943–979, 2010.',
+    citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
     url: 'https://doi.org/10.1016/j.scico.2009.09.006'
   },
   {
@@ -132,11 +132,13 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const canMerge = selectedVariant === 'LALR(1)' && !!lr1Automaton && !!lr1Table;
 
   const ielrGroups = useMemo(
-    () => (selectedVariant === 'IELR(1)' && ielr1Automaton && lr1Automaton ? ielrSplitGroups(ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table) : []),
-    [selectedVariant, ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table]
+    () => (selectedVariant === 'IELR(1)' && ielr1Automaton && lr1Automaton && lr1Table
+      ? ielrSplitGroups(ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table, lr1Table, ielr1Table)
+      : []),
+    [selectedVariant, ielr1Automaton, lr1Automaton, lalr1Automaton, lalr1Table, lr1Table, ielr1Table]
   );
   const [ielrIdx, setIelrIdx] = useState(0);
-  const canIelr = selectedVariant === 'IELR(1)' && !!ielr1Automaton && !!lr1Automaton;
+  const canIelr = selectedVariant === 'IELR(1)' && !!ielr1Automaton && !!lr1Automaton && !!lr1Table;
 
   useEffect(() => {
     setStepIdx(0);
@@ -185,6 +187,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const creators = useMemo(() => stateCreators(activeAutomaton), [activeAutomaton]);
   const ctx: ExplainContext = {
     lang,
+    variant: activeAutomaton.variant,
     name,
     lr1Name: lr1Table ? id => (lecture ? stateLabel(lr1Table, id, layout) : `${id}`) : undefined
   };
@@ -232,15 +235,17 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
     </button>
   );
 
-  const splitCount = activeAutomaton.states.filter(s => s.isSplit).length;
+  // IELR(1): the cores with more than one state, and their states
+  const splitStates = activeAutomaton.states.filter(s => s.isSplit);
+  const splitCores = new Set(splitStates.map(s => s.items0.filter(it => it.dotIndex > 0 || it.production.id === 0).map(it => `${it.production.id}@${it.dotIndex}`).sort().join('|'))).size;
   const sameStatesNote = selectedVariant === 'SLR(1)' || selectedVariant === 'LR(0)'
     ? t.graphSharedLR0
     : selectedVariant === 'LALR(1)'
       ? t.graphLALRStates + (lr1Automaton ? ' ' + t.graphLALRMerged.replace('{lr1}', lr1Automaton.states.length.toString()).replace('{lalr}', lalr1Automaton.states.length.toString()) : '')
       : selectedVariant === 'IELR(1)'
         ? (cz
-            ? `IELR(1) má ${activeAutomaton.states.length} stavů (LALR(1) má ${lalr1Automaton.states.length}, LR(1) má ${lr1Automaton?.states.length ?? '?'}). ${splitCount > 0 ? `Rozděleno ${splitCount} stavů pro izolaci parazitních kolizí.` : 'Žádné stavy nemusely být děleny (shodné s LALR).'}`
-            : `IELR(1) has ${activeAutomaton.states.length} states (LALR(1) has ${lalr1Automaton.states.length}, LR(1) has ${lr1Automaton?.states.length ?? '?'}). ${splitCount > 0 ? `${splitCount} states split to isolate spurious conflicts.` : 'No states needed splitting (identical to LALR).'}`)
+            ? `IELR(1) má ${activeAutomaton.states.length} stavů (LALR(1) má ${lalr1Automaton.states.length}, LR(1) má ${lr1Automaton?.states.length ?? '?'}). ${splitCores > 0 ? `Rozdělená jádra: ${splitCores} (do ${splitStates.length} stavů), aby sloučení nezměnilo žádnou akci kanonického LR(1) po rozhodnutí kolizí.` : 'Žádné jádro nebylo nutné rozdělit: stavy jsou stejné jako v LALR(1).'} ${ielrResolutionNote('cz')}`
+            : `IELR(1) has ${activeAutomaton.states.length} states (LALR(1) has ${lalr1Automaton.states.length}, LR(1) has ${lr1Automaton?.states.length ?? '?'}). ${splitCores > 0 ? `${splitCores} core(s) split (into ${splitStates.length} states) so that merging changes no action of canonical LR(1) after conflict resolution.` : 'No core had to be split: the states are those of LALR(1).'} ${ielrResolutionNote('en')}`)
         : '';
 
   return (
@@ -342,8 +347,8 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             {selectedVariant === 'IELR(1)' && (
               <p className="hint-text" style={{ margin: '6px 0 0' }}>
                 {cz
-                  ? 'IELR(1) zachovává minimální počet stavů LALR(1), ale rozděluje stavy s identickým LR(0) jádrem, kde by sloučení lookaheadů vytvořilo konflikt (viz Dělení jader v IELR(1)).'
-                  : 'IELR(1) preserves minimal LALR(1) state counts while splitting states sharing the same LR(0) core whenever merging lookaheads would induce conflicts (see IELR(1) Core Splitting).'}
+                  ? 'IELR(1) má stavy LALR(1), jen jádra, kde by sloučení stavů LR(1) změnilo některou akci po rozhodnutí kolizí, jsou rozdělena do více stavů; konstrukce ukazuje jejich vznik, dopředu prohlížené symboly jsou už výsledné (viz Dělení jader v IELR(1)).'
+                  : 'IELR(1) has the states of LALR(1), except that cores where merging the LR(1) states would change an action after conflict resolution are split into several states; the construction shows how they arise, the lookaheads are already the final ones (see IELR(1) Core Splitting).'}
               </p>
             )}
             <SimulatorControls
@@ -359,7 +364,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
               }}
               onSpeed={setSpeed}
             />
-            <ConstructionStepText automaton={activeAutomaton} step={step} index={stepIdx} total={steps.length} name={name} lang={lang} />
+            <ConstructionStepText automaton={activeAutomaton} step={step} index={stepIdx} total={steps.length} name={name} lang={lang} layout={layout} />
           </>
         )}
         {mode === 'merge' && lr1Table && (
@@ -375,15 +380,17 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             lang={lang}
           />
         )}
-        {mode === 'ielr' && (
+        {mode === 'ielr' && lr1Table && (
           <IELRPanel
             groups={ielrGroups}
             index={Math.min(ielrIdx, Math.max(0, ielrGroups.length - 1))}
             onIndex={setIelrIdx}
             ielrName={name}
             lalrName={id => stateLabel(lalr1Table, id, layout)}
+            lr1Name={id => stateLabel(lr1Table, id, layout)}
             ielrStates={activeAutomaton.states.length}
             lalrStates={lalr1Automaton.states.length}
+            lr1States={lr1Automaton?.states.length ?? 0}
             layout={layout}
             lang={lang}
           />
@@ -454,20 +461,31 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span className="badge badge-primary">{selectedVariant}</span>
-              {selectedState?.isSplit && (
-                <span className="badge badge-warning" title={selectedState.ielrAnnotation?.[cz ? 'cz' : 'en']}>
-                  {cz ? 'IELR rozdělený stav' : 'IELR Split State'}
+              {selectedVariant === 'IELR(1)' && selectedState?.isSplit && (
+                <span className="badge badge-warning">
+                  {cz ? 'rozdělené jádro' : 'split core'}
                 </span>
               )}
             </div>
           </div>
 
-          {selectedState?.isSplit && selectedState.ielrAnnotation && (
+          {selectedVariant === 'IELR(1)' && selectedState?.isSplit && (
             <div className="notice-box info" style={{ marginBottom: '12px' }}>
               <div className="notice-title">
                 <Info size={14} />
-                <span>{selectedState.ielrAnnotation[cz ? 'cz' : 'en']}</span>
+                <span>
+                  {(() => {
+                    const from = selectedState.mergedFrom ?? [];
+                    const names = from.map(id => ctx.lr1Name?.(id) ?? String(id)).join(', ');
+                    return cz
+                      ? `IELR(1): stav ${name(selectedState.id)} ${from.length === 1 ? `odpovídá stavu LR(1) ${names}` : `slučuje stavy LR(1) ${names}`}; ostatní stavy LR(1) se stejným jádrem jsou v jiném stavu IELR(1), protože:`
+                      : `IELR(1): state ${name(selectedState.id)} ${from.length === 1 ? `is the LR(1) state ${names}` : `merges the LR(1) states ${names}`}; the other LR(1) states with the same core are in another IELR(1) state, because:`;
+                  })()}
+                </span>
               </div>
+              <ul style={{ margin: '4px 0 0', paddingLeft: '18px', fontSize: '12px' }}>
+                {(selectedState.splitReasons ?? []).map((r, i) => <li key={i}>{ielrReasonText(r, lang, layout)}</li>)}
+              </ul>
             </div>
           )}
 

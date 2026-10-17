@@ -112,11 +112,11 @@ export function checkETTPCompatibility(
       table,
       reasonsEn: [
         `Precomputed Earley Transition Table successfully built with ${table.states.length} states.`,
-        'Eliminates runtime dynamic predictor rule lookups.'
+        'No rule is expanded at runtime: predictions are precomputed states (kernel and predicted states, pairs (q, j)).'
       ],
       reasonsCz: [
-        `Předpočítaná Earleyova přechodová tabulka úspěšně sestavena (${table.states.length} stavů).`,
-        'Zcela eliminuje dynamické predikční operace za běhu.'
+        `Předpočítaná tabulka ETTP sestavena (${table.states.length} stavů).`,
+        'Za běhu se nerozvíjí žádné pravidlo: predikce jsou předpočítané stavy (jádrové a predikční stavy, páry (q, j)).'
       ],
       badgeStatus: 'ok'
     };

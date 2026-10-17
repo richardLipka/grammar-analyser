@@ -115,8 +115,27 @@ export function usePanZoom(
     });
   }, [containerRef]);
 
+  /**
+   * Like reveal, but first zooms in to at least minK (a whole large automaton fitted into the
+   * canvas is unreadable); centres the rectangle when the zoom changes or it is not visible.
+   */
+  const focus = useCallback((x: number, y: number, width: number, height: number, minK: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    setView(v => {
+      const k = Math.max(v.k, Math.min(minK, MAX_ZOOM));
+      const left = v.x + x * k;
+      const top = v.y + y * k;
+      const inside = k === v.k && left >= 0 && top >= 0 && left + width * k <= r.width && top + height * k <= r.height;
+      if (inside) return v;
+      return { k, x: r.width / 2 - (x + width / 2) * k, y: r.height / 2 - (y + height / 2) * k };
+    });
+  }, [containerRef]);
+
   /** True when the last pointer gesture was a drag (used to ignore the click that ends it). */
   const wasDragged = () => lastDragMoved.current;
 
-  return { view, fit, zoomBy, reveal, onPointerDown, isDragging, wasDragged };
+  return { view, fit, zoomBy, reveal, focus, onPointerDown, isDragging, wasDragged };
 }

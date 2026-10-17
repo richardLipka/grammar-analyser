@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Production } from '../../core/ast/grammar';
 import { LR0Item } from '../../core/lr/lrItem';
+import { LRVariant } from '../../core/lr/lrAutomaton';
 import { ItemReason, LookaheadExplanation, LookaheadReason } from '../../core/lr/lrExplain';
 import { Language } from '../../i18n/translations';
 
@@ -17,6 +18,8 @@ const seq = (xs: string[]) => (xs.length ? xs.join(' ') : 'ε');
 
 export interface ExplainContext {
   lang: Language;
+  /** The variant of the automaton explained (LALR(1) and IELR(1) states merge LR(1) states) */
+  variant?: LRVariant;
   /** state name in the current automaton (E₁ or 3) */
   name: (id: number) => string;
   /** state name in the canonical LR(1) automaton (for merged LALR(1) states) */
@@ -101,8 +104,12 @@ export const LookaheadExplanationView: React.FC<{
       {mergedFrom && mergedFrom.length > 1 && ctx.lr1Name && (
         <div className="lr-explain-note">
           {cz
-            ? `LALR(1): stav vznikl sloučením stavů LR(1) ${mergedFrom.map(ctx.lr1Name).join(', ')} se stejným jádrem; ${lookahead} má tato položka v ${lr1States!.map(ctx.lr1Name).join(', ')}.`
-            : `LALR(1): the state merges the LR(1) states ${mergedFrom.map(ctx.lr1Name).join(', ')} with the same core; this item has ${lookahead} in ${lr1States!.map(ctx.lr1Name).join(', ')}.`}
+            ? (ctx.variant === 'IELR(1)'
+                ? `IELR(1): stav vznikl sloučením stavů LR(1) ${mergedFrom.map(ctx.lr1Name).join(', ')} se stejným jádrem (sloučení nemění žádnou akci); ${lookahead} má tato položka v ${lr1States!.map(ctx.lr1Name).join(', ')}.`
+                : `LALR(1): stav vznikl sloučením stavů LR(1) ${mergedFrom.map(ctx.lr1Name).join(', ')} se stejným jádrem; ${lookahead} má tato položka v ${lr1States!.map(ctx.lr1Name).join(', ')}.`)
+            : (ctx.variant === 'IELR(1)'
+                ? `IELR(1): the state merges the LR(1) states ${mergedFrom.map(ctx.lr1Name).join(', ')} with the same core (the merge changes no action); this item has ${lookahead} in ${lr1States!.map(ctx.lr1Name).join(', ')}.`
+                : `LALR(1): the state merges the LR(1) states ${mergedFrom.map(ctx.lr1Name).join(', ')} with the same core; this item has ${lookahead} in ${lr1States!.map(ctx.lr1Name).join(', ')}.`)}
         </div>
       )}
     </div>

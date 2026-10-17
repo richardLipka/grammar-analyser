@@ -3,34 +3,38 @@
  *
  * Primary Literature:
  * - Scott, E., Johnstone, A.: Earley Table Traversing Parsers.
- *   Science of Computer Programming 247, 103335 (2025/2026).
+ *   Science of Computer Programming 247, 103335 (2026, online 2025).
  *   https://doi.org/10.1016/j.scico.2025.103335
+ * - Aycock, J., Horspool, R.N.: Practical Earley Parsing. The Computer Journal 45(6), 620–630 (2002).
+ *   https://doi.org/10.1093/comjnl/45.6.620 (the LR(0)ε automaton and its split form used here)
  *
- * Theoretical & Algorithmic Principle:
- * Classic Earley parsers perform three operations dynamically at runtime across state sets S_0 ... S_n:
- * Scanner, Predictor, Completer. The Predictor accounts for a substantial fraction of runtime work,
- * repeatedly expanding non-terminal rules and nullable closures on-the-fly.
+ * Principle:
+ * Classic Earley performs Scanner, Predictor and Completer at runtime over sets S_0 … S_n.
+ * A table-driven Earley parser precomputes the item sets the Predictor would build into the
+ * states of an automaton, and its sets hold pairs (q, j): "all items of state q, with origin j".
  *
- * ETTP precomputes the prediction closures and grammar symbol transitions into a static
- * Earley Transition Table (analogous to how LR automata compile shift/reduce closures).
- *
- * Each state transition records its origin derivation semantics:
- *   - Kernel transitions (advancing dot from dot > 0): preserve the predecessor origin j.
- *   - Predicted transitions (advancing dot from predicted dot == 0): establish the current
- *     set index i as the origin of the newly anticipated rule.
- *
- * Key benefits:
- * 1. Runtime Predictor is completely eliminated (0 dynamic prediction operations).
- * 2. State sets S_i contain compact state-origin pairs (stateId, originIndex),
- *    dramatically reducing the size and memory overhead of runtime chart representations.
- * 3. General CFG parsing capability is strictly preserved (handles all unambiguous, ambiguous,
- *    left-recursive, cyclic, and nullable CFGs in O(n^3) time).
+ * That only works when all items of q really have the same origin. Items reached by moving
+ * the dot (scan or completion) keep the origin j of the item they came from, while predicted
+ * items [B → • γ] start at the current position i. So, as in the split automaton of Aycock &
+ * Horspool, every closure is split in two states:
+ *   - a kernel state: the items after a transition, plus the dot moved over nullable symbols
+ *     (same origin j);
+ *   - its predicted state: the rules predicted from it, closed under prediction and nullable
+ *     moves (origin i = the index of the set). Each kernel state stores the id of its predicted
+ *     state, and adding (q, j) to S_i also adds (predicted(q), i) — a table lookup, no rule is
+ *     expanded at runtime.
+ * Transitions δ(q, X) move the dot over X and lead to kernel states; the origin is copied.
+ *   Scanner:   (q, j) ∈ S_i, δ(q, w_{i+1}) = r      ⇒ (r, j) ∈ S_{i+1}
+ *   Completer: (q, j) ∈ S_i, j < i, A → γ • ∈ q, (p, k) ∈ S_j, δ(p, A) = r ⇒ (r, k) ∈ S_i
+ * A completion with j = i would only repeat a move over a nullable symbol that the closure
+ * already made, so it is skipped. Accept: (q, 0) ∈ S_n with S' → S • in q.
  */
 
 import { Grammar, Production } from '../ast/grammar';
 import { computeNullable } from '../analyser/grammarAnalyser';
 import { DerivationNode } from '../generator/wordGenerator';
-import { getAugmentedProduction, simulateEarleyParse } from './earleyParser';
+import { AUGMENTED_PRODUCTION_ID, getAugmentedProduction, subscript } from './earleyParser';
+import { ChartItem, chartTrees, scannedLeafId, withUniqueIds } from './earleyTrees';
 
 export interface ETTPItem {
   production: Production;
@@ -39,20 +43,24 @@ export interface ETTPItem {
 
 export interface ETTPTransition {
   targetStateId: number;
-  originKind: 'kernel' | 'predicted' | 'both';
+  /** Kind of the state the transition leaves; the origin of the pair is copied in both cases. */
+  originKind: 'kernel' | 'predicted';
 }
 
 export interface ETTPCompletion {
   production: Production;
-  // If production is empty (epsilon), origin is current set i; otherwise it matches origin j of the item
   isEmpty: boolean;
 }
 
 export interface ETTPState {
   id: number;
+  /** kernel = items after a transition (origin j of the pair); predicted = predicted rules (origin = set index). */
+  kind: 'kernel' | 'predicted';
   items: ETTPItem[];
   // Transition map: symbol (terminal or non-terminal) -> ETTPTransition
   transitions: Map<string, ETTPTransition>;
+  /** For a kernel state: the state of the rules predicted from it (added together with it). */
+  predictedStateId?: number;
   // Productions completed in this state (dot at the end)
   completions: ETTPCompletion[];
   isAcceptState: boolean;
@@ -62,28 +70,42 @@ export interface ETTPTable {
   grammar: Grammar;
   states: ETTPState[];
   startStateId: number;
+  /** The added rule S' → S. */
+  augmentedProduction: Production;
 }
 
 export interface ETTPRuntimeItem {
   stateId: number;
   origin: number; // j in (q, j)
   triggerSymbol?: string;
-  operation: 'init' | 'scan' | 'complete';
-  treeChildren?: DerivationNode[];
+  operation: 'init' | 'predict' | 'scan' | 'complete';
+}
+
+/** A pair that caused a step: its set and its position in the set. */
+export interface ETTPStepSource {
+  setIndex: number;
+  itemIndex: number;
+  role: 'parent' | 'scanned' | 'completed' | 'waiting';
 }
 
 export interface ETTPStep {
   stepIndex: number;
   inputIndex: number;
-  operation: 'init' | 'scan' | 'complete';
+  operation: 'init' | 'predict' | 'scan' | 'complete';
   stateId: number;
   origin: number;
+  /** Position of the new pair in its set. */
+  itemIndex: number;
   triggerSymbol?: string;
+  /** Transition used by the step (scan, complete): from this state on triggerSymbol. */
+  fromStateId?: number;
   descriptionEn: string;
   descriptionCz: string;
   activeSetIndex: number;
   totalItemsSoFar: number;
-  chartSnapshot: { setIndex: number; items: { stateId: number; origin: number }[] }[];
+  /** Number of pairs in each set after this step (the sets only grow). */
+  setSizes: number[];
+  sources: ETTPStepSource[];
   derivationTree?: DerivationNode;
 }
 
@@ -99,11 +121,15 @@ export interface ETTPSimulationResult {
   errorMessageCz?: string;
   stats: {
     statesCount: number;
-    predictCount: number; // strictly 0 in ETTP!
+    /** Rules expanded at runtime: always 0, predictions are states of the table. */
+    predictCount: number;
+    /** Pairs (predicted(q), i) added by the table link. */
+    predictedPairs: number;
     scanTransitions: number;
     completeTransitions: number;
     totalRuntimePairs: number;
-    savedPredictionOperations: number; // estimated dynamic prediction operations eliminated
+    /** Earley items the pairs stand for (Σ |q| over the pairs) — the size of the classic chart. */
+    representedItems: number;
   };
 }
 
@@ -111,167 +137,122 @@ function itemKey(pId: number, dot: number): string {
   return `${pId}#${dot}`;
 }
 
-function stateKey(items: ETTPItem[]): string {
-  return items
+function stateKey(kind: string, items: ETTPItem[]): string {
+  return `${kind}:` + items
     .map(it => itemKey(it.production.id, it.dot))
     .sort()
     .join('|');
 }
 
-/**
- * Computes the prediction closure of a set of ETTP items.
- * If [A -> alpha . B beta] is in closure, adds [B -> . gamma] for all B -> gamma.
- * If B is nullable, also adds [A -> alpha B . beta].
- */
-function closure(items: ETTPItem[], grammar: Grammar, nullable: Set<string>, prodsByLhs: Map<string, Production[]>): ETTPItem[] {
-  const result: ETTPItem[] = [...items];
-  const seen = new Set<string>(result.map(it => itemKey(it.production.id, it.dot)));
-
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const currentLen = result.length;
-    for (let i = 0; i < currentLen; i++) {
-      const it = result[i];
-      if (it.dot < it.production.rhs.length) {
-        const nextSymbol = it.production.rhs[it.dot];
-        if (grammar.nonTerminals.has(nextSymbol)) {
-          const prods = prodsByLhs.get(nextSymbol) ?? [];
-          for (const prod of prods) {
-            const key = itemKey(prod.id, 0);
-            if (!seen.has(key)) {
-              seen.add(key);
-              result.push({ production: prod, dot: 0 });
-              changed = true;
-            }
-          }
-
-          if (nullable.has(nextSymbol)) {
-            const keyNull = itemKey(it.production.id, it.dot + 1);
-            if (!seen.has(keyNull)) {
-              seen.add(keyNull);
-              result.push({ production: it.production, dot: it.dot + 1 });
-              changed = true;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return result;
+export function formatETTPItem(it: ETTPItem): string {
+  const rhs = [...it.production.rhs];
+  rhs.splice(it.dot, 0, '•');
+  return `${it.production.lhs} → ${rhs.join(' ')}`;
 }
 
 /**
- * Precomputes the ETTP Transition Table from the grammar (Scott & Johnstone 2025).
+ * Builds the table: kernel states (closed only under moves over nullable symbols) and
+ * predicted states (closed under prediction and nullable moves).
  */
 export function buildETTPTable(grammar: Grammar): ETTPTable {
-  const augProd = getAugmentedProduction(grammar.startSymbol);
+  const augProd = getAugmentedProduction(grammar);
   const nullable = computeNullable(grammar);
   const prodsByLhs = new Map<string, Production[]>();
   for (const p of grammar.productions) {
     if (!prodsByLhs.has(p.lhs)) prodsByLhs.set(p.lhs, []);
     prodsByLhs.get(p.lhs)!.push(p);
   }
-
   const allSymbols = [...grammar.terminals, ...grammar.nonTerminals];
+
+  /** Adds [A → α B • β] for [A → α • B β] with B nullable; with predict, also [B → • γ]. */
+  function close(items: ETTPItem[], predict: boolean): ETTPItem[] {
+    const result: ETTPItem[] = [...items];
+    const seen = new Set<string>(result.map(it => itemKey(it.production.id, it.dot)));
+    const add = (it: ETTPItem) => {
+      const k = itemKey(it.production.id, it.dot);
+      if (!seen.has(k)) {
+        seen.add(k);
+        result.push(it);
+      }
+    };
+    for (let i = 0; i < result.length; i++) {
+      const it = result[i];
+      const next = it.production.rhs[it.dot];
+      if (next === undefined || !grammar.nonTerminals.has(next)) continue;
+      if (predict) for (const prod of prodsByLhs.get(next) ?? []) add({ production: prod, dot: 0 });
+      if (nullable.has(next)) add({ production: it.production, dot: it.dot + 1 });
+    }
+    return result;
+  }
 
   const states: ETTPState[] = [];
   const stateMap = new Map<string, number>();
 
-  // Initial State 0: closure({ [S' -> . S] })
-  const startItems = closure([{ production: augProd, dot: 0 }], grammar, nullable, prodsByLhs);
-
-  function getOrCreateState(items: ETTPItem[]): number {
-    const k = stateKey(items);
-    if (stateMap.has(k)) {
-      return stateMap.get(k)!;
-    }
+  function getOrCreateState(kind: 'kernel' | 'predicted', items: ETTPItem[]): number {
+    const k = stateKey(kind, items);
+    const known = stateMap.get(k);
+    if (known !== undefined) return known;
     const id = states.length;
     stateMap.set(k, id);
-
-    const completions: ETTPCompletion[] = items
-      .filter(it => it.dot === it.production.rhs.length)
-      .map(it => ({
-        production: it.production,
-        isEmpty: it.production.rhs.length === 0
-      }));
-
-    const isAcceptState = items.some(
-      it => it.production.id === augProd.id && it.dot === 1
-    );
-
-    const newState: ETTPState = {
+    states.push({
       id,
+      kind,
       items,
       transitions: new Map(),
-      completions,
-      isAcceptState
-    };
-    states.push(newState);
+      completions: items
+        .filter(it => it.dot === it.production.rhs.length && it.production.id !== AUGMENTED_PRODUCTION_ID)
+        .map(it => ({ production: it.production, isEmpty: it.production.rhs.length === 0 })),
+      isAcceptState: items.some(it => it.production.id === AUGMENTED_PRODUCTION_ID && it.dot === 1)
+    });
+    if (kind === 'kernel') {
+      const predicted = new Set<string>();
+      for (const it of items) {
+        const next = it.production.rhs[it.dot];
+        if (next !== undefined && grammar.nonTerminals.has(next)) predicted.add(next);
+      }
+      const predictedItems = close(
+        [...predicted].flatMap(nt => (prodsByLhs.get(nt) ?? []).map(production => ({ production, dot: 0 }))),
+        true
+      );
+      if (predictedItems.length > 0) states[id].predictedStateId = getOrCreateState('predicted', predictedItems);
+    }
     return id;
   }
 
-  getOrCreateState(startItems);
+  const startStateId = getOrCreateState('kernel', close([{ production: augProd, dot: 0 }], false));
 
-  // Compute transitions until all states are closed
-  let processed = 0;
-  while (processed < states.length) {
+  for (let processed = 0; processed < states.length; processed++) {
     const state = states[processed];
-    processed++;
-
     for (const sym of allSymbols) {
-      let hasKernel = false;
-      let hasPredicted = false;
-      const kernel: ETTPItem[] = [];
-
-      for (const it of state.items) {
-        if (it.dot < it.production.rhs.length && it.production.rhs[it.dot] === sym) {
-          kernel.push({ production: it.production, dot: it.dot + 1 });
-          if (it.dot > 0) {
-            hasKernel = true;
-          } else {
-            hasPredicted = true;
-          }
-        }
-      }
-
-      if (kernel.length > 0) {
-        const closed = closure(kernel, grammar, nullable, prodsByLhs);
-        const targetStateId = getOrCreateState(closed);
-        const originKind = hasKernel && hasPredicted ? 'both' : (hasKernel ? 'kernel' : 'predicted');
-        state.transitions.set(sym, {
-          targetStateId,
-          originKind
-        });
-      }
+      const moved = state.items
+        .filter(it => it.production.rhs[it.dot] === sym)
+        .map(it => ({ production: it.production, dot: it.dot + 1 }));
+      if (moved.length === 0) continue;
+      state.transitions.set(sym, {
+        targetStateId: getOrCreateState('kernel', close(moved, false)),
+        originKind: state.kind
+      });
     }
   }
 
-  return {
-    grammar,
-    states,
-    startStateId: 0
-  };
+  return { grammar, states, startStateId, augmentedProduction: augProd };
 }
 
 export interface ETTPTransitionReason {
   fromStateId: number;
   symbol: string;
   targetStateId: number;
-  originKind: 'kernel' | 'predicted' | 'both';
+  originKind: 'kernel' | 'predicted';
   triggerItems: ETTPItem[]; // items in source state with dot before symbol: [A -> alpha . X beta]
   resultingKernelItems: ETTPItem[]; // items in target state with dot after symbol: [A -> alpha X . beta]
 }
 
 /**
- * Checks whether an item belongs to the kernel/core of the given state.
- * For start state (q0), the augmented axiom [S' -> . S] is in the kernel.
- * For all states, items with dot > 0 are kernel items.
+ * Whether an item is a kernel item (origin j of the pair) or a predicted one (origin = set index).
+ * In the split table this is a property of the whole state.
  */
-export function isETTPKernelItem(it: ETTPItem, stateId: number = 0, startStateId: number = 0): boolean {
-  if (it.dot > 0) return true;
-  return stateId === startStateId && it.production.id === -1;
+export function isETTPKernelItem(_it: ETTPItem, state: ETTPState): boolean {
+  return state.kind === 'kernel';
 }
 
 /**
@@ -304,13 +285,21 @@ export function getETTPTransitionReason(
 }
 
 /**
- * Finds which parent item(s) in the state caused a closure item [B -> . gamma] to be predicted.
- * A parent item [A -> alpha . B beta] has non-terminal B immediately after its dot.
+ * Items with the dot before the left-hand side of a predicted item [B → • γ]: in the same
+ * predicted state, or in a kernel state whose predicted state this is.
  */
-export function findPredictionTriggers(state: ETTPState, item: ETTPItem): ETTPItem[] {
+export function findPredictionTriggers(
+  table: ETTPTable,
+  state: ETTPState,
+  item: ETTPItem
+): { stateId: number; item: ETTPItem }[] {
+  if (item.dot > 0 || state.kind !== 'predicted') return [];
   const lhs = item.production.lhs;
-  return state.items.filter(
-    it => it.dot < it.production.rhs.length && it.production.rhs[it.dot] === lhs
+  const sources = [state, ...table.states.filter(s => s.predictedStateId === state.id)];
+  return sources.flatMap(s =>
+    s.items
+      .filter(it => it.production.rhs[it.dot] === lhs)
+      .map(it => ({ stateId: s.id, item: it }))
   );
 }
 
@@ -325,6 +314,7 @@ export function simulateETTPParse(
 ): ETTPSimulationResult {
   const table = prebuiltTable ?? buildETTPTable(grammar);
   const n = tokens.length;
+  const aug = table.augmentedProduction;
 
   const sets: { index: number; token?: string; items: ETTPRuntimeItem[] }[] = Array.from(
     { length: n + 1 },
@@ -337,18 +327,17 @@ export function simulateETTPParse(
 
   const seenKeys: Set<string>[] = Array.from({ length: n + 1 }, () => new Set());
   const steps: ETTPStep[] = [];
+  const stepTrees: ({ kind: 'leaf'; tokenIndex: number } | { kind: 'symbol'; symbol: string; origin: number; end: number } | undefined)[] = [];
   let stepCounter = 0;
   let scanTransitions = 0;
   let completeTransitions = 0;
+  let predictedPairs = 0;
   let totalRuntimePairs = 0;
+  let representedItems = 0;
   let truncated = false;
 
-  function takeChartSnapshot(): { setIndex: number; items: { stateId: number; origin: number }[] }[] {
-    return sets.map(s => ({
-      setIndex: s.index,
-      items: s.items.map(it => ({ stateId: it.stateId, origin: it.origin }))
-    }));
-  }
+  const S = (i: number) => `S${subscript(i)}`;
+  const span = (j: number, i: number) => (j === i ? 'ε' : tokens.slice(j, i).join(' '));
 
   function addPair(
     setIdx: number,
@@ -357,30 +346,54 @@ export function simulateETTPParse(
     op: 'init' | 'scan' | 'complete',
     descEn: string,
     descCz: string,
-    triggerSymbol?: string,
-    treeChildren?: DerivationNode[],
-    customTree?: DerivationNode
+    sources: ETTPStepSource[],
+    extra: { triggerSymbol?: string; fromStateId?: number; tree?: (typeof stepTrees)[number] } = {}
+  ): boolean {
+    if (!push(setIdx, stateId, origin, op, descEn, descCz, sources, extra)) return false;
+    // The predicted state comes with the pair, with origin = this set.
+    const state = table.states[stateId];
+    if (state.predictedStateId !== undefined) {
+      const p = state.predictedStateId;
+      const parentIndex = sets[setIdx].items.length - 1;
+      if (
+        push(
+          setIdx,
+          p,
+          setIdx,
+          'predict',
+          `Prediction from the table: state q${stateId} has the precomputed predicted state q${p} (the rules that may start after the dots of q${stateId}, closed under prediction). Added the pair (q${p}, ${setIdx}) to ${S(setIdx)} — origin ${setIdx}, because these rules start here. No rule is expanded at runtime.`,
+          `Predikce z tabulky: stav q${stateId} má předpočítaný predikční stav q${p} (pravidla, která mohou začít za tečkami v q${stateId}, uzavřená predikcí). Do ${S(setIdx)} přidán pár (q${p}, ${setIdx}) — počátek ${setIdx}, protože tato pravidla začínají zde. Za běhu se žádné pravidlo nerozvíjí.`,
+          [{ setIndex: setIdx, itemIndex: parentIndex, role: 'parent' }],
+          {}
+        )
+      ) {
+        predictedPairs++;
+      }
+    }
+    return true;
+  }
+
+  function push(
+    setIdx: number,
+    stateId: number,
+    origin: number,
+    op: 'init' | 'predict' | 'scan' | 'complete',
+    descEn: string,
+    descCz: string,
+    sources: ETTPStepSource[],
+    extra: { triggerSymbol?: string; fromStateId?: number; tree?: (typeof stepTrees)[number] }
   ): boolean {
     if (stepCounter >= maxSteps) {
       truncated = true;
       return false;
     }
     const key = `${stateId}@${origin}`;
-    if (seenKeys[setIdx].has(key)) {
-      return false;
-    }
+    if (seenKeys[setIdx].has(key)) return false;
     seenKeys[setIdx].add(key);
 
-    const item: ETTPRuntimeItem = {
-      stateId,
-      origin,
-      operation: op,
-      triggerSymbol,
-      treeChildren
-    };
-    sets[setIdx].items.push(item);
+    sets[setIdx].items.push({ stateId, origin, operation: op, triggerSymbol: extra.triggerSymbol });
     totalRuntimePairs++;
-
+    representedItems += table.states[stateId].items.length;
     stepCounter++;
     steps.push({
       stepIndex: stepCounter,
@@ -388,184 +401,117 @@ export function simulateETTPParse(
       operation: op,
       stateId,
       origin,
-      triggerSymbol,
+      itemIndex: sets[setIdx].items.length - 1,
+      triggerSymbol: extra.triggerSymbol,
+      fromStateId: extra.fromStateId,
       descriptionEn: descEn,
       descriptionCz: descCz,
       activeSetIndex: setIdx,
       totalItemsSoFar: totalRuntimePairs,
-      chartSnapshot: takeChartSnapshot(),
-      derivationTree: customTree
+      setSizes: sets.map(s => s.items.length),
+      sources
     });
+    stepTrees.push(extra.tree);
     return true;
   }
 
-  // 1. Initialize S_0 with start state pair (q_0, 0)
+  const q0 = table.states[table.startStateId];
   addPair(
     0,
     table.startStateId,
     0,
     'init',
-    `Initialize: Placed initial state pair (q${table.startStateId}, 0) into S₀`,
-    `Inicializace: Vložen počáteční stavový pár (q${table.startStateId}, 0) do S₀`
+    `Initialize: ${S(0)} gets the pair (q${table.startStateId}, 0); state q${table.startStateId} holds ${q0.items.map(formatETTPItem).join(', ')}. The word is accepted when ${S(n)} contains a pair (q, 0) whose state has ${aug.lhs} → ${aug.rhs[0]} •.`,
+    `Inicializace: do ${S(0)} vložen pár (q${table.startStateId}, 0); stav q${table.startStateId} obsahuje ${q0.items.map(formatETTPItem).join(', ')}. Slovo bude přijato, bude-li v ${S(n)} pár (q, 0), jehož stav obsahuje ${aug.lhs} → ${aug.rhs[0]} •.`,
+    []
   );
 
-  // Parse loop across sets S_0 ... S_n
   for (let i = 0; i <= n; i++) {
-    // Complete loop in S_i (table goto traversal over completed non-terminals)
+    // Completer: S_j for j < i is finished, S_i grows while it is traversed.
     for (let k = 0; k < sets[i].items.length; k++) {
       const it = sets[i].items[k];
+      const j = it.origin;
+      if (j === i) continue;
       const state = table.states[it.stateId];
-
-      for (const comp of state.completions) {
-        const prod = comp.production;
-        const completedNt = prod.lhs;
-        const originIdx = comp.isEmpty ? i : it.origin;
-        const originSet = sets[originIdx];
-
-        let completedSubtree: DerivationNode | undefined = undefined;
-        if (completedNt !== "S'") {
-          const children: DerivationNode[] = it.treeChildren && it.treeChildren.length > 0
-            ? it.treeChildren
-            : (prod.rhs.length === 0
-                ? [{ id: `tree_eps_${i}`, symbol: 'ε', isTerminal: true }]
-                : prod.rhs.map((sym, sIdx) => ({
-                    id: `leaf_${i}_${sIdx}_${sym}`,
-                    symbol: sym,
-                    isTerminal: !grammar.nonTerminals.has(sym)
-                  }))
-              );
-          completedSubtree = {
-            id: `tree_nt_${completedNt}_${originIdx}_${i}_${prod.id}`,
-            symbol: completedNt,
-            isTerminal: false,
-            children
-          };
-        }
-
-        // For each predecessor state in S_{originIdx}, follow table transition on completedNt
+      const completedLhs = [...new Set(state.completions.map(c => c.production.lhs))];
+      for (const lhs of completedLhs) {
+        const rules = state.completions.filter(c => c.production.lhs === lhs).map(c => `${lhs} → ${c.production.rhs.join(' ') || 'ε'} •`).join(', ');
+        const originSet = sets[j];
         for (let pIdx = 0; pIdx < originSet.items.length; pIdx++) {
           const pItem = originSet.items[pIdx];
-          const pState = table.states[pItem.stateId];
-          const trans = pState.transitions.get(completedNt);
-
-          if (trans !== undefined) {
-            const nextStateId = trans.targetStateId;
-            const originsToPush: number[] = [];
-            if (trans.originKind === 'kernel' || trans.originKind === 'both') {
-              originsToPush.push(pItem.origin);
-            }
-            if (trans.originKind === 'predicted' || trans.originKind === 'both') {
-              originsToPush.push(originIdx);
-            }
-
-            for (const orig of originsToPush) {
-              const advancedTreeChildren = [
-                ...(pItem.treeChildren ?? []),
-                ...(completedSubtree ? [completedSubtree] : [])
-              ];
-
-              const kindEn = orig === pItem.origin
-                ? `kernel goto (preserves origin ${orig})`
-                : `predicted goto (origin ${orig})`;
-              const kindCz = orig === pItem.origin
-                ? `jádrový přechod (zachovává počátek ${orig})`
-                : `přechod z predikovaného uzávěru (počátek ${orig})`;
-
-              const added = addPair(
-                i,
-                nextStateId,
-                orig,
-                'complete',
-                `Table Complete: In q${it.stateId}, rule ${prod.lhs} → ${prod.rhs.join(' ') || 'ε'} completed (originated at S_${originIdx}). From q${pItem.stateId} in S_${originIdx}, traversed table transition δ(q${pItem.stateId}, ${completedNt}) → q${nextStateId} [${kindEn}]. Added state pair (q${nextStateId}, ${orig}) to S_${i}`,
-                `Tabulkový kompletor: Ve stavu q${it.stateId} dokončeno pravidlo ${prod.lhs} → ${prod.rhs.join(' ') || 'ε'} (počátek v S_${originIdx}). Ze stavu q${pItem.stateId} v S_${originIdx} proveden přechod δ(q${pItem.stateId}, ${completedNt}) → q${nextStateId} [${kindCz}]. Přidán stavový pár (q${nextStateId}, ${orig}) do S_${i}`,
-                completedNt,
-                advancedTreeChildren,
-                completedSubtree
-              );
-              if (added) completeTransitions++;
-            }
-          }
+          const trans = table.states[pItem.stateId].transitions.get(lhs);
+          if (trans === undefined) continue;
+          const r = trans.targetStateId;
+          const added = addPair(
+            i,
+            r,
+            pItem.origin,
+            'complete',
+            `Completer: the pair (q${it.stateId}, ${j}) in ${S(i)} has the finished rule ${rules}, so ${lhs} derives “${span(j, i)}” (positions ${j}–${i}). In ${S(j)} the pair (q${pItem.stateId}, ${pItem.origin}) has the transition δ(q${pItem.stateId}, ${lhs}) = q${r}: added (q${r}, ${pItem.origin}) to ${S(i)} (the origin ${pItem.origin} is copied).`,
+            `Kompletor: pár (q${it.stateId}, ${j}) v ${S(i)} má dokončené pravidlo ${rules}, tedy ${lhs} generuje „${span(j, i)}“ (pozice ${j}–${i}). V ${S(j)} má pár (q${pItem.stateId}, ${pItem.origin}) přechod δ(q${pItem.stateId}, ${lhs}) = q${r}: do ${S(i)} přidán (q${r}, ${pItem.origin}) (počátek ${pItem.origin} se kopíruje).`,
+            [
+              { setIndex: i, itemIndex: k, role: 'completed' },
+              { setIndex: j, itemIndex: pIdx, role: 'waiting' }
+            ],
+            { triggerSymbol: lhs, fromStateId: pItem.stateId, tree: { kind: 'symbol', symbol: lhs, origin: j, end: i } }
+          );
+          if (added) completeTransitions++;
         }
       }
     }
 
-    // Scanner step: scan token w_{i+1} from S_i into S_{i+1} via table transitions
+    // Scanner: w_{i+1} from S_i into S_{i+1}
     if (i < n) {
-      const nextInputToken = tokens[i];
-      for (const it of sets[i].items) {
-        const state = table.states[it.stateId];
-        const trans = state.transitions.get(nextInputToken);
-
-        if (trans !== undefined) {
-          const nextStateId = trans.targetStateId;
-          const originsToPush: number[] = [];
-          if (trans.originKind === 'kernel' || trans.originKind === 'both') {
-            originsToPush.push(it.origin);
-          }
-          if (trans.originKind === 'predicted' || trans.originKind === 'both') {
-            originsToPush.push(i);
-          }
-
-          const scannedLeaf: DerivationNode = {
-            id: `leaf_tok_${i}_${nextInputToken}`,
-            symbol: nextInputToken,
-            isTerminal: true
-          };
-
-          for (const orig of originsToPush) {
-            const kindEn = orig === it.origin
-              ? `kernel transition (preserves origin ${orig})`
-              : `predicted transition (establishes origin ${orig})`;
-            const kindCz = orig === it.origin
-              ? `jádrový přechod (zachovává počátek ${orig})`
-              : `přechod z predikovaného uzávěru (zakládá nový počátek ${orig})`;
-
-            const added = addPair(
-              i + 1,
-              nextStateId,
-              orig,
-              'scan',
-              `Table Scan: Matched token '${nextInputToken}' at position ${i + 1} in state q${it.stateId}. Traversed δ(q${it.stateId}, '${nextInputToken}') → q${nextStateId} [${kindEn}]. Added state pair (q${nextStateId}, ${orig}) to S_${i + 1}`,
-              `Tabulkový skener: Shoda vstupního symbolu '${nextInputToken}' na pozici ${i + 1} ve stavu q${it.stateId}. Proveden přechod δ(q${it.stateId}, '${nextInputToken}') → q${nextStateId} [${kindCz}]. Přidán stavový pár (q${nextStateId}, ${orig}) do S_${i + 1}`,
-              nextInputToken,
-              [...(it.treeChildren ?? []), scannedLeaf],
-              scannedLeaf
-            );
-            if (added) scanTransitions++;
-          }
-        }
-      }
+      const a = tokens[i];
+      sets[i].items.forEach((it, k) => {
+        const trans = table.states[it.stateId].transitions.get(a);
+        if (trans === undefined) return;
+        const r = trans.targetStateId;
+        const added = addPair(
+          i + 1,
+          r,
+          it.origin,
+          'scan',
+          `Scanner: the input symbol w${subscript(i + 1)} = '${a}'; the pair (q${it.stateId}, ${it.origin}) in ${S(i)} has the transition δ(q${it.stateId}, '${a}') = q${r}: added (q${r}, ${it.origin}) to ${S(i + 1)} (the origin is copied).`,
+          `Skener: vstupní symbol w${subscript(i + 1)} = '${a}'; pár (q${it.stateId}, ${it.origin}) v ${S(i)} má přechod δ(q${it.stateId}, '${a}') = q${r}: do ${S(i + 1)} přidán (q${r}, ${it.origin}) (počátek se kopíruje).`,
+          [{ setIndex: i, itemIndex: k, role: 'scanned' }],
+          { triggerSymbol: a, fromStateId: it.stateId, tree: { kind: 'leaf', tokenIndex: i } }
+        );
+        if (added) scanTransitions++;
+      });
     }
   }
 
-  // Acceptance check: (q, 0) in S_n where state q is an accept state
   const accepted = !truncated && sets[n].items.some(
     it => it.origin === 0 && table.states[it.stateId].isAcceptState
   );
 
-  // Extract derivation trees
+  // Trees from the chart: the pair (q, j) stands for the items of q with origin j.
   const trees: DerivationNode[] = [];
-  if (accepted) {
-    // Both Classic Earley and ETTP recognize the exact same language and CFG derivations.
-    // Use the robust derivation tree extractor to ensure 100% leaf fidelity matching the input tokens.
-    const earleyResult = simulateEarleyParse(tokens, grammar);
-    if (earleyResult.accepted && earleyResult.trees.length > 0) {
-      trees.push(...earleyResult.trees);
-    } else {
-      trees.push({
-        id: 'tree_root_ettp_accepted',
-        symbol: grammar.startSymbol,
-        isTerminal: false,
-        children: tokens.length === 0
-          ? [{ id: 'tree_leaf_eps_root', symbol: 'ε', isTerminal: true }]
-          : tokens.map((t, idx) => ({ id: `token_leaf_${idx}`, symbol: t, isTerminal: true }))
-      });
+  if (!truncated) {
+    const chart: ChartItem[][] = sets.map(s =>
+      s.items.flatMap(p => table.states[p.stateId].items.map(it => ({ production: it.production, dot: it.dot, origin: p.origin })))
+    );
+    const forest = chartTrees(grammar, tokens, chart);
+    steps.forEach((step, idx) => {
+      const t = stepTrees[idx];
+      if (!t) return;
+      step.derivationTree =
+        t.kind === 'leaf'
+          ? { id: scannedLeafId(t.tokenIndex, tokens[t.tokenIndex]), symbol: tokens[t.tokenIndex], isTerminal: true }
+          : forest.ofSymbol(t.symbol, t.origin, t.end);
+    });
+    if (accepted) {
+      const root = forest.ofSymbol(grammar.startSymbol, 0, n);
+      if (root) trees.push(withUniqueIds(root));
     }
   }
 
   return {
     accepted,
     truncated,
+    errorMessage: truncated ? `Parsing stopped after reaching the limit of ${maxSteps} steps.` : undefined,
+    errorMessageCz: truncated ? `Analýza byla zastavena po dosažení limitu ${maxSteps} kroků.` : undefined,
     totalSteps: stepCounter,
     steps,
     sets,
@@ -573,11 +519,12 @@ export function simulateETTPParse(
     table,
     stats: {
       statesCount: table.states.length,
-      predictCount: 0, // strictly 0 in ETTP!
+      predictCount: 0,
+      predictedPairs,
       scanTransitions,
       completeTransitions,
       totalRuntimePairs,
-      savedPredictionOperations: Math.max(0, stepCounter * 2)
+      representedItems
     }
   };
 }

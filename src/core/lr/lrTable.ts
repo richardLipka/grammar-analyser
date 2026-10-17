@@ -64,6 +64,8 @@ export interface LRTableOptions {
 
 export interface LRTable {
   variant: LRVariant;
+  /** The automaton the table was built from (its state ids are the rows) */
+  automaton?: LRAutomaton;
   states: number[];
   /** Lecture names of the states, indexed by state id */
   stateNames: LRStateName[];
@@ -129,8 +131,8 @@ function rulePrecedence(decl: PrecedenceDeclarations, p: Production, g: Grammar)
   return prec ? { ...prec, via } : undefined;
 }
 
-/** Decides a shift/reduce cell by precedence (null = cannot be decided). */
-function resolveByPrecedence(
+/** Decides a shift/reduce cell by precedence (null = cannot be decided). Also used by the IELR(1) construction. */
+export function resolveByPrecedence(
   decl: PrecedenceDeclarations,
   g: Grammar,
   stateId: number,
@@ -272,6 +274,7 @@ export function buildLRTable(
 
   return {
     variant: automaton.variant,
+    automaton,
     states: automaton.states.map(s => s.id),
     stateNames: automaton.stateNames,
     terminals: terminalCols,

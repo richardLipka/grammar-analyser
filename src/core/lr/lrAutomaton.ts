@@ -19,6 +19,7 @@ import { Grammar, Production, END_MARKER, cloneGrammar, EPSILON, toSubscript } f
 import { GrammarAnalysis, first1OfString } from '../analyser/grammarAnalyser';
 import { Job, JobControl, runJob, runToEnd, ticker } from '../jobs/job';
 import { LR0Item, LR1Item, lr0ItemKey, lr1ItemKey, nextSymbolAfterDot } from './lrItem';
+import { LRAction, resolveByPrecedence } from './lrTable';
 
 export type LRVariant = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
@@ -30,10 +31,32 @@ export interface LRState {
   isAccepting?: boolean;
   /** LALR(1) / IELR(1): ids of the LR(1) states with the same core (set by attachMergedLR1States) */
   mergedFrom?: number[];
-  /** IELR(1): true if this state was split from an LALR core to isolate lookaheads and eliminate spurious conflicts */
+  /** IELR(1): the LR(1) states with this core were not all merged into one state (the core has several IELR(1) states) */
   isSplit?: boolean;
-  /** IELR(1): educational explanation of lookahead isolation */
-  ielrAnnotation?: { en: string; cz: string };
+  /** IELR(1): why the LR(1) states of this core were split (in the order of the splits that led to this state) */
+  splitReasons?: IELRSplitReason[];
+}
+
+/**
+ * Why IELR(1) did not merge LR(1) states with the same core:
+ * - conflict: on `symbol` the merged state would act differently from some
+ *   of the LR(1) states after conflict resolution (see buildIELR1Automaton);
+ *   `mergedRaw` is the cell of the merged state, `merged` its resolved
+ *   action, `parts` the different resolved actions of the LR(1) states.
+ *   With `newConflict` the resolved action would be the same, but the merged
+ *   cell would be a conflict that precedence does not resolve while none of
+ *   the LR(1) states has such a conflict on `symbol`;
+ * - successor: the states the LR(1) states go to over `symbol` were split,
+ *   so this state has to be split too (GOTO must stay deterministic).
+ */
+export type IELRSplitReason =
+  | { kind: 'conflict'; symbol: string; mergedRaw: LRCellAction[]; merged: LRCellAction[]; parts: LRCellAction[][]; newConflict: boolean }
+  | { kind: 'successor'; symbol: string };
+
+/** An action of a table cell without the target state (enough to compare cells). */
+export interface LRCellAction {
+  type: 'shift' | 'reduce' | 'accept';
+  production?: Production;
 }
 
 /**
@@ -453,267 +476,268 @@ export function attachMergedLR1States(lalr: LRAutomaton, lr1: LRAutomaton): void
 }
 
 /**
- * Build the IELR(1) automaton (Inadequacy Elimination LR(1) - Denny & Malloy 2008, 2010).
+ * Build the IELR(1) automaton.
  *
- * Starts from the canonical LR(1) automaton. Partitions the LR(1) states by their LR(0) core.
- * Detects whether merging the core group introduces any spurious conflicts (inadequacies that do
- * not exist in any constituent LR(1) state).
- * If spurious conflicts exist, splits only the necessary states so that conflicting lookaheads
- * are segregated into distinct sub-states, propagating splits backward only where needed to preserve
- * deterministic transitions.
+ * IELR(1) (Denny & Malloy 2010) looks for an automaton with few states whose
+ * parser acts exactly like the canonical LR(1) parser after conflict
+ * resolution: precedence and associativity, otherwise the default of Yacc and
+ * Bison (shift before reduce, the earlier rule in a reduce/reduce conflict).
+ * It starts from LALR(1) and splits a state only where merging the LR(1)
+ * states of its core would change a resolved action. Denny & Malloy (and GNU
+ * Bison since 2.5, %define lr.type ielr) compute it from the LALR(1)
+ * automaton with lookahead annotations, without building LR(1). This tool
+ * computes the same kind of result more simply from the canonical LR(1)
+ * automaton:
  *
- * If the grammar has no spurious conflicts, produces the exact same number of states as LALR(1).
- * If the grammar is LR(1) but not LALR(1), eliminates all spurious conflicts without the state explosion
- * of canonical LR(1).
+ * 1. The LR(1) states with the same LR(0) core form one group (that is LALR(1)).
+ * 2. A group is split when merging it changes an action: on some terminal t,
+ *    an LR(1) state that has an action on t would get a different resolved
+ *    action, or the merged cell would be a conflict that precedence does not
+ *    resolve although none of the LR(1) states has one on t (so a grammar
+ *    whose LR(1) table has no conflicts gets none). The parts are the states
+ *    with the same resolved action; states without any action on t join a
+ *    part (they only report the error after a reduction, as in LALR(1)).
+ * 3. A group is split when its states go over some symbol into different groups.
+ * 4. Repeat until nothing changes; number the groups in the order of a
+ *    breadth-first search like the other automata (the numbering of LALR(1)
+ *    when nothing is split).
+ *
+ * In every state, wherever one of its LR(1) states has an action, the
+ * resolved action is that of the LR(1) state: the parser behaves like
+ * canonical LR(1) after conflict resolution. The raw table can therefore show
+ * a conflict in a merged state where one of the LR(1) states had none (the
+ * resolved action is the same), but only on a symbol where another of its
+ * LR(1) states has a conflict too. When merging changes no resolved action,
+ * the result has the states of LALR(1) (for grammars without non-generating
+ * symbols; with them canonical LR(1), and so IELR(1), can have fewer states
+ * than LR(0)). The splitting is greedy, so the state count is not guaranteed
+ * to be the smallest possible.
  */
 export function buildIELR1Automaton(
   g: Grammar,
   analysis: GrammarAnalysis,
-  lr1Given?: LRAutomaton
+  lr1Given?: LRAutomaton,
+  options: { usePrecedence?: boolean } = {}
 ): LRAutomaton {
-  return runJob(buildIELR1AutomatonSteps(g, analysis, runToEnd(), lr1Given))!;
+  return runJob(buildIELR1AutomatonSteps(g, analysis, runToEnd(), lr1Given, options))!;
+}
+
+const cellActionKey = (a: LRCellAction) => (a.type === 'reduce' ? `r${a.production!.id}` : a.type === 'shift' ? 's' : 'acc');
+const cellKey = (cell: LRCellAction[]) => cell.map(cellActionKey).sort().join(',');
+// shift first, then the rules by number (accept is the rule 0)
+const cellOrder = (a: LRCellAction) => (a.type === 'shift' ? -1 : a.type === 'accept' ? 0 : a.production!.id);
+const sortCell = (cell: LRCellAction[]) => [...cell].sort((a, b) => cellOrder(a) - cellOrder(b));
+
+/** The elements of `xs` grouped by `key`, the groups in the order of their first element. */
+function groupBy<T>(xs: T[], key: (x: T) => string): T[][] {
+  const by = new Map<string, T[]>();
+  for (const x of xs) {
+    const k = key(x);
+    if (!by.has(k)) by.set(k, []);
+    by.get(k)!.push(x);
+  }
+  return [...by.values()];
 }
 
 export function* buildIELR1AutomatonSteps(
   g: Grammar,
   analysis: GrammarAnalysis,
   control: JobControl,
-  lr1Given?: LRAutomaton
+  lr1Given?: LRAutomaton,
+  options: { usePrecedence?: boolean } = {}
 ): Job<LRAutomaton | null> {
   const lr1 = lr1Given ?? (yield* buildLR1AutomatonSteps(g, analysis, control));
   if (!lr1) return null;
 
-  yield { en: 'IELR(1): analyzing spurious conflicts and state partitioning', cz: 'IELR(1): analýza parazitních kolizí a dělení stavů' };
+  yield { en: 'IELR(1): merging the LR(1) states with equal cores', cz: 'IELR(1): slučování stavů LR(1) se stejným jádrem' };
   if (control.stop) return null;
 
+  const precedence = options.usePrecedence !== false && g.precedence && g.precedence.levels.length > 0 ? g.precedence : undefined;
+  const terminalCols = [...g.terminals, END_MARKER];
   const coreKeyOf = (s: LRState) => [...new Set(s.items0.filter(isKernel).map(lr0ItemKey))].sort().join('|');
 
-  // 1. Initial partition: group LR(1) states by LR(0) core
-  const coreMap = new Map<string, number[]>();
-  for (const s of lr1.states) {
-    const k = coreKeyOf(s);
-    if (!coreMap.has(k)) coreMap.set(k, []);
-    coreMap.get(k)!.push(s.id);
-  }
-
-  // A partition is a list of blocks, where each block is an array of LR(1) state IDs
-  let partition: number[][] = Array.from(coreMap.values());
-
-  // Helper: actions of an individual LR(1) state
-  const stateActions = (sId: number): Map<string, Set<string>> => {
-    const s = lr1.states[sId];
-    const acts = new Map<string, Set<string>>();
-    const addAct = (sym: string, desc: string) => {
-      if (!acts.has(sym)) acts.set(sym, new Set());
-      acts.get(sym)!.add(desc);
+  // The non-empty cells of the action table of every LR(1) state (shift without its target)
+  const cells: Map<string, LRCellAction[]>[] = lr1.states.map(s => {
+    const row = new Map<string, LRCellAction[]>();
+    const add = (t: string, a: LRCellAction) => {
+      const cell = row.get(t) ?? [];
+      if (!cell.some(b => cellActionKey(b) === cellActionKey(a))) cell.push(a);
+      row.set(t, cell);
     };
-    if (s.items1) {
-      for (const it of s.items1) {
-        if (it.dotIndex === it.production.rhs.length) {
-          if (it.production.id === 0 && it.lookahead === END_MARKER) {
-            addAct(END_MARKER, 'accept');
-          } else if (it.production.id !== 0) {
-            addAct(it.lookahead, `r${it.production.id}`);
-          }
-        } else {
-          const X = it.production.rhs[it.dotIndex];
-          if (g.terminals.has(X)) {
-            addAct(X, 'shift');
-          }
-        }
-      }
+    for (const sym of s.transitions.keys()) if (g.terminals.has(sym)) add(sym, { type: 'shift' });
+    for (const it of s.items1 || []) {
+      if (it.dotIndex !== it.production.rhs.length) continue;
+      if (it.production.id !== 0) add(it.lookahead, { type: 'reduce', production: it.production });
+      else if (it.lookahead === END_MARKER) add(END_MARKER, { type: 'accept' });
     }
-    return acts;
+    return row;
+  });
+  /**
+   * A cell after conflict resolution: by precedence as in buildLRTable ([] =
+   * error by %nonassoc), otherwise Bison's default (shift before reduce, the
+   * earlier rule in a reduce/reduce conflict); `byDefault` = a conflict
+   * precedence does not resolve.
+   */
+  const resolveInfo = (t: string, cell: LRCellAction[]): { cell: LRCellAction[]; byDefault: boolean } => {
+    if (cell.length <= 1) return { cell, byDefault: false };
+    if (precedence) {
+      const r = resolveByPrecedence(precedence, g, -1, t, cell as LRAction[]);
+      if (r) return { cell: r.chosen ? [r.chosen] : [], byDefault: false };
+    }
+    return { cell: [sortCell(cell)[0]], byDefault: true };
+  };
+  const resolve = (t: string, cell: LRCellAction[]) => resolveInfo(t, cell).cell;
+  const resolvedKey = (t: string, cell: LRCellAction[]) => {
+    const r = resolve(t, cell);
+    return r.length > 0 ? cellKey(r) : '!error';
+  };
+  const own: Map<string, string>[] = cells.map(row => new Map([...row].map(([t, cell]) => [t, resolvedKey(t, cell)] as const)));
+  const ownByDefault: Set<string>[] = cells.map(row => new Set([...row].filter(([t, cell]) => resolveInfo(t, cell).byDefault).map(([t]) => t)));
+  const union = (members: number[], t: string): LRCellAction[] => {
+    const out: LRCellAction[] = [];
+    for (const s of members) {
+      for (const a of cells[s].get(t) ?? []) if (!out.some(b => cellActionKey(b) === cellActionKey(a))) out.push(a);
+    }
+    return out;
+  };
+  /**
+   * Merging `members` changes something on t: the resolved action of one of
+   * them, or it creates a conflict precedence does not resolve where none of
+   * them has one.
+   */
+  const changesOn = (members: number[], t: string): boolean => {
+    const u = union(members, t);
+    if (u.length === 0) return false;
+    const k = resolvedKey(t, u);
+    if (members.some(s => own[s].has(t) && own[s].get(t) !== k)) return true;
+    return resolveInfo(t, u).byDefault && !members.some(s => ownByDefault[s].has(t));
+  };
+  /** The first terminal on which merging `members` changes something, or null. */
+  const changedOn = (members: number[]): string | null => terminalCols.find(t => changesOn(members, t)) ?? null;
+
+  interface Group { members: number[]; reasons: IELRSplitReason[] }
+
+  /** Splits a group whose merge changes something on t into parts that do not. */
+  const splitByCell = (grp: Group, t: string): Group[] => {
+    const withAction = grp.members.filter(s => cells[s].has(t));
+    const parts: number[][] = [];
+    for (const same of groupBy(withAction, s => own[s].get(t)!)) {
+      // Equal resolved actions can still merge into a different one or into a new
+      // conflict (two conflicts resolved by precedence give three actions): then by the cell
+      if (!changesOn(same, t)) parts.push(same);
+      else parts.push(...groupBy(same, s => cellKey(cells[s].get(t)!)));
+    }
+    // A state without an action on t joins the first part it can be merged with (otherwise the first one)
+    for (const s of grp.members.filter(s => !cells[s].has(t))) {
+      (parts.find(p => changedOn([...p, s]) === null) ?? parts[0]).push(s);
+    }
+    for (const p of parts) p.sort((a, b) => a - b);
+    const mergedRaw = union(grp.members, t);
+    const merged = resolveInfo(t, mergedRaw);
+    const partCells = groupBy(parts.map(p => sortCell(resolve(t, union(p, t)))), cell => cellKey(cell) || '!error').map(same => same[0]);
+    const newConflict = merged.byDefault && !grp.members.some(s => ownByDefault[s].has(t)) &&
+      !grp.members.some(s => own[s].has(t) && own[s].get(t) !== resolvedKey(t, mergedRaw));
+    const reason: IELRSplitReason = { kind: 'conflict', symbol: t, mergedRaw: sortCell(mergedRaw), merged: sortCell(merged.cell), parts: partCells, newConflict };
+    return parts.map(members => ({ members, reasons: [...grp.reasons, reason] }));
   };
 
-  // Precompute actions of individual canonical LR(1) states
-  const individualActions = new Map<number, Map<string, Set<string>>>();
-  for (const s of lr1.states) {
-    individualActions.set(s.id, stateActions(s.id));
-  }
-
-  const hasIndividualConflict = (sId: number, t: string, actA: string, actB: string) => {
-    const acts = individualActions.get(sId)?.get(t);
-    return acts ? acts.has(actA) && acts.has(actB) : false;
+  // 1. One group per LR(0) core (= LALR(1))
+  let groups: Group[] = groupBy(lr1.states.map(s => s.id), id => coreKeyOf(lr1.states[id])).map(members => ({ members, reasons: [] }));
+  const groupIndex = () => {
+    const of = new Array<number>(lr1.states.length);
+    groups.forEach((grp, i) => grp.members.forEach(s => (of[s] = i)));
+    return of;
   };
 
-  // Partition refinement loop:
-  // Iterate until no block has spurious conflicts, and transitions between blocks are deterministic.
-  let changed = true;
-  while (changed) {
+  // 2./3. Split until every group keeps the actions of its LR(1) states and the transitions are deterministic
+  for (let changed = true; changed; ) {
     changed = false;
     yield undefined;
     if (control.stop) return null;
-
-    // Map each LR(1) state ID to its current block index
-    const stateToBlock = new Map<number, number>();
-    for (let bIdx = 0; bIdx < partition.length; bIdx++) {
-      for (const sId of partition[bIdx]) stateToBlock.set(sId, bIdx);
+    const groupOf = groupIndex();
+    const successor = (s: number, X: string) => {
+      const t = lr1.states[s].transitions.get(X);
+      return t === undefined ? 'none' : String(groupOf[t]);
+    };
+    const next: Group[] = [];
+    for (const grp of groups) {
+      if (grp.members.length > 1) {
+        const t = changedOn(grp.members);
+        if (t !== null) {
+          next.push(...splitByCell(grp, t));
+          changed = true;
+          continue;
+        }
+        const X = lr1.symbols.find(X => new Set(grp.members.map(s => successor(s, X))).size > 1);
+        if (X !== undefined) {
+          const reason: IELRSplitReason = { kind: 'successor', symbol: X };
+          next.push(...groupBy(grp.members, s => successor(s, X)).map(members => ({ members, reasons: [...grp.reasons, reason] })));
+          changed = true;
+          continue;
+        }
+      }
+      next.push(grp);
     }
+    groups = next;
+  }
 
-    const nextPartition: number[][] = [];
-
-    for (const block of partition) {
-      if (block.length <= 1) {
-        nextPartition.push(block);
-        continue;
-      }
-
-      // Check for spurious conflicts within block
-      const blockActions = new Map<string, Set<string>>();
-      for (const sId of block) {
-        const sActs = individualActions.get(sId)!;
-        for (const [t, acts] of sActs.entries()) {
-          if (!blockActions.has(t)) blockActions.set(t, new Set());
-          for (const a of acts) blockActions.get(t)!.add(a);
-        }
-      }
-
-      let spuriousToken: string | null = null;
-      for (const [t, acts] of blockActions.entries()) {
-        if (acts.size > 1) {
-          const actArr = Array.from(acts);
-          for (let i = 0; i < actArr.length; i++) {
-            for (let j = i + 1; j < actArr.length; j++) {
-              const a1 = actArr[i];
-              const a2 = actArr[j];
-              const genuine = block.some(sId => hasIndividualConflict(sId, t, a1, a2));
-              if (!genuine) {
-                spuriousToken = t;
-                break;
-              }
-            }
-            if (spuriousToken) break;
-          }
-        }
-        if (spuriousToken) break;
-      }
-
-      if (spuriousToken) {
-        // Split block by action on spuriousToken
-        const subBlocks = new Map<string, number[]>();
-        for (const sId of block) {
-          const sActs = individualActions.get(sId)?.get(spuriousToken) || new Set();
-          const key = Array.from(sActs).sort().join(',') || '<none>';
-          if (!subBlocks.has(key)) subBlocks.set(key, []);
-          subBlocks.get(key)!.push(sId);
-        }
-        for (const sub of subBlocks.values()) nextPartition.push(sub);
-        changed = true;
-        continue;
-      }
-
-      // Transition consistency check
-      let transitionSplitSymbol: string | null = null;
-      for (const sym of lr1.symbols) {
-        const targetBlocks = new Set<number>();
-        for (const sId of block) {
-          const s = lr1.states[sId];
-          const tgt = s.transitions.get(sym);
-          if (tgt !== undefined) targetBlocks.add(stateToBlock.get(tgt)!);
-        }
-        if (targetBlocks.size > 1) {
-          transitionSplitSymbol = sym;
-          break;
-        }
-      }
-
-      if (transitionSplitSymbol) {
-        const sym = transitionSplitSymbol;
-        const subBlocks = new Map<string, number[]>();
-        for (const sId of block) {
-          const s = lr1.states[sId];
-          const tgt = s.transitions.get(sym);
-          const key = tgt !== undefined ? String(stateToBlock.get(tgt)!) : 'none';
-          if (!subBlocks.has(key)) subBlocks.set(key, []);
-          subBlocks.get(key)!.push(sId);
-        }
-        for (const sub of subBlocks.values()) nextPartition.push(sub);
-        changed = true;
-        continue;
-      }
-
-      nextPartition.push(block);
+  // 4. Numbering by a breadth-first search from the initial state, symbols in the order of the other builders
+  const groupOf = groupIndex();
+  const order: number[] = [groupOf[0]];
+  const newId = new Map<number, number>([[groupOf[0], 0]]);
+  for (let i = 0; i < order.length; i++) {
+    const rep = lr1.states[groups[order[i]].members[0]];
+    for (const X of lr1.symbols) {
+      const t = rep.transitions.get(X);
+      if (t === undefined || newId.has(groupOf[t])) continue;
+      newId.set(groupOf[t], order.length);
+      order.push(groupOf[t]);
     }
+  }
+  groups.forEach((_, gi) => {
+    if (!newId.has(gi)) {
+      newId.set(gi, order.length);
+      order.push(gi);
+    }
+  });
 
-    partition = nextPartition;
+  const groupsPerCore = new Map<string, number>();
+  for (const grp of groups) {
+    const k = coreKeyOf(lr1.states[grp.members[0]]);
+    groupsPerCore.set(k, (groupsPerCore.get(k) || 0) + 1);
   }
 
-  // Ensure block containing initial state (0) is at index 0
-  const initBlockIdx = partition.findIndex(b => b.includes(0));
-  if (initBlockIdx > 0) {
-    const initBlock = partition.splice(initBlockIdx, 1)[0];
-    partition.unshift(initBlock);
-  }
-
-  const stateToFinalBlock = new Map<number, number>();
-  for (let bIdx = 0; bIdx < partition.length; bIdx++) {
-    for (const sId of partition[bIdx]) stateToFinalBlock.set(sId, bIdx);
-  }
-
-  const coreSplitCounts = new Map<string, number>();
-  for (const block of partition) {
-    const k = coreKeyOf(lr1.states[block[0]]);
-    coreSplitCounts.set(k, (coreSplitCounts.get(k) || 0) + 1);
-  }
-
-  const states: LRState[] = partition.map((block, id) => {
-    const repState = lr1.states[block[0]];
-    const coreKey = coreKeyOf(repState);
-    const isSplit = (coreSplitCounts.get(coreKey) || 0) > 1;
-
-    const itemsByCore = new Map<string, { prod: Production; dot: number; lookaheads: Set<string> }>();
-    for (const sId of block) {
-      const s = lr1.states[sId];
-      if (s.items1) {
-        for (const it of s.items1) {
-          const k = lr0ItemKey(it);
-          if (!itemsByCore.has(k)) {
-            itemsByCore.set(k, { prod: it.production, dot: it.dotIndex, lookaheads: new Set() });
-          }
-          itemsByCore.get(k)!.lookaheads.add(it.lookahead);
-        }
+  const states: LRState[] = order.map((gi, id) => {
+    const grp = groups[gi];
+    const rep = lr1.states[grp.members[0]];
+    const isSplit = (groupsPerCore.get(coreKeyOf(rep)) || 0) > 1;
+    // Lookaheads of an item: the union over the merged LR(1) states
+    const las = new Map<string, Set<string>>();
+    for (const s of grp.members) {
+      for (const it of lr1.states[s].items1 || []) {
+        const k = lr0ItemKey(it);
+        if (!las.has(k)) las.set(k, new Set());
+        las.get(k)!.add(it.lookahead);
       }
     }
-
     const items1: LR1Item[] = [];
-    for (const it0 of repState.items0) {
-      const entry = itemsByCore.get(lr0ItemKey(it0));
-      if (entry) {
-        for (const la of Array.from(entry.lookaheads).sort()) {
-          items1.push({ production: entry.prod, dotIndex: entry.dot, lookahead: la });
-        }
-      }
+    for (const it of rep.items0) {
+      for (const la of [...(las.get(lr0ItemKey(it)) || [])].sort()) items1.push({ production: it.production, dotIndex: it.dotIndex, lookahead: la });
     }
-
     const transitions = new Map<string, number>();
-    for (const sId of block) {
-      const s = lr1.states[sId];
-      for (const [sym, tgt] of s.transitions.entries()) {
-        const finalTgt = stateToFinalBlock.get(tgt)!;
-        transitions.set(sym, finalTgt);
-      }
+    for (const X of lr1.symbols) {
+      const t = rep.transitions.get(X);
+      if (t !== undefined) transitions.set(X, newId.get(groupOf[t])!);
     }
-
-    const isAccepting = block.some(sId => lr1.states[sId].isAccepting);
-
-    let ielrAnnotation: { en: string; cz: string } | undefined = undefined;
-    if (isSplit) {
-      ielrAnnotation = {
-        en: `IELR(1) split state (from LR(1) states: ${block.join(', ')}). Lookaheads are segregated to eliminate spurious LALR(1) conflicts while maintaining minimal state count.`,
-        cz: `IELR(1) rozdělený stav (z LR(1) stavů: ${block.join(', ')}). Symboly dopředu jsou izolovány, aby eliminovaly parazitní LALR(1) kolize při zachování minimálního počtu stavů.`
-      };
-    }
-
     return {
       id,
-      items0: repState.items0,
+      items0: rep.items0,
       items1,
       transitions,
-      isAccepting,
-      mergedFrom: block,
+      isAccepting: grp.members.some(s => lr1.states[s].isAccepting),
+      mergedFrom: grp.members,
       isSplit,
-      ielrAnnotation
+      splitReasons: isSplit ? grp.reasons : undefined
     };
   });
 

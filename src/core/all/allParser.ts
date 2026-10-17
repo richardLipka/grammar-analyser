@@ -1,16 +1,23 @@
 /**
  * Interactive ALL(*) Parser & Simulator
  *
- * Implements the runtime execution and step-by-step top-down simulation
- * with dynamic lookahead analysis:
- * Parr, T., Harwell, S., & Fisher, K. (2014).
- * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14.
+ * Top-down parsing with adaptive prediction (Function 1 `parse` of
+ * Parr, T., Harwell, S., & Fisher, K. (2014). Adaptive LL(*) Parsing:
+ * The Power of Dynamic Analysis. ACM PLDI '14, §5.2).
+ *
+ * The parser keeps the call stack γ of ATN return states (the follow state q of
+ * every active rule edge p –B→ q). At a non-terminal with several productions it
+ * calls adaptivePredict with that stack: SLL prediction with the lookahead DFA
+ * first, full LL with γ when SLL reports a conflict.
  */
 
 import { Grammar, Production, formatProduction, EPSILON } from '../ast/grammar';
-import { GrammarAnalysis } from '../analyser/grammarAnalyser';
-import { ATN, ATNDecisionPoint, buildATN } from './allAtn';
-import { LookaheadDFA, createLookaheadDFA, adaptivePredict, PredictionResult, LookaheadTraceStep } from './allPredictor';
+import { GrammarAnalysis, computeLeftRecursion, computeNullable } from '../analyser/grammarAnalyser';
+import { ATN, buildATN, callSiteKey } from './allAtn';
+import {
+  LookaheadDFA, DFAClock, createLookaheadDFA, adaptivePredict, PredictionResult,
+  LookaheadTraceStep, ATNConfig, describeStack
+} from './allPredictor';
 import { DerivationNode, cloneTree } from '../generator/wordGenerator';
 
 export interface ALLCompatibilityResult {
@@ -32,15 +39,25 @@ export interface ALLDecisionEvent {
   lookaheadDepth: number;
   dfaStateId: number;
   trace?: LookaheadTraceStep[];
+  /** SLL conflict → full LL prediction with the parser stack */
+  usedLL?: boolean;
+  /** True ambiguity found by LL, resolved to the minimum alternative */
   isAmbiguous?: boolean;
+  ambiguousAlts?: number[];
 }
+
+export type ALLStepType =
+  | 'decision_start' | 'lookahead_scan' | 'decision_resolved' | 'expand' | 'match' | 'error' | 'accept' | 'limit';
 
 export interface ALLParseStep {
   stepIndex: number;
   inputIndex: number;
   currentToken?: string;
   remainingTokens: string[];
+  /** Active non-terminals (outermost first) */
   callStack: string[];
+  /** ATN call stack γ of return states (top first), readable */
+  atnStack?: string;
   action: string;
   actionCz: string;
   decisionEvent?: ALLDecisionEvent;
@@ -48,41 +65,68 @@ export interface ALLParseStep {
   isMatch?: boolean;
   activeDfaStateId?: number;
   activeDecisionNumber?: number;
+  /** DFA edge just followed or added (lookahead scan steps) */
+  activeEdge?: { from: number; to: number };
+  /** LL configurations of a lookahead step (not stored in the DFA) */
+  llConfigs?: ATNConfig[];
+  predictionMode?: 'SLL' | 'LL';
   lookaheadTokens?: string[];
   viableAlts?: number[];
-  subStepType?: 'decision_start' | 'lookahead_scan' | 'decision_resolved' | 'expand' | 'match';
+  /** Value of the DFA clock: the DFA as it was after this step has the states/edges with createdAt ≤ dfaClock */
+  dfaClock: number;
+  subStepType?: ALLStepType;
 }
 
 export interface ALLParseOptions {
   detailedLookaheadSteps?: boolean;
 }
 
+/**
+ * accepted: w ∈ L(G) (a derivation tree was built);
+ * rejected: syntax error, w ∉ L(G) (ALL(*) is exact for non-left-recursive grammars);
+ * limit: a safety limit stopped the run, membership is undecided;
+ * notApplicable: the grammar is left-recursive, ALL(*) cannot be used.
+ */
+export type ALLOutcome = 'accepted' | 'rejected' | 'limit' | 'notApplicable';
+
+export type ALLDfaCache = Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>;
+
 export interface ALLSimulationResult {
   accepted: boolean;
+  outcome: ALLOutcome;
   steps: ALLParseStep[];
   finalTree?: DerivationNode;
   maxLookaheadDepth: number;
   decisionsMade: number;
+  /** Decisions where SLL found a conflict and LL decided */
+  llFallbacks: number;
+  /** Decisions where LL found a true ambiguity */
+  ambiguities: number;
+  /** Lookahead DFA cache after the run */
+  dfaCache: ALLDfaCache;
   error?: string;
   errorCz?: string;
 }
 
+function leftRecursiveRules(grammar: Grammar, analysis?: GrammarAnalysis): string[] {
+  const info = analysis?.leftRecursion ?? computeLeftRecursion(grammar, computeNullable(grammar));
+  return Array.from(info.kinds.keys()).sort();
+}
+
 /**
- * Checks whether the grammar is compatible with standard ALL(*) top-down parsing.
- * ALL(*) handles all context-free grammars that do not contain direct or indirect left recursion.
+ * Checks whether the grammar is compatible with ALL(*) parsing.
+ * ALL(*) parses every context-free grammar without left recursion (immediate,
+ * indirect or hidden); Parr et al. 2014, §2.2 and Theorem 6.1.
  */
 export function checkALLCompatibility(grammar: Grammar, analysis: GrammarAnalysis): ALLCompatibilityResult {
-  const leftRecursiveRules = analysis.leftRecursion?.kinds
-    ? Array.from(analysis.leftRecursion.kinds.keys()).sort()
-    : Array.from(new Set(grammar.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs))).sort();
-
+  const lr = leftRecursiveRules(grammar, analysis);
   const reasons: string[] = [];
   const reasonsCz: string[] = [];
 
-  const hasLeftRecursion = leftRecursiveRules.length > 0;
+  const hasLeftRecursion = lr.length > 0;
   if (hasLeftRecursion) {
-    reasons.push(`Grammar contains left-recursive non-terminals: ${leftRecursiveRules.join(', ')}. Top-down ATN closures require eliminating left recursion first.`);
-    reasonsCz.push(`Gramatika obsahuje levě rekurzivní neterminály: ${leftRecursiveRules.join(', ')}. Shora dolů orientovaný uzávěr ATN vyžaduje nejprve odstranit levou rekurzi.`);
+    reasons.push(`Grammar contains left-recursive non-terminals: ${lr.join(', ')}. ALL(*) prediction and parsing are top-down; left recursion must be removed first.`);
+    reasonsCz.push(`Gramatika obsahuje levě rekurzivní neterminály: ${lr.join(', ')}. Predikce i rozklad ALL(*) postupují shora dolů; levou rekurzi je nutné nejprve odstranit.`);
   }
 
   const atn = buildATN(grammar);
@@ -90,7 +134,7 @@ export function checkALLCompatibility(grammar: Grammar, analysis: GrammarAnalysi
   return {
     canParse: !hasLeftRecursion,
     hasLeftRecursion,
-    leftRecursiveRules,
+    leftRecursiveRules: lr,
     reasons,
     reasonsCz,
     atnStateCount: atn.states.length,
@@ -98,354 +142,314 @@ export function checkALLCompatibility(grammar: Grammar, analysis: GrammarAnalysi
   };
 }
 
+/** Creates the lookahead DFA (start state D0 only) of every decision, sharing one DFA clock. */
+export function createDfaCache(atn: ATN): ALLDfaCache {
+  const clock: DFAClock = { now: 0 };
+  const cache: ALLDfaCache = new Map();
+  for (const dp of atn.decisionPoints) cache.set(dp.decisionNumber, createLookaheadDFA(dp, atn, clock));
+  return cache;
+}
+
+interface Frame {
+  nt: string;
+  node: DerivationNode;
+  prod: Production;
+  alt: number;
+  rhs: string[];
+  pos: number;
+}
+
 /**
- * Simulates ALL(*) parsing on an input token sequence.
+ * Simulates ALL(*) parsing of an input token sequence.
+ *
+ * `dfaCacheMap` may be shared between runs (as in ANTLR, the DFA survives the parse);
+ * by default every run starts with fresh DFAs.
  */
 export function simulateALLParse(
   tokens: string[],
   grammar: Grammar,
   atn: ATN,
-  dfaCacheMap?: Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>,
+  dfaCacheMap?: ALLDfaCache,
   options?: ALLParseOptions
 ): ALLSimulationResult {
-  const dfaCache = dfaCacheMap ?? new Map<number, { dfa: LookaheadDFA; stateKeyMap: Map<string, number> }>();
-
-  // Guard against direct left recursion in top-down simulation
-  const directLeftRecRules = Array.from(new Set(
-    grammar.productions.filter(p => p.rhs.length > 0 && p.rhs[0] === p.lhs).map(p => p.lhs)
-  ));
-  if (directLeftRecRules.length > 0) {
+  // ALL(*) is defined for non-left-recursive grammars only (immediate, indirect or hidden).
+  const lr = leftRecursiveRules(grammar);
+  if (lr.length > 0) {
     return {
+      maxLookaheadDepth: 0,
+      decisionsMade: 0,
+      llFallbacks: 0,
+      ambiguities: 0,
+      dfaCache: dfaCacheMap ?? new Map(),
       accepted: false,
+      outcome: 'notApplicable',
       steps: [{
         stepIndex: 0,
         inputIndex: 0,
         currentToken: tokens[0],
         remainingTokens: [...tokens],
-        callStack: [grammar.startSymbol],
-        action: `Parsing halted: Grammar contains left-recursive rule(s) on [${directLeftRecRules.join(', ')}]. ALL(*) is a top-down parsing algorithm and requires eliminating left recursion (Parr, Harwell, Fisher 2014, §3).`,
-        actionCz: `Rozklad zastaven: Gramatika obsahuje levě rekurzivní pravidla v neterminálech [${directLeftRecRules.join(', ')}]. ALL(*) je algoritmus shora dolů a vyžaduje předchozí odstranění levé rekurze (Parr, Harwell, Fisher 2014, §3).`,
-        derivationTree: undefined
+        callStack: [],
+        dfaClock: 0,
+        subStepType: 'error',
+        action: `ALL(*) is not applicable: the grammar is left-recursive in [${lr.join(', ')}]. Prediction and parsing are top-down, so left recursion must be removed first (Parr, Harwell, Fisher 2014, §2.2). The word was not tested.`,
+        actionCz: `ALL(*) nelze použít: gramatika je levě rekurzivní v [${lr.join(', ')}]. Predikce i rozklad postupují shora dolů, levou rekurzi je proto nutné nejprve odstranit (Parr, Harwell, Fisher 2014, §2.2). Slovo nebylo testováno.`
       }],
-      maxLookaheadDepth: 0,
-      decisionsMade: 0,
-      error: `Grammar contains left-recursive non-terminals: ${directLeftRecRules.join(', ')}.`,
-      errorCz: `Gramatika obsahuje levě rekurzivní neterminály: ${directLeftRecRules.join(', ')}.`
+      error: `Grammar contains left-recursive non-terminals: ${lr.join(', ')}.`,
+      errorCz: `Gramatika obsahuje levě rekurzivní neterminály: ${lr.join(', ')}.`
     };
   }
 
-  // Ensure DFA caches exist for all decision points
+  const dfaCache = dfaCacheMap ?? createDfaCache(atn);
   for (const dp of atn.decisionPoints) {
     if (!dfaCache.has(dp.decisionNumber)) {
-      dfaCache.set(dp.decisionNumber, createLookaheadDFA(dp, atn));
+      const clock = dfaCache.values().next().value?.dfa.clock ?? { now: 0 };
+      dfaCache.set(dp.decisionNumber, createLookaheadDFA(dp, atn, clock));
     }
   }
+  const clock: DFAClock = dfaCache.values().next().value?.dfa.clock ?? { now: 0 };
+
+  const base = {
+    maxLookaheadDepth: 0,
+    decisionsMade: 0,
+    llFallbacks: 0,
+    ambiguities: 0,
+    dfaCache
+  };
 
   const steps: ALLParseStep[] = [];
   let tokenIdx = 0;
   let maxLookahead = 0;
   let decisionsCount = 0;
+  let llFallbacks = 0;
+  let ambiguities = 0;
 
   let nodeIdCounter = 0;
-  function createTreeNode(symbol: string, isTerminal: boolean): DerivationNode {
-    return {
-      id: `all_node_${nodeIdCounter++}`,
-      symbol,
-      isTerminal,
-      children: []
-    };
-  }
+  const createTreeNode = (symbol: string, isTerminal: boolean): DerivationNode =>
+    ({ id: `all_node_${nodeIdCounter++}`, symbol, isTerminal, children: [] });
 
   const rootNode = createTreeNode(grammar.startSymbol, false);
-  const callStack: string[] = [grammar.startSymbol];
+  const frames: Frame[] = [];
+  /** γ: return states of the active rule calls, top first (the start rule has none) */
+  const atnStack: number[] = [];
 
-  steps.push({
-    stepIndex: 0,
-    inputIndex: 0,
-    currentToken: tokens[0],
-    remainingTokens: [...tokens],
-    callStack: [...callStack],
-    action: `Initial state: ready to parse start symbol '${grammar.startSymbol}'`,
-    actionCz: `Počáteční stav: připraveno k rozkladu startovacího symbolu '${grammar.startSymbol}'`,
-    derivationTree: cloneTree(rootNode)
-  });
+  // Limits proportional to the input. For a non-left-recursive grammar the nesting
+  // depth is at most (n + 1)·|N| (a non-terminal cannot be active twice at the same
+  // input position), so the depth limit is never reached by a correct run.
+  const n = tokens.length;
+  const nts = Math.max(1, grammar.nonTerminals.size);
+  const MAX_DEPTH = (n + 1) * nts + 2;
+  const MAX_EXPANSIONS = 20000 + 200 * (n + 1) * nts;
+  let expansions = 0;
 
-  const MAX_PARSE_STEPS = 500;
-  let stepCounter = 0;
-  const activeCallsAtPos = new Set<string>();
-
-  function parseNonTerminal(nt: string, treeNode: DerivationNode): boolean {
-    if (stepCounter++ > MAX_PARSE_STEPS) {
-      steps.push({
-        stepIndex: steps.length,
-        inputIndex: tokenIdx,
-        remainingTokens: tokens.slice(tokenIdx),
-        callStack: [...callStack],
-        action: `Parsing terminated: step limit exceeded (${MAX_PARSE_STEPS})`,
-        actionCz: `Rozklad ukončen: překročen limit počtu kroků (${MAX_PARSE_STEPS})`,
-        derivationTree: cloneTree(rootNode)
-      });
-      return false;
-    }
-
-    const callKey = `${nt}@${tokenIdx}`;
-    if (activeCallsAtPos.has(callKey)) {
-      steps.push({
-        stepIndex: steps.length,
-        inputIndex: tokenIdx,
-        remainingTokens: tokens.slice(tokenIdx),
-        callStack: [...callStack],
-        action: `Parsing halted: recursive depth exceeded for '${nt}' without consuming input (left recursion cycle detected)`,
-        actionCz: `Rozklad zastaven: překročena hloubka rekurze pro '${nt}' bez přečtení vstupu (detekován cyklus levé rekurze)`,
-        derivationTree: cloneTree(rootNode)
-      });
-      return false;
-    }
-
-    if (callStack.length > 50) {
-      steps.push({
-        stepIndex: steps.length,
-        inputIndex: tokenIdx,
-        remainingTokens: tokens.slice(tokenIdx),
-        callStack: [...callStack],
-        action: `Parsing halted: maximum call stack depth exceeded (50)`,
-        actionCz: `Rozklad zastaven: překročena maximální hloubka zásobníku volání (50)`,
-        derivationTree: cloneTree(rootNode)
-      });
-      return false;
-    }
-
-    activeCallsAtPos.add(callKey);
-    try {
-      return doParseNonTerminal(nt, treeNode);
-    } finally {
-      activeCallsAtPos.delete(callKey);
-    }
-  }
-
-  function doParseNonTerminal(nt: string, treeNode: DerivationNode): boolean {
-
-    const prods = grammar.productions.filter(p => p.lhs === nt);
-    if (prods.length === 0) {
-      steps.push({
-        stepIndex: steps.length,
-        inputIndex: tokenIdx,
-        remainingTokens: tokens.slice(tokenIdx),
-        callStack: [...callStack],
-        action: `Syntax error: non-terminal '${nt}' has no productions`,
-        actionCz: `Syntaktická chyba: neterminál '${nt}' nemá žádná pravidla`,
-        derivationTree: cloneTree(rootNode)
-      });
-      return false;
-    }
-
-    let chosenProd: Production;
-    let decisionEvent: ALLDecisionEvent | undefined;
-
-    if (prods.length === 1) {
-      chosenProd = prods[0];
-    } else {
-      // Multiple productions: adaptive lookahead prediction
-      const decision = atn.nonTerminalToDecision.get(nt);
-      if (!decision) {
-        chosenProd = prods[0];
-      } else {
-        decisionsCount++;
-        const { dfa, stateKeyMap } = dfaCache.get(decision.decisionNumber)!;
-        const pred: PredictionResult = adaptivePredict(decision, tokens, tokenIdx, atn, dfa, stateKeyMap);
-
-        if (pred.lookaheadDepth > maxLookahead) {
-          maxLookahead = pred.lookaheadDepth;
-        }
-
-        const altIndex = pred.predictedAlt - 1;
-        chosenProd = prods[altIndex] ?? prods[0];
-
-        decisionEvent = {
-          decisionNumber: decision.decisionNumber,
-          nonTerminal: nt,
-          predictedAlt: pred.predictedAlt,
-          production: chosenProd,
-          lookaheadTokens: pred.lookaheadTokens,
-          lookaheadDepth: pred.lookaheadDepth,
-          dfaStateId: pred.dfaStateId,
-          trace: pred.trace,
-          isAmbiguous: pred.isAmbiguous
-        };
-
-        // If detailed lookahead stepping is enabled, emit step-by-step lookahead transitions
-        if (options?.detailedLookaheadSteps) {
-          steps.push({
-            stepIndex: steps.length,
-            inputIndex: tokenIdx,
-            currentToken: tokens[tokenIdx],
-            remainingTokens: tokens.slice(tokenIdx),
-            callStack: [...callStack],
-            action: `[Lookahead D${decision.decisionNumber}] Start adaptive prediction for '${nt}' in Lookahead DFA at state s0. Viable alternatives: [${prods.map((_, i) => i + 1).join(', ')}]`,
-            actionCz: `[Dopředný pohled D${decision.decisionNumber}] Zahájení adaptivní predikce pro '${nt}' v automatu Lookahead DFA ze stavu s0. Živé alternativy: [${prods.map((_, i) => i + 1).join(', ')}]`,
-            activeDfaStateId: 0,
-            activeDecisionNumber: decision.decisionNumber,
-            lookaheadTokens: [],
-            viableAlts: prods.map((_, i) => i + 1),
-            subStepType: 'decision_start',
-            derivationTree: cloneTree(rootNode)
-          });
-
-          if (pred.trace && pred.trace.length > 0) {
-            for (let tIdx = 0; tIdx < pred.trace.length; tIdx++) {
-              const tr = pred.trace[tIdx];
-              steps.push({
-                stepIndex: steps.length,
-                inputIndex: tokenIdx,
-                currentToken: tr.token ?? tokens[tokenIdx],
-                remainingTokens: tokens.slice(tokenIdx),
-                callStack: [...callStack],
-                action: `[Lookahead D${decision.decisionNumber}] Scanned token '${tr.token ?? '$'}' -> reached Lookahead DFA state s${tr.dfaStateId}. Viable alternatives: [${tr.remainingAlts.join(', ')}] (${tr.action})`,
-                actionCz: `[Dopředný pohled D${decision.decisionNumber}] Přečten token '${tr.token ?? '$'}' -> dosažen stav DFA s${tr.dfaStateId}. Živé alternativy: [${tr.remainingAlts.join(', ')}] (${tr.actionCz})`,
-                activeDfaStateId: tr.dfaStateId,
-                activeDecisionNumber: decision.decisionNumber,
-                lookaheadTokens: pred.lookaheadTokens.slice(0, tIdx + 1),
-                viableAlts: tr.remainingAlts,
-                subStepType: 'lookahead_scan',
-                derivationTree: cloneTree(rootNode)
-              });
-            }
-          }
-        }
-      }
-    }
-
-    const prodStr = formatProduction(chosenProd);
-
-    // Apply production expansion
-    if (chosenProd.rhs.length === 0 || (chosenProd.rhs.length === 1 && chosenProd.rhs[0] === EPSILON)) {
-      const epsNode = createTreeNode(EPSILON, true);
-      treeNode.children = [epsNode];
-
-      steps.push({
-        stepIndex: steps.length,
-        inputIndex: tokenIdx,
-        currentToken: tokens[tokenIdx],
-        remainingTokens: tokens.slice(tokenIdx),
-        callStack: [...callStack],
-        action: decisionEvent
-          ? `Adaptive decision D${decisionEvent.decisionNumber}: scanned lookahead [${decisionEvent.lookaheadTokens.join(', ')}] (depth: ${decisionEvent.lookaheadDepth}) -> expand ${prodStr}`
-          : `Expand single alternative: ${prodStr}`,
-        actionCz: decisionEvent
-          ? `Adaptivní rozhodnutí D${decisionEvent.decisionNumber}: přečten dopředný pohled [${decisionEvent.lookaheadTokens.join(', ')}] (hloubka: ${decisionEvent.lookaheadDepth}) -> expanze ${prodStr}`
-          : `Expanze jediné alternativy: ${prodStr}`,
-        decisionEvent,
-        activeDfaStateId: decisionEvent?.dfaStateId,
-        activeDecisionNumber: decisionEvent?.decisionNumber,
-        subStepType: decisionEvent ? 'decision_resolved' : 'expand',
-        derivationTree: cloneTree(rootNode)
-      });
-      return true;
-    }
-
-    // Create child tree nodes
-    const childNodes: DerivationNode[] = chosenProd.rhs.map(sym =>
-      createTreeNode(sym, grammar.terminals.has(sym))
-    );
-    treeNode.children = childNodes;
-
+  const snapshot = () => cloneTree(rootNode);
+  const callNames = () => frames.map(f => f.nt);
+  const gamma = () => describeStack(atn, atnStack);
+  const step = (s: Omit<ALLParseStep, 'stepIndex' | 'inputIndex' | 'remainingTokens' | 'callStack' | 'derivationTree' | 'dfaClock' | 'atnStack'> & { dfaClock?: number }) => {
     steps.push({
       stepIndex: steps.length,
       inputIndex: tokenIdx,
       currentToken: tokens[tokenIdx],
       remainingTokens: tokens.slice(tokenIdx),
-      callStack: [...callStack],
-      action: decisionEvent
-        ? `Adaptive decision D${decisionEvent.decisionNumber}: scanned lookahead [${decisionEvent.lookaheadTokens.join(', ')}] (depth: ${decisionEvent.lookaheadDepth}) -> expand ${prodStr}`
-        : `Expand single alternative: ${prodStr}`,
-      actionCz: decisionEvent
-        ? `Adaptivní rozhodnutí D${decisionEvent.decisionNumber}: přečten dopředný pohled [${decisionEvent.lookaheadTokens.join(', ')}] (hloubka: ${decisionEvent.lookaheadDepth}) -> expanze ${prodStr}`
-        : `Expanze jediné alternativy: ${prodStr}`,
-      decisionEvent,
-      activeDfaStateId: decisionEvent?.dfaStateId,
-      activeDecisionNumber: decisionEvent?.decisionNumber,
-      subStepType: decisionEvent ? 'decision_resolved' : 'expand',
-      derivationTree: cloneTree(rootNode)
+      callStack: callNames(),
+      atnStack: gamma(),
+      derivationTree: snapshot(),
+      dfaClock: clock.now,
+      ...s
     });
+  };
 
-    // Traverse each symbol on RHS
-    for (let i = 0; i < chosenProd.rhs.length; i++) {
-      const sym = chosenProd.rhs[i];
-      const childNode = childNodes[i];
-
-      if (grammar.terminals.has(sym)) {
-        const expected = sym;
-        const actual = tokenIdx < tokens.length ? tokens[tokenIdx] : undefined;
-
-        if (actual === expected) {
-          tokenIdx++;
-          steps.push({
-            stepIndex: steps.length,
-            inputIndex: tokenIdx,
-            currentToken: tokens[tokenIdx],
-            remainingTokens: tokens.slice(tokenIdx),
-            callStack: [...callStack],
-            action: `Match terminal '${expected}'`,
-            actionCz: `Shoda terminálu '${expected}'`,
-            isMatch: true,
-            derivationTree: cloneTree(rootNode)
-          });
-        } else {
-          steps.push({
-            stepIndex: steps.length,
-            inputIndex: tokenIdx,
-            currentToken: actual,
-            remainingTokens: tokens.slice(tokenIdx),
-            callStack: [...callStack],
-            action: `Syntax error: expected terminal '${expected}', found '${actual ?? '$'}'`,
-            actionCz: `Syntaktická chyba: očekáván terminál '${expected}', nalezen '${actual ?? '$'}'`,
-            derivationTree: cloneTree(rootNode)
-          });
-          return false;
-        }
-      } else if (grammar.nonTerminals.has(sym)) {
-        callStack.push(sym);
-        const ok = parseNonTerminal(sym, childNode);
-        callStack.pop();
-        if (!ok) return false;
-      }
-    }
-
-    return true;
-  }
-
-  const success = parseNonTerminal(grammar.startSymbol, rootNode);
-  const fullyConsumed = tokenIdx === tokens.length;
-  const accepted = success && fullyConsumed;
-
-  if (success && !fullyConsumed) {
-    steps.push({
-      stepIndex: steps.length,
-      inputIndex: tokenIdx,
-      remainingTokens: tokens.slice(tokenIdx),
-      callStack: [],
-      action: `Syntax error: unexpected extra tokens after parsing '${grammar.startSymbol}': ${tokens.slice(tokenIdx).join(' ')}`,
-      actionCz: `Syntaktická chyba: neočekávané přebývající tokeny za rozkladem '${grammar.startSymbol}': ${tokens.slice(tokenIdx).join(' ')}`,
-      derivationTree: cloneTree(rootNode)
-    });
-  } else if (accepted) {
-    steps.push({
-      stepIndex: steps.length,
-      inputIndex: tokenIdx,
-      remainingTokens: [],
-      callStack: [],
-      action: `Input accepted! Full parse tree successfully constructed via ALL(*) dynamic lookahead.`,
-      actionCz: `Slovo přijato! Kompletní derivační strom úspěšně zkonstruován pomocí dynamického pohledu ALL(*).`,
-      derivationTree: cloneTree(rootNode)
-    });
-  }
-
-  return {
-    accepted,
+  const finish = (outcome: ALLOutcome, error?: string, errorCz?: string): ALLSimulationResult => ({
+    ...base,
+    accepted: outcome === 'accepted',
+    outcome,
     steps,
-    finalTree: accepted ? rootNode : undefined,
+    finalTree: outcome === 'accepted' ? rootNode : undefined,
     maxLookaheadDepth: maxLookahead,
     decisionsMade: decisionsCount,
-    error: accepted ? undefined : 'Input was rejected by ALL(*) parser'
-  };
+    llFallbacks,
+    ambiguities,
+    error,
+    errorCz
+  });
+
+  step({
+    action: `Initial state: the parser calls the start symbol '${grammar.startSymbol}' with an empty call stack γ = []`,
+    actionCz: `Počáteční stav: analyzátor volá startovací symbol '${grammar.startSymbol}' s prázdným zásobníkem volání γ = []`
+  });
+
+  /** Chooses and applies a production for `nt`; returns an outcome when the run must stop. */
+  function expand(nt: string, node: DerivationNode): { stop?: ALLOutcome; error?: string; errorCz?: string } {
+    if (++expansions > MAX_EXPANSIONS || frames.length >= MAX_DEPTH) {
+      const what = frames.length >= MAX_DEPTH ? `call depth ${MAX_DEPTH}` : `${MAX_EXPANSIONS} expansions`;
+      const whatCz = frames.length >= MAX_DEPTH ? `hloubka volání ${MAX_DEPTH}` : `${MAX_EXPANSIONS} expanzí`;
+      step({
+        subStepType: 'limit',
+        action: `Simulation stopped: safety limit reached (${what}). Membership of the word is undecided.`,
+        actionCz: `Simulace zastavena: dosažen bezpečnostní limit (${whatCz}). Příslušnost slova k jazyku není rozhodnuta.`
+      });
+      return { stop: 'limit', error: `Safety limit reached (${what})`, errorCz: `Dosažen bezpečnostní limit (${whatCz})` };
+    }
+
+    const prods = grammar.productions.filter(p => p.lhs === nt);
+    if (prods.length === 0) {
+      step({
+        subStepType: 'error',
+        action: `Syntax error: non-terminal '${nt}' has no productions`,
+        actionCz: `Syntaktická chyba: neterminál '${nt}' nemá žádná pravidla`
+      });
+      return { stop: 'rejected', error: `Non-terminal '${nt}' has no productions`, errorCz: `Neterminál '${nt}' nemá žádná pravidla` };
+    }
+
+    let alt = 1;
+    let decisionEvent: ALLDecisionEvent | undefined;
+    const decision = prods.length > 1 ? atn.nonTerminalToDecision.get(nt) : undefined;
+
+    if (decision) {
+      decisionsCount++;
+      const { dfa, stateKeyMap } = dfaCache.get(decision.decisionNumber)!;
+      const pred: PredictionResult = adaptivePredict(decision, tokens, tokenIdx, atn, dfa, stateKeyMap, [...atnStack]);
+      maxLookahead = Math.max(maxLookahead, pred.lookaheadDepth);
+      if (pred.usedLL) llFallbacks++;
+      if (pred.isAmbiguous) ambiguities++;
+
+      if (options?.detailedLookaheadSteps) {
+        for (const tr of pred.trace) {
+          step({
+            subStepType: tr.kind === 'start' ? 'decision_start' : 'lookahead_scan',
+            action: `[D${decision.decisionNumber} ${tr.mode}] ${tr.action}`,
+            actionCz: `[D${decision.decisionNumber} ${tr.mode}] ${tr.actionCz}`,
+            activeDecisionNumber: decision.decisionNumber,
+            activeDfaStateId: tr.dfaStateId,
+            activeEdge: tr.fromDfaStateId !== undefined && tr.dfaStateId !== undefined ? { from: tr.fromDfaStateId, to: tr.dfaStateId } : undefined,
+            llConfigs: tr.configs,
+            predictionMode: tr.mode,
+            lookaheadTokens: tr.lookahead,
+            viableAlts: tr.remainingAlts,
+            dfaClock: tr.clock
+          });
+        }
+      }
+
+      if (pred.limitReached) {
+        step({
+          subStepType: 'limit',
+          activeDecisionNumber: decision.decisionNumber,
+          action: `Prediction for '${nt}' stopped at a safety limit. Membership of the word is undecided.`,
+          actionCz: `Predikce pro '${nt}' zastavena bezpečnostním limitem. Příslušnost slova k jazyku není rozhodnuta.`
+        });
+        return { stop: 'limit', error: 'Prediction limit reached', errorCz: 'Dosažen limit predikce' };
+      }
+      if (pred.error) {
+        step({
+          subStepType: 'error',
+          activeDecisionNumber: decision.decisionNumber,
+          activeDfaStateId: pred.dfaStateId,
+          action: `Syntax error: ${pred.error}`,
+          actionCz: `Syntaktická chyba: ${pred.errorCz ?? pred.error}`
+        });
+        return { stop: 'rejected', error: pred.error, errorCz: pred.errorCz };
+      }
+
+      alt = pred.predictedAlt;
+      decisionEvent = {
+        decisionNumber: decision.decisionNumber,
+        nonTerminal: nt,
+        predictedAlt: alt,
+        production: prods[alt - 1],
+        lookaheadTokens: pred.lookaheadTokens,
+        lookaheadDepth: pred.lookaheadDepth,
+        dfaStateId: pred.dfaStateId,
+        trace: pred.trace,
+        usedLL: pred.usedLL,
+        isAmbiguous: pred.isAmbiguous,
+        ambiguousAlts: pred.ambiguousAlts
+      };
+    }
+
+    const chosenProd = prods[alt - 1];
+    const prodStr = formatProduction(chosenProd);
+    const rhs = chosenProd.rhs.length === 1 && chosenProd.rhs[0] === EPSILON ? [] : chosenProd.rhs;
+    node.children = rhs.length === 0
+      ? [createTreeNode(EPSILON, true)]
+      : rhs.map(sym => createTreeNode(sym, !grammar.nonTerminals.has(sym)));
+    frames.push({ nt, node, prod: chosenProd, alt, rhs, pos: 0 });
+
+    if (decisionEvent) {
+      const la = decisionEvent.lookaheadTokens.join(' ');
+      const how = decisionEvent.isAmbiguous
+        ? { en: `LL found an ambiguity {${decisionEvent.ambiguousAlts?.join(', ')}}, minimum alternative chosen`, cz: `LL našlo nejednoznačnost {${decisionEvent.ambiguousAlts?.join(', ')}}, zvolena nejmenší alternativa` }
+        : decisionEvent.usedLL
+          ? { en: 'SLL conflict, decided by LL with the call stack', cz: 'konflikt SLL, rozhodlo LL se zásobníkem volání' }
+          : { en: 'decided by SLL / lookahead DFA', cz: 'rozhodlo SLL / lookahead DFA' };
+      step({
+        subStepType: 'decision_resolved',
+        decisionEvent,
+        activeDecisionNumber: decisionEvent.decisionNumber,
+        activeDfaStateId: decisionEvent.dfaStateId,
+        predictionMode: decisionEvent.usedLL ? 'LL' : 'SLL',
+        action: `Decision D${decisionEvent.decisionNumber} for '${nt}' (lookahead [${la}], ${how.en}) → expand ${prodStr}`,
+        actionCz: `Rozhodnutí D${decisionEvent.decisionNumber} pro '${nt}' (pohled dopředu [${la}], ${how.cz}) → expanze ${prodStr}`
+      });
+    } else {
+      step({
+        subStepType: 'expand',
+        action: `Expand the only production: ${prodStr}`,
+        actionCz: `Expanze jediného pravidla: ${prodStr}`
+      });
+    }
+    return {};
+  }
+
+  let r = expand(grammar.startSymbol, rootNode);
+  if (r.stop) return finish(r.stop, r.error, r.errorCz);
+
+  while (frames.length > 0) {
+    const top = frames[frames.length - 1];
+    if (top.pos >= top.rhs.length) {
+      // p'_B: "return" by popping the follow state (Function 1)
+      frames.pop();
+      if (frames.length > 0) atnStack.shift();
+      continue;
+    }
+    const sym = top.rhs[top.pos];
+    const childNode = top.node.children![top.pos];
+    if (!grammar.nonTerminals.has(sym)) {
+      const actual = tokenIdx < tokens.length ? tokens[tokenIdx] : undefined;
+      if (actual === sym) {
+        tokenIdx++;
+        top.pos++;
+        step({ subStepType: 'match', isMatch: true, action: `Match terminal '${sym}'`, actionCz: `Shoda terminálu '${sym}'` });
+      } else {
+        step({
+          subStepType: 'error',
+          action: `Syntax error: expected terminal '${sym}', found '${actual ?? '$'}'`,
+          actionCz: `Syntaktická chyba: očekáván terminál '${sym}', nalezen '${actual ?? '$'}'`
+        });
+        return finish('rejected', `Expected '${sym}', found '${actual ?? '$'}'`, `Očekáván '${sym}', nalezen '${actual ?? '$'}'`);
+      }
+      continue;
+    }
+    // Rule edge p –B→ q: push the follow state q and predict a production of B
+    const follow = atn.callFollowState.get(callSiteKey(top.nt, top.alt, top.pos));
+    top.pos++;
+    atnStack.unshift(follow ?? -1);
+    r = expand(sym, childNode);
+    if (r.stop) return finish(r.stop, r.error, r.errorCz);
+  }
+
+  if (tokenIdx < tokens.length) {
+    step({
+      subStepType: 'error',
+      action: `Syntax error: '${grammar.startSymbol}' is complete but the input continues: ${tokens.slice(tokenIdx).join(' ')}`,
+      actionCz: `Syntaktická chyba: '${grammar.startSymbol}' je dokončen, ale vstup pokračuje: ${tokens.slice(tokenIdx).join(' ')}`
+    });
+    return finish('rejected', 'Unexpected tokens after the end of the start symbol', 'Přebývající symboly za koncem startovacího symbolu');
+  }
+
+  step({
+    subStepType: 'accept',
+    action: `Input accepted: the start symbol is complete and the input is read ($). Derivation tree built.`,
+    actionCz: `Slovo přijato: startovací symbol je dokončen a vstup přečten ($). Derivační strom je sestaven.`
+  });
+  return finish('accepted');
 }

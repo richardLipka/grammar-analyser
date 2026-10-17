@@ -1,6 +1,6 @@
 /**
- * The construction of an LR automaton step by step, and the merging of LR(1)
- * states into LALR(1) states.
+ * The construction of an LR automaton step by step, the merging of LR(1)
+ * states into LALR(1) states, and the cores of IELR(1) (merged or split).
  *
  * The builders number the states in the order they are created: they take the
  * states one by one (by number) and for every symbol in a fixed order compute
@@ -9,7 +9,7 @@
  * the states in order, a target being new when it is the next number.
  */
 
-import { LRAutomaton, LRState } from './lrAutomaton';
+import { LRAutomaton, LRState, IELRSplitReason } from './lrAutomaton';
 import { LRTable, LRAction } from './lrTable';
 import { LR0Item, LR1Item, lr0ItemKey, nextSymbolAfterDot } from './lrItem';
 
@@ -86,38 +86,53 @@ export function mergeSteps(lalr: LRAutomaton, lr1: LRAutomaton, lalrTable: LRTab
   return steps;
 }
 
-/**
- * Information about a group of LR(1) states sharing the same LR(0) core in IELR(1),
- * showing whether the core had to be split to eliminate spurious conflicts.
- */
+
+/** One LR(0) core in IELR(1): its LR(1) states, how IELR(1) grouped them, and why. */
 export interface IELRSplitGroup {
   coreKey: string;
   items: LR0Item[];
+  /** The IELR(1) states with this core */
   ielrStates: number[];
+  /** The LR(1) states merged into each of the IELR(1) states */
+  lr1States: number[][];
+  /** The core has more than one IELR(1) state */
   isSplit: boolean;
+  /** The LALR(1) state with this core (missing only with non-generating symbols) */
   lalrState?: number;
-  /** Lookaheads per item in each IELR sub-state */
+  /** Lookaheads per item in each IELR(1) state, and in the LALR(1) state */
   rows: { item: LR0Item; perIelrState: string[][]; lalrUnion: string[] }[];
-  /** Spurious conflicts in LALR(1) on this core that IELR(1) eliminated by splitting */
-  spuriousConflicts: { symbol: string; actions: LRAction[] }[];
+  /** Why the LR(1) states of the core were not all merged (distinct reasons, in the order of the splits) */
+  reasons: IELRSplitReason[];
+  /** Conflicts of the LALR(1) state that no LR(1) state of this core has on that symbol: caused by merging, IELR(1) avoids them */
+  mergeConflicts: { symbol: string; actions: LRAction[] }[];
+  /**
+   * Conflicts left in the IELR(1) states of this core, with the merged LR(1)
+   * states that have a conflict on that symbol too, and those that have a
+   * single action there (the same one the conflict is resolved to)
+   */
+  remainingConflicts: { state: number; symbol: string; actions: LRAction[]; lr1WithConflict: number[]; lr1WithoutConflict: number[] }[];
 }
 
+/**
+ * The cores of the IELR(1) automaton (see buildIELR1Automaton), split ones
+ * first. Conflicts are taken from the tables as given (with precedence if the
+ * tables use it), all three tables built the same way.
+ */
 export function ielrSplitGroups(
   ielr: LRAutomaton,
   lr1: LRAutomaton,
   lalr: LRAutomaton,
-  lalrTable: LRTable
+  lalrTable: LRTable,
+  lr1Table: LRTable,
+  ielrTable?: LRTable
 ): IELRSplitGroup[] {
   const isKernel = (it: LR0Item) => it.dotIndex > 0 || it.production.id === 0;
   const coreKey = (items: LR0Item[]) => [...new Set(items.filter(isKernel).map(lr0ItemKey))].sort().join('|');
+  const lookaheads = (s: LRState, key: string) => (s.items1 || []).filter(it => lr0ItemKey(it) === key).map(it => it.lookahead).sort();
+  const reasonKey = (r: IELRSplitReason) =>
+    r.kind === 'successor' ? `succ|${r.symbol}` : `conf|${r.symbol}|${r.merged.map(a => a.type + (a.production?.id ?? '')).join(',')}`;
 
-  // Map LALR states by coreKey
-  const lalrByCore = new Map<string, LRState>();
-  for (const s of lalr.states) {
-    lalrByCore.set(coreKey(s.items0), s);
-  }
-
-  // Group IELR states by coreKey
+  const lalrByCore = new Map(lalr.states.map(s => [coreKey(s.items0), s] as const));
   const ielrByCore = new Map<string, LRState[]>();
   for (const s of ielr.states) {
     const k = coreKey(s.items0);
@@ -126,42 +141,42 @@ export function ielrSplitGroups(
   }
 
   const result: IELRSplitGroup[] = [];
-  for (const [k, states] of ielrByCore.entries()) {
-    const isSplit = states.length > 1;
+  for (const [k, states] of ielrByCore) {
     const lalrState = lalrByCore.get(k);
-    const rep = states[0];
-    const items = rep.items0;
-
-    const rows = items.map(item => {
-      const itemK = lr0ItemKey(item);
-      const perIelrState = states.map(st =>
-        (st.items1 || []).filter(it => lr0ItemKey(it) === itemK).map(it => it.lookahead).sort()
-      );
-      const lalrUnion = lalrState
-        ? (lalrState.items1 || []).filter(it => lr0ItemKey(it) === itemK).map(it => it.lookahead).sort()
-        : [...new Set(perIelrState.flat())].sort();
+    const lr1States = states.map(s => s.mergedFrom ?? []);
+    const allLr1 = lr1States.flat();
+    const rows = states[0].items0.map(item => {
+      const key = lr0ItemKey(item);
+      const perIelrState = states.map(st => lookaheads(st, key));
+      const lalrUnion = lalrState ? lookaheads(lalrState, key) : [...new Set(perIelrState.flat())].sort();
       return { item, perIelrState, lalrUnion };
     });
-
-    const spuriousConflicts = (lalrState && isSplit)
-      ? lalrTable.conflicts.filter(c => c.stateId === lalrState.id).map(c => ({ symbol: c.symbol, actions: c.actions }))
+    const seen = new Set<string>();
+    const reasons: IELRSplitReason[] = [];
+    for (const s of states) {
+      for (const r of s.splitReasons ?? []) {
+        if (seen.has(reasonKey(r))) continue;
+        seen.add(reasonKey(r));
+        reasons.push(r);
+      }
+    }
+    const mergeConflicts = lalrState
+      ? lalrTable.conflicts
+          .filter(c => c.stateId === lalrState.id)
+          .filter(c => !lr1Table.conflicts.some(d => allLr1.includes(d.stateId) && d.symbol === c.symbol))
+          .map(c => ({ symbol: c.symbol, actions: c.actions }))
       : [];
-
-    result.push({
-      coreKey: k,
-      items,
-      ielrStates: states.map(s => s.id),
-      isSplit,
-      lalrState: lalrState?.id,
-      rows,
-      spuriousConflicts
-    });
+    const ids = states.map(s => s.id);
+    const remainingConflicts = (ielrTable?.conflicts ?? [])
+      .filter(c => ids.includes(c.stateId))
+      .map(c => {
+        const merged = ielr.states[c.stateId].mergedFrom ?? [];
+        const withConflict = merged.filter(id => lr1Table.conflicts.some(d => d.stateId === id && d.symbol === c.symbol));
+        const withoutConflict = merged.filter(id => !withConflict.includes(id) && (lr1Table.actionTable.get(id)?.get(c.symbol)?.length ?? 0) > 0);
+        return { state: c.stateId, symbol: c.symbol, actions: c.actions, lr1WithConflict: withConflict, lr1WithoutConflict: withoutConflict };
+      });
+    result.push({ coreKey: k, items: states[0].items0, ielrStates: ids, lr1States, isSplit: states.length > 1, lalrState: lalrState?.id, rows, reasons, mergeConflicts, remainingConflicts });
   }
 
-  // Put split groups first, then order by first ielrState id
-  return result.sort((a, b) => {
-    if (a.isSplit !== b.isSplit) return a.isSplit ? -1 : 1;
-    return a.ielrStates[0] - b.ielrStates[0];
-  });
+  return result.sort((a, b) => (a.isSplit !== b.isSplit ? (a.isSplit ? -1 : 1) : a.ielrStates[0] - b.ielrStates[0]));
 }
-

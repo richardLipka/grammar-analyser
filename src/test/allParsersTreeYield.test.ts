@@ -254,7 +254,7 @@ describe('Derivation Tree Yield Verification across All Parsers', () => {
   // 4. ALL(*) Adaptive Top-Down Parser
   // =========================================================================
   describe('ALL(*) Adaptive Top-Down Parser (simulateALLParse)', () => {
-    // ALL(*) parses all context-free grammars without left recursion that are top-down deterministic
+    // ALL(*) parses all context-free grammars without left recursion (Parr et al. 2014, Theorem 6.1)
     const allDeterministicPresets = parsedPresets.filter(
       p => checkALLCompatibility(p.g, p.a).canParse &&
         p.preset.category !== 'Ambiguity' &&
@@ -290,11 +290,12 @@ describe('Derivation Tree Yield Verification across All Parsers', () => {
         const atn = buildATN(g);
 
         for (const tokens of words) {
+          // ALL(*) accepts every word of a non-left-recursive grammar; for an ambiguous
+          // one, LL prediction resolves the ambiguity to the minimum alternative.
           const sim = simulateALLParse(tokens, g, atn);
-          if (sim.accepted && sim.finalTree) {
-            const yieldTokens = extractTreeLeaves(sim.finalTree);
-            expect(yieldTokens, `ALL(*) tree yield must match input for ${preset.id}`).toEqual(tokens);
-          }
+          expect(sim.accepted, `ALL(*) should accept '${tokens.join(' ')}' for ${preset.id}`).toBe(true);
+          const yieldTokens = extractTreeLeaves(sim.finalTree);
+          expect(yieldTokens, `ALL(*) tree yield must match input for ${preset.id}`).toEqual(tokens);
         }
       }
     });

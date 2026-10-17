@@ -4,7 +4,7 @@ import { analyzeGrammar } from '../core/analyser/grammarAnalyser';
 import { buildLR0Automaton, buildLALR1Automaton, buildLR1Automaton, buildIELR1Automaton } from '../core/lr/lrAutomaton';
 import { buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
-import { ielrSplitGroups } from '../core/lr/lrConstruction';
+import { ielrSplitGroups, constructionSteps, constructedSoFar } from '../core/lr/lrConstruction';
 import { computeAnalysis } from '../core/analysisJob';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
 import { LR_PRIMARY_REFERENCES, LR_TECHNIQUE_REFERENCES } from '../ui/views/LRView';
@@ -16,7 +16,7 @@ import { RECURSIVE_DESCENT_PRIMARY_REFERENCES } from '../ui/views/RecursiveDesce
 import { REFERENCES, TRANSFORMATION_INFO } from '../core/processor/transformationInfo';
 import { extractTreeLeaves } from './allParsersTreeYield.test';
 
-describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
+describe('IELR(1) (Denny & Malloy 2010), computed by merging LR(1) states', () => {
   describe('Preset 1: Symmetric Separating Grammar (Classic Aho & Ullman / Dragon Book)', () => {
     const raw = `
       S -> "a" A "d" | "b" B "d" | "a" B "e" | "b" A "e"
@@ -50,7 +50,8 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       // Verify that split state is identified and annotated
       const splitStates = ielr.states.filter(s => s.isSplit);
       expect(splitStates.length).toBeGreaterThan(0);
-      expect(splitStates[0].ielrAnnotation).toBeDefined();
+      expect(splitStates[0].splitReasons?.length).toBeGreaterThan(0);
+      expect(splitStates[0].splitReasons![0]).toMatchObject({ kind: 'conflict' });
     });
 
     it('correctly parses valid words using the IELR(1) table', () => {
@@ -112,11 +113,13 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       expect(ielrTable.isConflictFree).toBe(true);
 
       // Verify that ielrSplitGroups groups identical LR(0) cores and detects the split
-      const groups = ielrSplitGroups(ielr, lr1, lalr, lalrTable);
+      const groups = ielrSplitGroups(ielr, lr1, lalr, lalrTable, lr1Table, ielrTable);
       const splitGroup = groups.find(grp => grp.isSplit);
       expect(splitGroup).toBeDefined();
       expect(splitGroup!.ielrStates.length).toBe(2);
-      expect(splitGroup!.spuriousConflicts.length).toBeGreaterThan(0);
+      expect(splitGroup!.mergeConflicts.map(c => c.symbol).sort()).toEqual([';', '=']);
+      expect(splitGroup!.remainingConflicts).toEqual([]);
+      expect(splitGroup!.reasons[0]).toMatchObject({ kind: 'conflict' });
 
       // Parses all 4 valid statement structures
       const w1 = ['print', 'id', ';'];
@@ -192,6 +195,118 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
         }));
         expect(displayItems.some(it => it.lookaheads && it.lookaheads.length > 0)).toBe(true);
       }
+    });
+  });
+
+  describe('Behaviour of canonical LR(1) (regressions)', () => {
+    const build = (text: string) => {
+      const g = parseGrammar(text).grammar!;
+      const analysis = analyzeGrammar(g, { k2: false });
+      const lalr = buildLALR1Automaton(g, analysis);
+      const lr1 = buildLR1Automaton(g, analysis);
+      const ielr = buildIELR1Automaton(g, analysis, lr1);
+      return {
+        g, lalr, lr1, ielr,
+        lalrTable: buildLRTable(lalr, g, analysis),
+        lr1Table: buildLRTable(lr1, g, analysis),
+        ielrTable: buildLRTable(ielr, g, analysis)
+      };
+    };
+
+    it('splits a state when precedence would resolve the merged conflict differently (%left c, S → c S c | c)', () => {
+      const { g, lalr, lr1, ielr, lalrTable, lr1Table, ielrTable } = build('%left c\nS -> c S c | c');
+      // In LR(1) the state after the first c only shifts c, the nested one reduces (%left); LALR(1) merges them
+      expect(simulateLRParse(['c', 'c', 'c'], g, lr1Table).accepted).toBe(true);
+      expect(simulateLRParse(['c', 'c', 'c'], g, lalrTable).accepted).toBe(false);
+      expect(simulateLRParse(['c', 'c', 'c'], g, ielrTable).accepted).toBe(true);
+      expect(lalr.states.length).toBeLessThan(ielr.states.length);
+      expect(ielr.states.length).toBeLessThan(lr1.states.length);
+      const split = ielr.states.find(s => s.isSplit)!;
+      expect(split.splitReasons![0]).toMatchObject({ kind: 'conflict', symbol: 'c' });
+    });
+
+    it('does not spread a conflict of one LR(1) state into the contexts of another (S → aAd | aBd | bAf | bBd)', () => {
+      const { g, ielr, lr1Table, ielrTable } = build('S -> a A d | a B d | b A f | b B d\nA -> c\nB -> c');
+      // LR(1) has the reduce-reduce conflict on d only after "a c"
+      expect(lr1Table.conflicts.length).toBe(1);
+      expect(ielrTable.conflicts.length).toBe(1);
+      const conflictState = ielr.states[ielrTable.conflicts[0].stateId];
+      expect(conflictState.mergedFrom!.map(id => lr1Table.conflicts.some(c => c.stateId === id))).toEqual([true]);
+      // "b c d" is in the language; the merged state would take the first action (A → c) and reject it
+      expect(simulateLRParse(['b', 'c', 'd'], g, ielrTable).accepted).toBe(true);
+    });
+
+    it('lets a state without an action on the conflict symbol join a part (no needless extra state)', () => {
+      const { lalr, lr1, ielr, ielrTable } = build('S -> a A t | a B u | b A u | b B t | x A v | x B w\nA -> c\nB -> c');
+      expect(ielrTable.isConflictFree).toBe(true);
+      expect(lalr.states.length).toBe(18);
+      expect(lr1.states.length).toBe(20);
+      expect(ielr.states.length).toBe(19);
+    });
+
+    it('splits a predecessor because of its split successor and says so', () => {
+      const { lalr, lr1, ielr, lalrTable, lr1Table, ielrTable } = build('S -> a A d | b B d | a B f | b A f\nA -> c x\nB -> c x');
+      const groups = ielrSplitGroups(ielr, lr1, lalr, lalrTable, lr1Table, ielrTable).filter(gr => gr.isSplit);
+      expect(groups.length).toBe(2);
+      const byReason = (kind: string) => groups.find(gr => gr.reasons.every(r => r.kind === kind))!;
+      // after "c": no conflict, split only because the states after "c x" are split
+      expect(byReason('successor').reasons).toEqual([{ kind: 'successor', symbol: 'x' }]);
+      expect(byReason('successor').mergeConflicts).toEqual([]);
+      expect(byReason('conflict').mergeConflicts.map(c => c.symbol).sort()).toEqual(['d', 'f']);
+    });
+
+    it('lists only conflicts caused by merging as avoided, genuine ones as remaining', () => {
+      const { lalr, lr1, ielr, lalrTable, lr1Table, ielrTable } = build('S -> a A d | a B d | b A g | b B d | x A d | x B g\nA -> c\nB -> c');
+      const group = ielrSplitGroups(ielr, lr1, lalr, lalrTable, lr1Table, ielrTable).find(gr => gr.isSplit)!;
+      expect(group.mergeConflicts.map(c => c.symbol)).toEqual(['g']);
+      expect(group.remainingConflicts.map(c => c.symbol)).toEqual(['d']);
+    });
+
+    it('resolves the conflicts left like Bison (shift before reduce, earlier rule): ambiguous grammars keep the states of LALR(1)', () => {
+      for (const id of ['dangling_else', 'palindromes', 'earley_equal_ab']) {
+        const preset = PRESET_GRAMMARS.find(p => p.id === id)!;
+        const { lalr, lr1, ielr, lalrTable, lr1Table, ielrTable } = build(preset.grammarText);
+        expect(ielr.states.length, id).toBe(lalr.states.length);
+        expect(ielr.states.length, id).toBeLessThan(lr1.states.length);
+        if (id === 'dangling_else') {
+          // the merged state has the shift/reduce conflict on "else" that only one of its LR(1) states has;
+          // that one resolves it by shifting, the other one only shifts
+          const remaining = ielrSplitGroups(ielr, lr1, lalr, lalrTable, lr1Table, ielrTable).flatMap(gr => gr.remainingConflicts);
+          const merged = remaining.find(c => c.lr1WithoutConflict.length > 0)!;
+          expect(merged).toBeDefined();
+          expect(merged.actions.some(a => a.type === 'shift')).toBe(true);
+          for (const s of merged.lr1WithoutConflict) {
+            expect(lr1Table.actionTable.get(s)!.get(merged.symbol)!.map(a => a.type)).toEqual(['shift']);
+          }
+        }
+      }
+    });
+
+    it('numbers the states in construction order, so the step-by-step construction is valid', () => {
+      for (const id of ['lalr1_vs_lr1', 'print_vs_expr_ielr', 'dangling_else', 'palindromes']) {
+        const preset = PRESET_GRAMMARS.find(p => p.id === id)!;
+        const g = parseGrammar(preset.grammarText).grammar!;
+        const ielr = buildIELR1Automaton(g, analyzeGrammar(g, { k2: false }));
+        const steps = constructionSteps(ielr);
+        expect(steps.filter(st => st.kind === 'goto' && st.isNew).length, id).toBe(ielr.states.length - 1);
+        expect(constructedSoFar(steps, steps.length - 1).states, id).toBe(ielr.states.length);
+        // every transition goes to a state created before or by this step
+        let created = 1;
+        for (const st of steps) {
+          if (st.kind !== 'goto') continue;
+          if (st.isNew) created++;
+          expect(st.to, id).toBeLessThan(created);
+        }
+      }
+    });
+
+    it('has the numbering of LALR(1) when no core is split', () => {
+      const g = parseGrammar('E -> E "+" T | T\nT -> T "*" F | F\nF -> "(" E ")" | "id"').grammar!;
+      const analysis = analyzeGrammar(g, { k2: false });
+      const lalr = buildLALR1Automaton(g, analysis);
+      const ielr = buildIELR1Automaton(g, analysis);
+      expect(ielr.states.map(s => [...s.transitions])).toEqual(lalr.states.map(s => [...s.transitions]));
+      expect(ielr.stateNames).toEqual(lalr.stateNames);
     });
   });
 

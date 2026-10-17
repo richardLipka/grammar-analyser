@@ -19,11 +19,16 @@
  *      (With Aycock-Horspool: if B is nullable, also immediately adds [A -> alpha B . beta, j] to S_i).
  *   2. Scanner: For [A -> alpha . a beta, j] in S_{i-1} matching input token a = w_i, adds [A -> alpha a . beta, j] to S_i.
  *   3. Completer: For [B -> gamma ., k] in S_i, finds all [A -> alpha . B beta, j] in S_k and adds [A -> alpha B . beta, j] to S_i.
+ *
+ * Without the Aycock–Horspool step the completer misses items: an ε-rule of B completes in S_i
+ * (origin i) before all items of S_i waiting for B are there. Advancing the dot over a nullable
+ * B in the predictor is their fix; a completion with origin i then adds nothing new.
  */
 
 import { Grammar, Production } from '../ast/grammar';
 import { computeNullable } from '../analyser/grammarAnalyser';
 import { DerivationNode } from '../generator/wordGenerator';
+import { chartTrees, scannedLeafId, withUniqueIds } from './earleyTrees';
 
 export interface EarleyItem {
   id: string;
@@ -34,8 +39,6 @@ export interface EarleyItem {
   // Origin details for educational explanation
   triggerSymbol?: string;
   completedItemOrigin?: number;
-  // Parse tree construction links
-  treeChildren?: DerivationNode[];
 }
 
 export interface EarleySet {
@@ -44,16 +47,31 @@ export interface EarleySet {
   items: EarleyItem[];
 }
 
+/** An item that caused a step: its set and its position in the set. */
+export interface EarleyStepSource {
+  setIndex: number;
+  itemIndex: number;
+  /** parent = item with the dot before the predicted non-terminal; scanned = item before the scan;
+   *  completed = the finished rule; waiting = the item in S_j that waited for its non-terminal. */
+  role: 'parent' | 'scanned' | 'completed' | 'waiting';
+}
+
 export interface EarleyStep {
   stepIndex: number;
   inputIndex: number;
   operation: 'init' | 'predict' | 'scan' | 'complete';
   item: EarleyItem;
+  /** Position of the new item in its set. */
+  itemIndex: number;
   descriptionEn: string;
   descriptionCz: string;
   activeSetIndex: number;
   totalItemsSoFar: number;
-  chartSnapshot: { setIndex: number; items: EarleyItem[] }[];
+  /** Number of items in each set after this step (the sets only grow). */
+  setSizes: number[];
+  /** Items that caused this step. */
+  sources: EarleyStepSource[];
+  /** Subtree the step adds: the scanned leaf, or the subtree of the completed / ε-derived non-terminal. */
   derivationTree?: DerivationNode;
 }
 
@@ -64,6 +82,8 @@ export interface EarleySimulationResult {
   sets: EarleySet[];
   trees: DerivationNode[];
   totalTrees: number;
+  /** Name of the added start symbol S' (more primes when the grammar uses S' itself). */
+  augmentedStart: string;
   truncated?: boolean;
   errorMessage?: string;
   errorMessageCz?: string;
@@ -75,7 +95,7 @@ export interface EarleySimulationResult {
   };
 }
 
-export function formatEarleyItem(item: EarleyItem): string {
+export function formatEarleyItem(item: { production: Production; dot: number; origin: number }): string {
   const rhs = [...item.production.rhs];
   rhs.splice(item.dot, 0, '•');
   return `[${item.production.lhs} → ${rhs.join(' ') || '•'}, ${item.origin}]`;
@@ -85,14 +105,20 @@ export function formatItemKey(pId: number, dot: number, origin: number): string 
   return `${pId}#${dot}#${origin}`;
 }
 
+/** Id of the added production S' → S; grammar productions have ids ≥ 0. */
+export const AUGMENTED_PRODUCTION_ID = -1;
+
 /**
- * Creates an augmented production S' -> S
+ * Creates the augmented production S' → S. The new start symbol must not be a symbol of the
+ * grammar: with a user's own S' the completer would advance the user's items over it.
  */
-export function getAugmentedProduction(startSymbol: string): Production {
+export function getAugmentedProduction(grammar: Grammar): Production {
+  let lhs = `${grammar.startSymbol}'`;
+  while (grammar.nonTerminals.has(lhs) || grammar.terminals.has(lhs)) lhs += "'";
   return {
-    id: -1,
-    lhs: "S'",
-    rhs: [startSymbol]
+    id: AUGMENTED_PRODUCTION_ID,
+    lhs,
+    rhs: [grammar.startSymbol]
   };
 }
 
@@ -105,7 +131,7 @@ export function simulateEarleyParse(
   maxSteps: number = 20000 + 100 * tokens.length
 ): EarleySimulationResult {
   const nullable = computeNullable(grammar);
-  const augProd = getAugmentedProduction(grammar.startSymbol);
+  const augProd = getAugmentedProduction(grammar);
   const productionsByLhs = new Map<string, Production[]>();
   for (const p of grammar.productions) {
     if (!productionsByLhs.has(p.lhs)) productionsByLhs.set(p.lhs, []);
@@ -121,6 +147,8 @@ export function simulateEarleyParse(
 
   const itemKeyMap: Set<string>[] = Array.from({ length: n + 1 }, () => new Set());
   const steps: EarleyStep[] = [];
+  /** Per step: what its subtree is, filled in once the chart is complete. */
+  const stepTrees: ({ kind: 'leaf'; tokenIndex: number } | { kind: 'item'; production: Production; origin: number; end: number } | { kind: 'symbol'; symbol: string; at: number } | undefined)[] = [];
   let stepCounter = 0;
   let predictCount = 0;
   let scanCount = 0;
@@ -128,19 +156,13 @@ export function simulateEarleyParse(
   let totalItemsCount = 0;
   let truncated = false;
 
-  function takeChartSnapshot(): { setIndex: number; items: EarleyItem[] }[] {
-    return sets.map(s => ({
-      setIndex: s.index,
-      items: [...s.items]
-    }));
-  }
-
   function addItem(
     setIdx: number,
     item: EarleyItem,
     descEn: string,
     descCz: string,
-    customTree?: DerivationNode
+    sources: EarleyStepSource[],
+    tree?: (typeof stepTrees)[number]
   ): boolean {
     if (stepCounter >= maxSteps) {
       truncated = true;
@@ -160,15 +182,19 @@ export function simulateEarleyParse(
       inputIndex: setIdx,
       operation: item.operation,
       item,
+      itemIndex: sets[setIdx].items.length - 1,
       descriptionEn: descEn,
       descriptionCz: descCz,
       activeSetIndex: setIdx,
       totalItemsSoFar: totalItemsCount,
-      chartSnapshot: takeChartSnapshot(),
-      derivationTree: customTree
+      setSizes: sets.map(s => s.items.length),
+      sources
     });
+    stepTrees.push(tree);
     return true;
   }
+
+  const ruleText = (p: Production) => `${p.lhs} → ${p.rhs.join(' ') || 'ε'}`;
 
   // 1. Initialize S_0 with augmented rule [S' -> . S, 0]
   const initItem: EarleyItem = {
@@ -181,8 +207,9 @@ export function simulateEarleyParse(
   addItem(
     0,
     initItem,
-    `Initialize: Added start item [S' → • ${grammar.startSymbol}, 0] into S₀`,
-    `Inicializace: Přidána počáteční položka [S' → • ${grammar.startSymbol}, 0] do S₀`
+    `Initialize: S₀ gets the start item [${augProd.lhs} → • ${grammar.startSymbol}, 0] of the added rule ${augProd.lhs} → ${grammar.startSymbol}. The word is accepted when S${subscript(n)} contains [${augProd.lhs} → ${grammar.startSymbol} •, 0].`,
+    `Inicializace: do S₀ vložena počáteční položka [${augProd.lhs} → • ${grammar.startSymbol}, 0] přidaného pravidla ${augProd.lhs} → ${grammar.startSymbol}. Slovo bude přijato, bude-li v S${subscript(n)} položka [${augProd.lhs} → ${grammar.startSymbol} •, 0].`,
+    []
   );
 
   // Parse loop across sets S_0 ... S_n
@@ -206,12 +233,12 @@ export function simulateEarleyParse(
               operation: 'predict',
               triggerSymbol: nextSymbol
             };
-            const rhsStr = prod.rhs.length > 0 ? prod.rhs.join(' ') : 'ε';
             const added = addItem(
               i,
               predItem,
-              `Predictor: Next symbol in ${formatEarleyItem(it)} is non-terminal '${nextSymbol}'. Expanded rule ${prod.lhs} → • ${rhsStr} with origin ${i} in S_${i}`,
-              `Prediktor: Následující symbol v ${formatEarleyItem(it)} je neterminál '${nextSymbol}'. Expandováno pravidlo ${prod.lhs} → • ${rhsStr} s počátkem ${i} do S_${i}`
+              `Predictor: in ${formatEarleyItem(it)} the dot is before the non-terminal ${nextSymbol}, so every rule of ${nextSymbol} may start here. Added ${formatEarleyItem(predItem)} to S${subscript(i)} (origin ${i} = this set).`,
+              `Prediktor: v ${formatEarleyItem(it)} je za tečkou neterminál ${nextSymbol}, zde tedy může začít každé jeho pravidlo. Do S${subscript(i)} přidána ${formatEarleyItem(predItem)} (počátek ${i} = tato množina).`,
+              [{ setIndex: i, itemIndex: k, role: 'parent' }]
             );
             if (added) predictCount++;
           }
@@ -224,22 +251,15 @@ export function simulateEarleyParse(
               dot: it.dot + 1,
               origin: it.origin,
               operation: 'predict',
-              triggerSymbol: nextSymbol,
-              treeChildren: [
-                ...(it.treeChildren ?? []),
-                {
-                  id: `tree_node_null_${i}_${nextSymbol}`,
-                  symbol: nextSymbol,
-                  isTerminal: false,
-                  children: [{ id: `tree_node_eps_${i}`, symbol: 'ε', isTerminal: true }]
-                }
-              ]
+              triggerSymbol: nextSymbol
             };
             const added = addItem(
               i,
               nullItem,
-              `Predictor (Nullable): '${nextSymbol}' in ${formatEarleyItem(it)} derives ε. Advanced dot past '${nextSymbol}' to yield ${formatEarleyItem(nullItem)} in S_${i}`,
-              `Prediktor (Nullable): '${nextSymbol}' v ${formatEarleyItem(it)} generuje ε. Posunuta tečka přes '${nextSymbol}' na novou položku ${formatEarleyItem(nullItem)} v S_${i}`
+              `Predictor (nullable, Aycock & Horspool): ${nextSymbol} ⇒* ε, so in ${formatEarleyItem(it)} the dot can also skip ${nextSymbol} without reading input. Added ${formatEarleyItem(nullItem)} to S${subscript(i)}.`,
+              `Prediktor (ε, Aycock & Horspool): ${nextSymbol} ⇒* ε, proto v ${formatEarleyItem(it)} může tečka ${nextSymbol} i přeskočit bez čtení vstupu. Do S${subscript(i)} přidána ${formatEarleyItem(nullItem)}.`,
+              [{ setIndex: i, itemIndex: k, role: 'parent' }],
+              { kind: 'symbol', symbol: nextSymbol, at: i }
             );
             if (added) predictCount++;
           }
@@ -248,28 +268,8 @@ export function simulateEarleyParse(
         // --- COMPLETER ---
         const completedNt = it.production.lhs;
         const originIdx = it.origin;
+        if (it.production.id === AUGMENTED_PRODUCTION_ID) continue;
         const originSet = sets[originIdx];
-
-        // Construct tree node for the completed non-terminal (if not augmented)
-        let completedSubtree: DerivationNode | undefined = undefined;
-        if (completedNt !== "S'") {
-          const children: DerivationNode[] = it.treeChildren && it.treeChildren.length > 0
-            ? it.treeChildren
-            : (it.production.rhs.length === 0
-                ? [{ id: `tree_eps_${i}_${it.id}`, symbol: 'ε', isTerminal: true }]
-                : it.production.rhs.map((sym, sIdx) => ({
-                    id: `leaf_${i}_${sIdx}_${sym}`,
-                    symbol: sym,
-                    isTerminal: !grammar.nonTerminals.has(sym)
-                  }))
-              );
-          completedSubtree = {
-            id: `tree_nt_${completedNt}_${originIdx}_${i}_${it.production.id}`,
-            symbol: completedNt,
-            isTerminal: false,
-            children
-          };
-        }
 
         for (let originItemIdx = 0; originItemIdx < originSet.items.length; originItemIdx++) {
           const originItem = originSet.items[originItemIdx];
@@ -277,11 +277,6 @@ export function simulateEarleyParse(
             originItem.dot < originItem.production.rhs.length &&
             originItem.production.rhs[originItem.dot] === completedNt
           ) {
-            const advancedTreeChildren = [
-              ...(originItem.treeChildren ?? []),
-              ...(completedSubtree ? [completedSubtree] : [])
-            ];
-
             const completedAdvItem: EarleyItem = {
               id: `item_${i}_${sets[i].items.length}`,
               production: originItem.production,
@@ -289,17 +284,20 @@ export function simulateEarleyParse(
               origin: originItem.origin,
               operation: 'complete',
               triggerSymbol: completedNt,
-              completedItemOrigin: originIdx,
-              treeChildren: advancedTreeChildren
+              completedItemOrigin: originIdx
             };
 
-            const completedRuleStr = `${it.production.lhs} → ${it.production.rhs.join(' ') || 'ε'}`;
+            const span = originIdx === i ? 'ε' : tokens.slice(originIdx, i).join(' ');
             const added = addItem(
               i,
               completedAdvItem,
-              `Completer: Completed ${completedRuleStr} in S_${i} (originated at S_${originIdx}). Advanced ${formatEarleyItem(originItem)} from S_${originIdx} over '${completedNt}' to ${formatEarleyItem(completedAdvItem)} in S_${i}`,
-              `Kompletátor: Dokončeno pravidlo ${completedRuleStr} v S_${i} (počátek v S_${originIdx}). Posunuta položka ${formatEarleyItem(originItem)} z S_${originIdx} přes '${completedNt}' na ${formatEarleyItem(completedAdvItem)} v S_${i}`,
-              completedSubtree
+              `Completer: ${formatEarleyItem(it)} is complete — ${completedNt} derives “${span}” (from position ${originIdx} to ${i}). In S${subscript(originIdx)} the item ${formatEarleyItem(originItem)} waited for ${completedNt}; its dot moves over ${completedNt}: ${formatEarleyItem(completedAdvItem)} added to S${subscript(i)}.`,
+              `Kompletor: ${formatEarleyItem(it)} je dokončená — ${completedNt} generuje „${span}“ (od pozice ${originIdx} do ${i}). V S${subscript(originIdx)} na ${completedNt} čekala položka ${formatEarleyItem(originItem)}; tečka se posune za ${completedNt}: do S${subscript(i)} přidána ${formatEarleyItem(completedAdvItem)}.`,
+              [
+                { setIndex: i, itemIndex: k, role: 'completed' },
+                { setIndex: originIdx, itemIndex: originItemIdx, role: 'waiting' }
+              ],
+              { kind: 'item', production: it.production, origin: originIdx, end: i }
             );
             if (added) completeCount++;
           }
@@ -311,37 +309,31 @@ export function simulateEarleyParse(
     // If not at the end of input, scan token w_{i+1} from items in S_i into S_{i+1}
     if (i < n) {
       const nextInputToken = tokens[i];
-      for (const it of sets[i].items) {
+      sets[i].items.forEach((it, k) => {
         if (
           it.dot < it.production.rhs.length &&
           it.production.rhs[it.dot] === nextInputToken
         ) {
-          const scannedLeaf: DerivationNode = {
-            id: `leaf_tok_${i}_${nextInputToken}`,
-            symbol: nextInputToken,
-            isTerminal: true
-          };
-
           const scannedItem: EarleyItem = {
             id: `item_${i + 1}_${sets[i + 1].items.length}`,
             production: it.production,
             dot: it.dot + 1,
             origin: it.origin,
             operation: 'scan',
-            triggerSymbol: nextInputToken,
-            treeChildren: [...(it.treeChildren ?? []), scannedLeaf]
+            triggerSymbol: nextInputToken
           };
 
           const added = addItem(
             i + 1,
             scannedItem,
-            `Scanner: Matched token '${nextInputToken}' at position ${i + 1} with ${formatEarleyItem(it)} in S_${i}. Advanced dot to ${formatEarleyItem(scannedItem)} in S_${i + 1}`,
-            `Skener: Shoda se vstupním symbolem '${nextInputToken}' na pozici ${i + 1} pro ${formatEarleyItem(it)} v S_${i}. Posunuta tečka na ${formatEarleyItem(scannedItem)} v S_${i + 1}`,
-            scannedLeaf
+            `Scanner: the next input symbol w${subscript(i + 1)} = '${nextInputToken}' is the terminal after the dot in ${formatEarleyItem(it)} (S${subscript(i)}). The dot moves over it: ${formatEarleyItem(scannedItem)} added to S${subscript(i + 1)}.`,
+            `Skener: další vstupní symbol w${subscript(i + 1)} = '${nextInputToken}' je terminál za tečkou v ${formatEarleyItem(it)} (S${subscript(i)}). Tečka se posune za něj: do S${subscript(i + 1)} přidána ${formatEarleyItem(scannedItem)}.`,
+            [{ setIndex: i, itemIndex: k, role: 'scanned' }],
+            { kind: 'leaf', tokenIndex: i }
           );
           if (added) scanCount++;
         }
-      }
+      });
     }
   }
 
@@ -349,25 +341,23 @@ export function simulateEarleyParse(
   const acceptKey = formatItemKey(augProd.id, 1, 0);
   const accepted = !truncated && (itemKeyMap[n]?.has(acceptKey) ?? false);
 
-  // Extract derivation trees
+  // Derivation trees from the finished chart (also the subtrees shown by the steps).
   const trees: DerivationNode[] = [];
-  if (accepted) {
-    const acceptItems = sets[n].items.filter(
-      it => it.production.id === augProd.id && it.dot === 1 && it.origin === 0
-    );
-    for (const it of acceptItems) {
-      if (it.treeChildren && it.treeChildren.length > 0) {
-        trees.push(it.treeChildren[0]);
-      }
-    }
-    // If tree reconstruction didn't link, create a root
-    if (trees.length === 0) {
-      trees.push({
-        id: 'tree_root_accepted',
-        symbol: grammar.startSymbol,
-        isTerminal: false,
-        children: tokens.map((t, idx) => ({ id: `token_leaf_${idx}`, symbol: t, isTerminal: true }))
-      });
+  if (!truncated) {
+    const forest = chartTrees(grammar, tokens, sets.map(s => s.items));
+    steps.forEach((step, idx) => {
+      const t = stepTrees[idx];
+      if (!t) return;
+      step.derivationTree =
+        t.kind === 'leaf'
+          ? { id: scannedLeafId(t.tokenIndex, tokens[t.tokenIndex]), symbol: tokens[t.tokenIndex], isTerminal: true }
+          : t.kind === 'item'
+          ? forest.ofItem(t.production, t.origin, t.end)
+          : forest.ofSymbol(t.symbol, t.at, t.at);
+    });
+    if (accepted) {
+      const root = forest.ofSymbol(grammar.startSymbol, 0, n);
+      if (root) trees.push(withUniqueIds(root));
     }
   }
 
@@ -378,6 +368,7 @@ export function simulateEarleyParse(
     sets,
     trees,
     totalTrees: trees.length,
+    augmentedStart: augProd.lhs,
     truncated,
     errorMessage: truncated ? `Parsing stopped after reaching the limit of ${maxSteps} steps.` : undefined,
     errorMessageCz: truncated ? `Analýza byla zastavena po dosažení limitu ${maxSteps} kroků.` : undefined,
@@ -388,4 +379,10 @@ export function simulateEarleyParse(
       totalItems: totalItemsCount
     }
   };
+}
+
+const SUBSCRIPT_DIGITS = '₀₁₂₃₄₅₆₇₈₉';
+/** S₁₂ instead of S_12 in the step texts. */
+export function subscript(n: number): string {
+  return String(n).replace(/\d/g, d => SUBSCRIPT_DIGITS[Number(d)]);
 }

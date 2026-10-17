@@ -417,6 +417,20 @@ body {
   background-color: var(--color-bg-base);
 }
 
+/* Step-by-step simulators: controls and the step explanation stick to the top of the
+   scrolled pane, so the step and the chart/graph/tree below are visible together. */
+.sim-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+  background-color: var(--color-bg-base);
+  box-shadow: 0 6px 6px -6px rgba(0, 0, 0, 0.25);
+}
+
 /* Conflict Detail Cards & Report Boxes */
 .conflict-detail-card {
   background-color: var(--color-bg-surface);

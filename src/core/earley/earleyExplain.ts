@@ -14,26 +14,26 @@ export const EARLEY_PRIMARY_REFERENCES: ParserLiteratureReference[] = [
     authorYear: 'Earley (1970)',
     citation: 'Earley, J.: An efficient context-free parsing algorithm. Communications of the ACM 13(2), 94–102 (1970).',
     url: 'https://doi.org/10.1145/362007.362035',
-    sections: '§1 (Introduction), §2 (The Algorithm), §3 (Correctness & Time Bounds: O(n³) general, O(n²) unambiguous, O(n) bounded state)'
+    sections: 'recogniser with Predictor, Scanner and Completer; time bounds: O(n³) in general, O(n²) for unambiguous grammars, O(n) for bounded-state grammars (with look-ahead)'
   },
   {
     authorYear: 'Scott & Johnstone (2025/2026)',
-    citation: 'Scott, E., Johnstone, A.: Earley Table Traversing Parsers. Science of Computer Programming 247, 103335 (2025/2026).',
+    citation: 'Scott, E., Johnstone, A.: Earley Table Traversing Parsers. Science of Computer Programming 247, 103335 (2026; online 2025).',
     url: 'https://doi.org/10.1016/j.scico.2025.103335',
-    sections: '§1 (Context & Motivation), §2 (Earley Table Generation & Closures), §3 (Table Traversing Driver), §4 (Empirical Evaluation on Java & C)'
+    sections: 'Earley recogniser driven by a precomputed table, extended to a parser; experiments on Java and ANSI C grammars'
   },
   {
     authorYear: 'Aycock & Horspool (2002)',
     citation: 'Aycock, J., Horspool, R.N.: Practical Earley Parsing. The Computer Journal 45(6), 620–630 (2002).',
     url: 'https://doi.org/10.1093/comjnl/45.6.620',
-    sections: '§3 (Nullable symbol handling & speedups), §4 (Split $\\varepsilon$-free transformation)'
+    sections: 'fix for ε-rules (the predictor moves the dot over nullable non-terminals); Earley parsing with the LR(0)ε automaton and its split form (kernel / predicted states)'
   }
 ];
 
 export const EARLEY_THEORY_GUIDE = {
   en: {
     title: 'Earley & Earley Table Traversing Parsers (ETTP) Guide',
-    overview: 'Earley parsing is the foundational dynamic-programming chart parsing method for arbitrary context-free grammars. ETTP (2025/2026) bridges Earley chart parsing with LR-style precomputed automata by eliminating runtime prediction.',
+    overview: 'Earley parsing is a dynamic-programming (chart) method for arbitrary context-free grammars. ETTP replaces the runtime Predictor by an LR-style automaton precomputed from the grammar.',
     sections: [
       {
         heading: '1. The Classic Earley Algorithm (1970)',
@@ -41,63 +41,69 @@ export const EARLEY_THEORY_GUIDE = {
 • Origin j points to the position in the input where matching of non-terminal A began.
 • The dot (•) tracks progress through the right-hand side.
 At each position, three operations drive the chart:
-1. Scanner: Reads terminal token wᵢ and moves matching items to Sᵢ with dot incremented.
-2. Predictor: Whenever a non-terminal B appears after the dot, all alternative productions for B are instantiated with origin i into Sᵢ.
-3. Completer: When an item reaches the end of its rule [B → γ •, k], it looks back at Sₖ to advance all items waiting for B into Sᵢ.`
+1. Predictor: for [A → α • B β, j] in Sᵢ (B a non-terminal) adds [B → • γ, i] to Sᵢ for every rule B → γ.
+2. Scanner: for [A → α • a β, j] in Sᵢ and the next input symbol wᵢ₊₁ = a adds [A → α a • β, j] to Sᵢ₊₁.
+3. Completer: for a finished item [B → γ •, k] in Sᵢ moves the dot over B in every item [A → α • B β, j] of Sₖ, adding [A → α B • β, j] to Sᵢ.
+The word w₁ … wₙ is accepted when Sₙ contains [S' → S •, 0]; S' → S is an added rule (with more primes when the grammar already uses S').`
       },
       {
         heading: '2. Earley Table Traversing Parsers (ETTP 2025)',
-        content: `In classic Earley, the Predictor repeatedly queries grammar productions and nullable closures dynamically at runtime.
-Elizabeth Scott and Adrian Johnstone (Royal Holloway) observed that the prediction closure and state transitions can be statically precompiled into an Earley Transition Table:
-• States q represent prediction-closed item sets without origin indices.
-• Transitions δ(q, X) handle both terminal matches (scans) and non-terminal completions (gotos).
-• At runtime, the chart stores lightweight integer pairs (q, j) rather than full productions.
-• The runtime Predictor is completely eliminated (0 dynamic prediction operations!).`
+        content: `The Predictor builds the same item sets again and again. Scott and Johnstone precompute them into a table, in the spirit of the LR(0)ε automaton of Aycock & Horspool:
+• A set Sᵢ holds pairs (q, j): all items of state q, each with origin j. This works only if all items of q have the same origin, so every closure is split into two states:
+  – a kernel state: items after a transition, plus the dot moved over nullable symbols — they keep the origin j;
+  – its predicted state: the predicted rules [B → • γ] (closed under prediction) — origin i, the current set. The kernel state stores a link (ε) to it, and the pair (predicted, i) is added together with (kernel, j).
+• Scanner: (q, j) ∈ Sᵢ and δ(q, wᵢ₊₁) = r give (r, j) ∈ Sᵢ₊₁.
+• Completer: (q, j) ∈ Sᵢ with a finished rule A → γ • and (p, k) ∈ Sⱼ with δ(p, A) = r give (r, k) ∈ Sᵢ.
+• No rule is expanded at runtime; a pair stands for several Earley items, so the sets are smaller.`
       },
       {
         heading: '3. Handling Epsilon (ε) Productions',
-        content: `Grammars with ε-rules can cause cyclic loops in naive Earley implementations. We incorporate the Aycock & Horspool (2002) nullable optimization: when predicting or creating closures over a nullable non-terminal B, the dot is also immediately bypassed ([A → α B • β, j]), guaranteeing termination on all grammars.`
+        content: `With ε-rules the plain algorithm can miss items: an ε-rule of B finishes in Sᵢ with origin i, and the Completer looks for items waiting for B in Sᵢ — but some of them are added to Sᵢ only later. Aycock & Horspool (2002): when the Predictor meets a non-terminal B that derives ε, it also moves the dot over B ([A → α B • β, j]). Then nothing is missed. In the derivation tree such a B gets the subtree of one of its ε-derivations.`
       },
       {
         heading: '4. Complexity Guarantees',
         content: `• Arbitrary CFG (including ambiguous and cyclic): O(n³) time and O(n²) space.
 • Unambiguous CFG: O(n²) time.
-• Deterministic grammars (LR-like): O(n) linear time.`
+• Bounded-state grammars, e.g. most LR(k) grammars: O(n) (Earley's paper uses look-ahead; without it, right recursion can cost O(n²) unless Leo's 1991 improvement is used).
+ETTP has the same bounds; it saves a constant factor.`
       }
     ]
   },
   cz: {
     title: 'Průvodce algoritmy Earley a Earley Table Traversing Parsers (ETTP)',
-    overview: 'Earleyův algoritmus představuje základní metodu dynamického programování (chart parsing) pro libovolné bezkontextové gramatiky. ETTP (2025/2026) spojuje Earleyho s tabulkovými automaty ve stylu LR a zcela eliminuje běhovou fázi predikce.',
+    overview: 'Earleyův algoritmus je metoda dynamického programování (tabulková analýza) pro libovolné bezkontextové gramatiky. ETTP nahrazuje běhový prediktor automatem ve stylu LR, předpočítaným z gramatiky.',
     sections: [
       {
         heading: '1. Klasický Earleyův algoritmus (1970)',
         content: `Earley vytváří posloupnost množin položek S₀, S₁, …, Sₙ, kde každá položka má tvar [A → α • β, j].
 • Počátek j odkazuje na pozici ve vstupu, kde začalo odvozování neterminálu A.
 • Tečka (•) značí, kolik symbolů pravé strany již bylo přečteno a ověřeno.
-V každém kroku pracují tři základní operátory:
-1. Skener (Scanner): Čte terminální symbol wᵢ a posouvá tečku v odpovídajících položkách do Sᵢ.
-2. Prediktor (Predictor): Pokud je za tečkou neterminál B, dynamicky expanduje všechna jeho pravidla s počátkem i do Sᵢ.
-3. Kompletor (Completer): Po dokončení pravidla [B → γ •, k] vyhledá v množině Sₖ všechny položky čekající na B a posune v nich tečku do Sᵢ.`
+Množiny vytvářejí tři operace:
+1. Prediktor: pro [A → α • B β, j] v Sᵢ (B neterminál) přidá do Sᵢ položku [B → • γ, i] pro každé pravidlo B → γ.
+2. Skener: pro [A → α • a β, j] v Sᵢ a další vstupní symbol wᵢ₊₁ = a přidá [A → α a • β, j] do Sᵢ₊₁.
+3. Kompletor: pro dokončenou položku [B → γ •, k] v Sᵢ posune tečku za B ve všech položkách [A → α • B β, j] množiny Sₖ a přidá [A → α B • β, j] do Sᵢ.
+Slovo w₁ … wₙ je přijato, obsahuje-li Sₙ položku [S' → S •, 0]; S' → S je přidané pravidlo (s více čárkami, používá-li gramatika S' sama).`
       },
       {
         heading: '2. Earley Table Traversing Parsers (ETTP 2025)',
-        content: `V klasickém Earleyově algoritmu spotřebovává prediktor za běhu značné množství času opakovaným vyhledáváním pravidel a uzávěrů v gramatice.
-Elizabeth Scott a Adrian Johnstone ukázali, že predikční uzávěry a přechody lze staticky předpočítat do Earleyovy přechodové tabulky:
-• Stavy q reprezentují predikčně uzavřené množiny položek bez indexu počátku.
-• Přechody δ(q, X) obsluhují jak shody terminálů (sken), tak kompletaci neterminálů (goto).
-• Za běhu uchovává tabulka pouze kompaktní dvojice celých čísel (q, j) namísto celých položek.
-• Běhový prediktor je zcela eliminován (0 dynamických operací predikce!).`
+        content: `Prediktor vytváří stále znovu tytéž množiny položek. Scott a Johnstone je předpočítají do tabulky, v duchu automatu LR(0)ε podle Aycocka a Horspoola:
+• Množina Sᵢ obsahuje páry (q, j): všechny položky stavu q, každá s počátkem j. To jde jen tehdy, mají-li všechny položky q stejný počátek, proto se každý uzávěr dělí na dva stavy:
+  – jádrový stav: položky po přechodu a posuny tečky přes neterminály generující ε — zachovávají počátek j;
+  – jeho predikční stav: predikovaná pravidla [B → • γ] (uzavřená predikcí) — počátek i, tj. aktuální množina. Jádrový stav má na něj odkaz (ε) a pár (predikční, i) se přidá spolu s (jádrový, j).
+• Skener: (q, j) ∈ Sᵢ a δ(q, wᵢ₊₁) = r dávají (r, j) ∈ Sᵢ₊₁.
+• Kompletor: (q, j) ∈ Sᵢ s dokončeným pravidlem A → γ • a (p, k) ∈ Sⱼ s δ(p, A) = r dávají (r, k) ∈ Sᵢ.
+• Za běhu se nerozvíjí žádné pravidlo; pár zastupuje několik položek, množiny jsou menší.`
       },
       {
         heading: '3. Zpracování prázdného slova (ε-pravidla)',
-        content: `Gramatiky s ε-pravidly mohou v naivních implementacích způsobit zacyklení. Využíváme optimalizaci podle Aycocka a Horspoola (2002): při predikci neterminálu B schopného generovat ε se tečka rovnou posune i za něj ([A → α B • β, j]), což zaručuje terminaci pro všechny gramatiky.`
+        content: `S ε-pravidly by základní algoritmus mohl položky vynechat: ε-pravidlo neterminálu B skončí v Sᵢ s počátkem i a kompletor hledá položky čekající na B v Sᵢ — některé z nich však do Sᵢ přibudou až později. Aycock a Horspool (2002): narazí-li prediktor na neterminál B, který generuje ε, posune tečku i za B ([A → α B • β, j]). Pak se nic nevynechá. V derivačním stromu má takové B podstrom jednoho ze svých odvození ε.`
       },
       {
         heading: '4. Časová a prostorová složitost',
-        content: `• Libovolná CFG (včetně víceznačných a s cykly): čas O(n³), paměť O(n²).
+        content: `• Libovolná CFG (i víceznačná a s cykly): čas O(n³), paměť O(n²).
 • Jednoznačná CFG: čas O(n²).
-• Deterministické gramatiky (LR-like): lineární čas O(n).`
+• Gramatiky s omezeným počtem položek (bounded-state, mj. většina LR(k)): O(n) (Earley používá výhled; bez něj stojí pravá rekurze až O(n²), pokud se nepoužije Leovo zlepšení z roku 1991).
+ETTP má stejné meze; šetří konstantní faktor.`
       }
     ]
   }

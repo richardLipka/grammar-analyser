@@ -3,12 +3,17 @@
  *
  * Implements the ATN data structure based on:
  * Parr, T., Harwell, S., & Fisher, K. (2014).
- * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14.
+ * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14, §4.3.
+ *
+ * Every non-terminal A gets a submachine p_A → p_{A,i} → … → p'_A: a rule start
+ * state, one path per production (one state before every right-hand-side symbol
+ * and one for the completed production) and a rule stop state. A terminal is an atom edge, a non-terminal B is a rule
+ * edge to p_B that remembers the follow (return) state q.
  */
 
 import { Grammar, Production, EPSILON } from '../ast/grammar';
 
-export type ATNStateType = 'RULE_START' | 'RULE_STOP' | 'BLOCK_START' | 'BLOCK_END' | 'BASIC';
+export type ATNStateType = 'RULE_START' | 'RULE_STOP' | 'BASIC';
 
 export interface ATNTransition {
   kind: 'epsilon' | 'atom' | 'rule';
@@ -31,6 +36,8 @@ export interface ATNState {
   /** Production rule associated with this state, if applicable */
   production?: Production;
   altIndex?: number;
+  /** Position of the "dot" in `production` (the state stands before rhs[dot]; rhs.length = completed) */
+  dot?: number;
 }
 
 export interface ATNDecisionPoint {
@@ -52,8 +59,15 @@ export interface ATN {
   ruleToStopState: Map<string, number>;
   decisionPoints: ATNDecisionPoint[];
   nonTerminalToDecision: Map<string, ATNDecisionPoint>;
+  /** For every rule B: the follow states q of all edges p –B→ q (call sites of B) */
   ruleFollowers: Map<string, number[]>;
+  /** Follow state of the rule edge for rhs[pos] of the alt-th production of lhs, key `lhs|alt|pos` */
+  callFollowState: Map<string, number>;
 }
+
+export const callSiteKey = (lhs: string, alt: number, pos: number) => `${lhs}|${alt}|${pos}`;
+
+const isEpsilonRhs = (p: Production) => p.rhs.length === 0 || (p.rhs.length === 1 && p.rhs[0] === EPSILON);
 
 /**
  * Builds an Augmented Transition Network (ATN) from a context-free grammar.
@@ -64,16 +78,18 @@ export function buildATN(grammar: Grammar): ATN {
   const ruleToStopState = new Map<string, number>();
   const decisionPoints: ATNDecisionPoint[] = [];
   const nonTerminalToDecision = new Map<string, ATNDecisionPoint>();
+  const callFollowState = new Map<string, number>();
 
   let stateCounter = 0;
-  function createState(ruleName: string, stateType: ATNStateType, production?: Production, altIndex?: number): ATNState {
+  function createState(ruleName: string, stateType: ATNStateType, production?: Production, altIndex?: number, dot?: number): ATNState {
     const s: ATNState = {
       id: stateCounter++,
       ruleName,
       stateType,
       transitions: [],
       production,
-      altIndex
+      altIndex,
+      dot
     };
     states.push(s);
     return s;
@@ -89,6 +105,39 @@ export function buildATN(grammar: Grammar): ATN {
 
   let decisionCounter = 0;
 
+  /**
+   * Path p_{A,i} –X1→ … –Xn→ end_i –ε→ p'_A for production i. Every state on the path
+   * stands before one rhs symbol; end_i is the completed item A → X1 … Xn •.
+   */
+  function buildProductionPath(prod: Production, fromState: ATNState, stopState: ATNState, altNum: number): void {
+    fromState.production = prod;
+    fromState.altIndex = altNum;
+    fromState.dot = 0;
+    const rhs = isEpsilonRhs(prod) ? [] : prod.rhs;
+
+    let current = fromState;
+    for (let i = 0; i < rhs.length; i++) {
+      const sym = rhs[i];
+      const nextState = createState(prod.lhs, 'BASIC', prod, altNum, i + 1);
+
+      if (grammar.nonTerminals.has(sym) && ruleToStartState.has(sym)) {
+        current.transitions.push({
+          kind: 'rule',
+          target: ruleToStartState.get(sym)!,
+          ruleName: sym,
+          followState: nextState.id,
+          alt: altNum
+        });
+        callFollowState.set(callSiteKey(prod.lhs, altNum, i), nextState.id);
+      } else {
+        // Terminal symbol match (also any symbol that is not a known non-terminal)
+        current.transitions.push({ kind: 'atom', target: nextState.id, label: sym, alt: altNum });
+      }
+      current = nextState;
+    }
+    current.transitions.push({ kind: 'epsilon', target: stopState.id, alt: altNum });
+  }
+
   // Pass 2: construct networks for each non-terminal
   for (const nt of grammar.nonTerminals) {
     const prods = grammar.productions.filter(p => p.lhs === nt);
@@ -96,109 +145,33 @@ export function buildATN(grammar: Grammar): ATN {
     const stopState = states[ruleToStopState.get(nt)!];
 
     if (prods.length === 0) {
-      // Empty rule: transition start -> stop via epsilon
-      startState.transitions.push({ kind: 'epsilon', target: stopState.id });
+      // A non-terminal without productions derives nothing: its submachine has no path to p'_A.
       continue;
     }
 
     if (prods.length === 1) {
-      // Single production: direct path from start to stop
-      const p = prods[0];
-      const endState = buildProductionPath(p, startState, stopState, 1);
-      if (endState.id !== stopState.id) {
-        endState.transitions.push({ kind: 'epsilon', target: stopState.id });
-      }
-    } else {
-      // Multiple productions: decision block
-      const decisionNum = ++decisionCounter;
-      const blockStart = createState(nt, 'BLOCK_START');
-      const blockEnd = createState(nt, 'BLOCK_END');
-
-      startState.transitions.push({ kind: 'epsilon', target: blockStart.id });
-
-      const decisionInfo: ATNDecisionPoint = {
-        decisionNumber: decisionNum,
-        nonTerminal: nt,
-        blockStartState: blockStart.id,
-        blockEndState: blockEnd.id,
-        alternatives: []
-      };
-
-      prods.forEach((prod, idx) => {
-        const altNum = idx + 1;
-        const altStart = createState(nt, 'BASIC', prod, altNum);
-        blockStart.transitions.push({
-          kind: 'epsilon',
-          target: altStart.id,
-          alt: altNum
-        });
-
-        decisionInfo.alternatives.push({
-          alt: altNum,
-          production: prod,
-          targetState: altStart.id
-        });
-
-        const altEnd = buildProductionPath(prod, altStart, blockEnd, altNum);
-        if (altEnd.id !== blockEnd.id) {
-          altEnd.transitions.push({ kind: 'epsilon', target: blockEnd.id, alt: altNum });
-        }
-      });
-
-      blockEnd.transitions.push({ kind: 'epsilon', target: stopState.id });
-      decisionPoints.push(decisionInfo);
-      nonTerminalToDecision.set(nt, decisionInfo);
-    }
-  }
-
-  function buildProductionPath(prod: Production, fromState: ATNState, finalTarget: ATNState, altNum: number): ATNState {
-    if (prod.rhs.length === 0 || (prod.rhs.length === 1 && prod.rhs[0] === EPSILON)) {
-      // Epsilon production: transition directly to finalTarget
-      fromState.transitions.push({ kind: 'epsilon', target: finalTarget.id, alt: altNum });
-      return finalTarget;
+      // The rule start state p_A is also the left edge of its only production.
+      buildProductionPath(prods[0], startState, stopState, 1);
+      continue;
     }
 
-    let current = fromState;
-    for (let i = 0; i < prod.rhs.length; i++) {
-      const sym = prod.rhs[i];
-      const isLast = i === prod.rhs.length - 1;
-      const nextState = isLast ? finalTarget : createState(prod.lhs, 'BASIC', prod, altNum);
-
-      if (grammar.terminals.has(sym)) {
-        // Terminal symbol match
-        current.transitions.push({
-          kind: 'atom',
-          target: nextState.id,
-          label: sym,
-          alt: altNum
-        });
-      } else if (grammar.nonTerminals.has(sym)) {
-        // Rule invocation transition
-        const calleeStart = ruleToStartState.get(sym);
-        if (calleeStart !== undefined) {
-          current.transitions.push({
-            kind: 'rule',
-            target: calleeStart,
-            ruleName: sym,
-            followState: nextState.id,
-            alt: altNum
-          });
-        } else {
-          current.transitions.push({ kind: 'epsilon', target: nextState.id, alt: altNum });
-        }
-      } else {
-        // Fallback for symbols
-        current.transitions.push({
-          kind: 'atom',
-          target: nextState.id,
-          label: sym,
-          alt: altNum
-        });
-      }
-      current = nextState;
-    }
-
-    return current;
+    // Several productions: decision p_A –ε→ p_{A,i} (Parr et al. 2014, §4.3)
+    const decisionInfo: ATNDecisionPoint = {
+      decisionNumber: ++decisionCounter,
+      nonTerminal: nt,
+      blockStartState: startState.id,
+      blockEndState: stopState.id,
+      alternatives: []
+    };
+    prods.forEach((prod, idx) => {
+      const altNum = idx + 1;
+      const altStart = createState(nt, 'BASIC', prod, altNum, 0);
+      startState.transitions.push({ kind: 'epsilon', target: altStart.id, alt: altNum });
+      decisionInfo.alternatives.push({ alt: altNum, production: prod, targetState: altStart.id });
+      buildProductionPath(prod, altStart, stopState, altNum);
+    });
+    decisionPoints.push(decisionInfo);
+    nonTerminalToDecision.set(nt, decisionInfo);
   }
 
   // Precompute follow-up return states for all rule calls
@@ -207,7 +180,7 @@ export function buildATN(grammar: Grammar): ATN {
     for (const trans of s.transitions) {
       if (trans.kind === 'rule' && trans.ruleName && trans.followState !== undefined) {
         const list = ruleFollowers.get(trans.ruleName) ?? [];
-        list.push(trans.followState);
+        if (!list.includes(trans.followState)) list.push(trans.followState);
         ruleFollowers.set(trans.ruleName, list);
       }
     }
@@ -220,6 +193,24 @@ export function buildATN(grammar: Grammar): ATN {
     ruleToStopState,
     decisionPoints,
     nonTerminalToDecision,
-    ruleFollowers
+    ruleFollowers,
+    callFollowState
   };
+}
+
+/**
+ * Readable form of an ATN state as a dotted item (KIV/FJP notation):
+ * "A → a • B c" for a state inside a production, p_A for the rule start state
+ * (before the choice of a production) and p'_A for the rule stop state.
+ */
+export function describeATNState(atn: ATN, stateId: number): string {
+  const s = atn.states[stateId];
+  if (!s) return `#${stateId}`;
+  if (s.stateType === 'RULE_STOP') return `p'${s.ruleName}`;
+  if (s.production && s.dot !== undefined && !(s.stateType === 'RULE_START' && atn.nonTerminalToDecision.has(s.ruleName))) {
+    const rhs = isEpsilonRhs(s.production) ? [] : s.production.rhs;
+    const parts = [...rhs.slice(0, s.dot), '•', ...rhs.slice(s.dot)];
+    return `${s.production.lhs} → ${parts.join(' ')}`;
+  }
+  return `p${s.ruleName}`;
 }

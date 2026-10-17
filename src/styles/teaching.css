@@ -1732,29 +1732,140 @@
   outline: 2.5px solid var(--color-primary);
   outline-offset: -2px;
   background-color: var(--color-primary-subtle);
-  font-weight: 700;
 }
 
-.cyk-cell.active-left {
-  outline: 2px solid #2563eb;
+/* The operands of the current split (step by step) and of a hovered witness: left V(i, k), right V(k+1, j) */
+.cyk-cell.active-left,
+.cyk-cell.witness-left {
+  outline: 2px solid var(--color-warning);
   outline-offset: -2px;
-  background-color: rgba(37, 99, 235, 0.18);
+  background-color: var(--color-warning-subtle);
 }
 
-.cyk-cell.active-right {
-  outline: 2px solid #9333ea;
+.cyk-cell.active-right,
+.cyk-cell.witness-right {
+  outline: 2px solid var(--graph-origin);
   outline-offset: -2px;
-  background-color: rgba(147, 51, 234, 0.18);
+  background-color: var(--graph-origin-subtle);
+}
+
+.cyk-cell.witness-left,
+.cyk-cell.witness-right {
+  outline-style: dashed;
 }
 
 .cyk-cell.dimmed {
   opacity: 0.35;
 }
 
-.cyk-cell.witness {
+/* Non-terminals that enter the cell in the current step */
+.cyk-new {
+  font-weight: 800;
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.cyk-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 10px;
+}
+
+/* Table beside the step explanation and the tree on wide screens, below each other otherwise */
+.cyk-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cyk-main,
+.cyk-side {
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .cyk-layout {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(380px, 1fr);
+    align-items: start;
+    gap: 16px;
+  }
+}
+
+.cyk-step-box {
+  /* a fixed minimum so that the table and the tree do not jump between steps */
+  min-height: 10.5em;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  background-color: var(--color-primary-subtle);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+}
+
+.cyk-step-box.accepted {
+  background-color: var(--color-success-subtle);
+  border-color: var(--color-success);
+}
+
+.cyk-step-box.rejected {
+  background-color: var(--color-danger-subtle);
+  border-color: var(--color-danger);
+}
+
+.cyk-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.cyk-badge {
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+}
+
+.cyk-badge-left {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+  background-color: var(--color-warning-subtle);
+}
+
+.cyk-badge-right {
+  color: var(--graph-origin);
+  border-color: var(--graph-origin);
   background-color: var(--graph-origin-subtle);
-  outline: 2px solid var(--graph-origin);
-  outline-offset: -2px;
+}
+
+.cyk-tree-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.cyk-tree-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.cyk-no-tree {
+  padding: 24px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
 }
 
 .cyk-cell.top {

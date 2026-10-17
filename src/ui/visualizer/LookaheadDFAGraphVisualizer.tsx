@@ -1,15 +1,17 @@
 /**
  * Interactive SVG Lookahead DFA Graph Visualizer powered by Dagre layout.
  *
- * Visualizes the runtime Lookahead DFA materialized for an ALL(*) decision point
- * as described in:
- * Parr, T., Harwell, S., & Fisher, K. (2014).
- * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14.
+ * Visualizes the lookahead DFA of one ALL(*) decision as built by SLL prediction
+ * (Parr, Harwell & Fisher 2014, §4.4, §5.4): every DFA state is a set of ATN
+ * configurations (p, i, γ) shown as dotted items, edges are lookahead symbols.
+ * With `upToClock` only the states and edges that existed at that moment of the
+ * simulation are drawn.
  */
 
 import React, { useId, useMemo, useRef, useState } from 'react';
 import dagre from 'dagre';
-import { LookaheadDFA, DFAState } from '../../core/all/allPredictor';
+import { LookaheadDFA, DFAState, describeConfig, displaySymbol } from '../../core/all/allPredictor';
+import { ATN } from '../../core/all/allAtn';
 import { exportSvgFile, exportPngFile } from '../../core/export/graphExport';
 import { Language } from '../../i18n/translations';
 import { usePanZoom } from './usePanZoom';
@@ -18,12 +20,48 @@ import { GraphToolbar } from './GraphToolbar';
 
 interface LookaheadDFAGraphVisualizerProps {
   dfa: LookaheadDFA;
+  atn: ATN;
+  /** Show the DFA as it was at this value of the DFA clock (undefined = everything) */
+  upToClock?: number;
   selectedStateId?: number | null;
   onSelectState?: (stateId: number) => void;
   activeStateId?: number | null;
-  activeEdge?: { from: number; to: number; token: string } | null;
+  activeEdge?: { from: number; to: number } | null;
   lang?: Language;
   filename?: string;
+  height?: string;
+}
+
+export type DFAStateStatus = 'accept' | 'conflict' | 'open';
+
+export function dfaStateStatus(s: DFAState): DFAStateStatus {
+  if (s.isAcceptState && s.predictedAlt !== undefined) return 'accept';
+  if (s.stackSensitive) return 'conflict';
+  return 'open';
+}
+
+/** Short label used by the graph and the table alike */
+export function dfaStateStatusLabel(s: DFAState, cz: boolean): string {
+  switch (dfaStateStatus(s)) {
+    case 'accept': return cz ? `předpovídá alt. ${s.predictedAlt}` : `predicts alt ${s.predictedAlt}`;
+    case 'conflict': return cz ? 'konflikt SLL → LL' : 'SLL conflict → LL';
+    default: return cz ? 'čte dál' : 'needs more lookahead';
+  }
+}
+
+/** The DFA restricted to what existed at `clock` */
+export function dfaAtClock(dfa: LookaheadDFA, clock?: number): { states: DFAState[]; edges: { from: number; to: number; symbol: string }[] } {
+  const states = dfa.states.filter(s => clock === undefined || s.createdAt <= clock);
+  const ids = new Set(states.map(s => s.id));
+  const edges: { from: number; to: number; symbol: string }[] = [];
+  for (const s of states) {
+    for (const [sym, to] of Object.entries(s.edges)) {
+      if (!ids.has(to)) continue;
+      if (clock !== undefined && (s.edgeCreatedAt[sym] ?? 0) > clock) continue;
+      edges.push({ from: s.id, to, symbol: sym });
+    }
+  }
+  return { states, edges };
 }
 
 interface DFALayoutNode {
@@ -33,6 +71,8 @@ interface DFALayoutNode {
   width: number;
   height: number;
   state: DFAState;
+  lines: string[];
+  more: number;
   uniqueAlts: number[];
 }
 
@@ -40,22 +80,26 @@ interface DFALayoutEdge {
   from: number;
   to: number;
   label: string;
-  symbols: string[];
   points: { x: number; y: number }[];
   labelPos: { x: number; y: number };
 }
 
-const NODE_WIDTH = 180;
-const NODE_HEIGHT = 68;
+const NODE_WIDTH = 240;
+const MAX_LINES = 3;
+const LINE_H = 13;
+const nodeHeight = (lines: number, more: number) => 46 + (lines + (more > 0 ? 1 : 0)) * LINE_H;
 
 export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerProps> = ({
   dfa,
+  atn,
+  upToClock,
   selectedStateId,
   onSelectState,
   activeStateId,
   activeEdge,
   lang = 'en',
-  filename = 'all_lookahead_dfa'
+  filename = 'all_lookahead_dfa',
+  height = '380px'
 }) => {
   const isCz = lang === 'cz';
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,87 +107,61 @@ export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerPr
   const arrowMarkerId = useId();
   const [isExportingPng, setIsExportingPng] = useState(false);
 
-  // Compute Dagre layout
+  // The DFA object is filled during the simulation, so the layout also depends on its size.
+  const edgeCount = dfa.states.reduce((n, s) => n + Object.keys(s.edges).length, 0);
   const layout = useMemo(() => {
-    const g = new dagre.graphlib.Graph();
-    g.setGraph({
-      rankdir: 'LR',
-      nodesep: 40,
-      ranksep: 60,
-      marginx: 30,
-      marginy: 30
-    });
+    const { states, edges } = dfaAtClock(dfa, upToClock);
+    const g = new dagre.graphlib.Graph({ multigraph: false });
+    g.setGraph({ rankdir: 'LR', nodesep: 24, ranksep: 56, marginx: 30, marginy: 30 });
     g.setDefaultEdgeLabel(() => ({}));
 
-    // Register nodes
-    for (const s of dfa.states) {
-      g.setNode(String(s.id), {
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT
-      });
+    const info = new Map<number, { lines: string[]; more: number }>();
+    for (const s of states) {
+      const all = s.configs.map(c => describeConfig(atn, c));
+      const lines = all.slice(0, MAX_LINES);
+      info.set(s.id, { lines, more: all.length - lines.length });
+      g.setNode(String(s.id), { width: NODE_WIDTH, height: nodeHeight(lines.length, all.length - lines.length) });
     }
 
     // Merge multi-symbol transitions between same source and target
-    const mergedEdges = new Map<string, { from: number; to: number; symbols: string[] }>();
-    for (const s of dfa.states) {
-      for (const [sym, targetId] of Object.entries(s.edges)) {
-        const key = `${s.id}->${targetId}`;
-        if (!mergedEdges.has(key)) {
-          mergedEdges.set(key, { from: s.id, to: targetId, symbols: [] });
-        }
-        mergedEdges.get(key)!.symbols.push(sym);
-      }
+    const merged = new Map<string, { from: number; to: number; symbols: string[] }>();
+    for (const e of edges) {
+      const key = `${e.from}->${e.to}`;
+      if (!merged.has(key)) merged.set(key, { from: e.from, to: e.to, symbols: [] });
+      merged.get(key)!.symbols.push(displaySymbol(e.symbol));
     }
-
-    for (const e of mergedEdges.values()) {
-      const label = e.symbols.map(s => `'${s}'`).join(', ');
-      g.setEdge(String(e.from), String(e.to), {
-        label,
-        width: Math.max(30, label.length * 7 + 14),
-        height: 20,
-        labelpos: 'c'
-      });
+    for (const e of merged.values()) {
+      const label = e.symbols.join(', ');
+      g.setEdge(String(e.from), String(e.to), { label, width: Math.max(24, label.length * 7 + 14), height: 20, labelpos: 'c' });
     }
 
     dagre.layout(g);
 
-    const nodes: DFALayoutNode[] = dfa.states.map(s => {
+    const nodes: DFALayoutNode[] = states.map(s => {
       const n = g.node(String(s.id));
-      const uniqueAlts = Array.from(new Set(s.configs.map(c => c.alt))).sort((a, b) => a - b);
+      const { lines, more } = info.get(s.id)!;
       return {
-        id: s.id,
-        x: n.x,
-        y: n.y,
-        width: n.width,
-        height: n.height,
-        state: s,
-        uniqueAlts
+        id: s.id, x: n.x, y: n.y, width: n.width, height: n.height, state: s, lines, more,
+        uniqueAlts: Array.from(new Set(s.configs.map(c => c.alt))).sort((a, b) => a - b)
       };
     });
-
-    const edges: DFALayoutEdge[] = [...mergedEdges.values()].map(e => {
+    const layoutEdges: DFALayoutEdge[] = [...merged.values()].map(e => {
       const data = g.edge(String(e.from), String(e.to));
       const points = data?.points || [];
       const mid = points[Math.floor(points.length / 2)] || { x: 0, y: 0 };
       const labelPos = data && typeof data.x === 'number' && typeof data.y === 'number' ? { x: data.x, y: data.y } : mid;
-      return {
-        from: e.from,
-        to: e.to,
-        label: e.symbols.map(s => `'${s}'`).join(', '),
-        symbols: e.symbols,
-        points,
-        labelPos
-      };
+      return { from: e.from, to: e.to, label: e.symbols.join(', '), points, labelPos };
     });
 
-    const info = g.graph();
+    const gi = g.graph();
     return {
       nodes,
-      edges,
-      width: Math.max(400, (info.width || 600) + 60),
-      height: Math.max(260, (info.height || 300) + 60)
+      edges: layoutEdges,
+      width: Math.max(400, (gi.width || 600) + 60),
+      height: Math.max(220, (gi.height || 300) + 60)
     };
-  }, [dfa]);
+    // edgeCount and states.length: the DFA is mutated in place while parsing
+  }, [dfa, atn, upToClock, dfa.states.length, edgeCount]);
 
   const { view, fit, zoomBy, onPointerDown, isDragging } = usePanZoom(
     containerRef,
@@ -170,7 +188,7 @@ export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerPr
     <div
       ref={containerRef}
       className="graph-canvas"
-      style={{ height: '380px', cursor: isDragging ? 'grabbing' : 'grab', position: 'relative' }}
+      style={{ height, cursor: isDragging ? 'grabbing' : 'grab', position: 'relative' }}
       onPointerDown={onPointerDown}
     >
       <GraphToolbar
@@ -183,72 +201,37 @@ export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerPr
         lang={lang}
       />
 
-      <svg
-        ref={svgRef}
-        width="100%"
-        height="100%"
-        style={{ display: 'block' }}
-      >
+      <svg ref={svgRef} width="100%" height="100%" style={{ display: 'block' }}>
         <defs>
-          <marker
-            id={arrowMarkerId}
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto"
-          >
+          <marker id={arrowMarkerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--color-text-muted)" />
           </marker>
-          <marker
-            id={`${arrowMarkerId}-active`}
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto"
-          >
+          <marker id={`${arrowMarkerId}-active`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="var(--color-primary)" />
           </marker>
         </defs>
 
         <g data-viewport transform={`translate(${view.x}, ${view.y}) scale(${view.k})`}>
-          {/* Edges */}
           {layout.edges.map(e => {
-            const isEdgeActive = activeEdge && activeEdge.from === e.from && activeEdge.to === e.to;
-            const pathData = edgePath(e.points);
+            const isEdgeActive = !!activeEdge && activeEdge.from === e.from && activeEdge.to === e.to;
+            const w = Math.max(24, e.label.length * 7 + 12);
             return (
               <g key={`${e.from}->${e.to}`} className="dfa-edge">
                 <path
-                  d={pathData}
+                  d={edgePath(e.points)}
                   fill="none"
                   stroke={isEdgeActive ? 'var(--color-primary)' : 'var(--color-border)'}
                   strokeWidth={isEdgeActive ? 2.5 : 1.5}
                   markerEnd={`url(#${isEdgeActive ? `${arrowMarkerId}-active` : arrowMarkerId})`}
                 />
-                {/* Edge Label Pill */}
                 <g transform={`translate(${e.labelPos.x}, ${e.labelPos.y})`}>
-                  <rect
-                    x={-Math.max(20, e.label.length * 3.5 + 6)}
-                    y={-10}
-                    width={Math.max(40, e.label.length * 7 + 12)}
-                    height={20}
-                    rx={4}
-                    ry={4}
+                  <rect x={-w / 2} y={-10} width={w} height={20} rx={4} ry={4}
                     fill="var(--color-bg-base)"
                     stroke={isEdgeActive ? 'var(--color-primary)' : 'var(--color-border)'}
-                    strokeWidth={isEdgeActive ? 1.5 : 1}
-                  />
-                  <text
-                    textAnchor="middle"
-                    dominantBaseline="middle"
+                    strokeWidth={isEdgeActive ? 1.5 : 1} />
+                  <text textAnchor="middle" dominantBaseline="middle"
                     fill={isEdgeActive ? 'var(--color-primary)' : 'var(--color-text)'}
-                    fontSize="11px"
-                    fontFamily="monospace"
-                    fontWeight={isEdgeActive ? 600 : 500}
-                  >
+                    fontSize="11px" fontFamily="monospace" fontWeight={isEdgeActive ? 700 : 500}>
                     {e.label}
                   </text>
                 </g>
@@ -256,24 +239,16 @@ export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerPr
             );
           })}
 
-          {/* Nodes */}
           {layout.nodes.map(n => {
             const isStart = n.id === dfa.startStateId;
             const isSelected = selectedStateId === n.id;
             const isActive = activeStateId === n.id;
-            const isAccept = n.state.isAcceptState && n.state.predictedAlt !== undefined;
-
-            let borderColor = 'var(--color-border)';
-            let bgColor = 'var(--color-bg-surface)';
-
-            if (isSelected) {
-              borderColor = 'var(--color-primary)';
-            } else if (isActive) {
-              borderColor = 'var(--color-primary)';
-              bgColor = 'var(--color-primary-subtle)';
-            } else if (isAccept) {
-              borderColor = 'var(--color-success)';
-            }
+            const status = dfaStateStatus(n.state);
+            const statusColor = status === 'accept' ? 'var(--color-success)' : status === 'conflict' ? 'var(--color-warning)' : 'var(--color-text-muted)';
+            const statusBg = status === 'accept' ? 'var(--color-success-subtle)' : status === 'conflict' ? 'var(--color-warning-subtle)' : 'var(--color-bg-base)';
+            const borderColor = isActive || isSelected ? 'var(--color-primary)' : status === 'open' ? 'var(--color-border)' : statusColor;
+            const label = dfaStateStatusLabel(n.state, isCz);
+            const badgeW = label.length * 6.2 + 14;
 
             return (
               <g
@@ -282,101 +257,46 @@ export const LookaheadDFAGraphVisualizer: React.FC<LookaheadDFAGraphVisualizerPr
                 onClick={() => onSelectState?.(n.id)}
                 style={{ cursor: 'pointer' }}
               >
-                {/* Start state incoming arrow pointer */}
                 {isStart && (
-                  <g transform="translate(-24, 34)">
+                  <g transform={`translate(-24, ${n.height / 2})`}>
                     <path d="M 0 0 L 16 0" stroke="var(--color-primary)" strokeWidth="2" markerEnd={`url(#${arrowMarkerId}-active)`} />
-                    <text x="-4" y="-5" fontSize="10px" fill="var(--color-primary)" fontWeight={600} textAnchor="end">
-                      start
-                    </text>
+                    <text x="-4" y="-5" fontSize="10px" fill="var(--color-primary)" fontWeight={600} textAnchor="end">start</text>
                   </g>
                 )}
-
-                {/* State Card Background */}
                 <rect
                   width={n.width}
                   height={n.height}
                   rx={8}
                   ry={8}
-                  fill={bgColor}
+                  fill={isActive ? 'var(--color-primary-subtle)' : 'var(--color-bg-surface)'}
                   stroke={borderColor}
-                  strokeWidth={isSelected ? 2.5 : isActive ? 2 : isAccept ? 1.8 : 1.2}
+                  strokeWidth={isActive ? 3 : isSelected ? 2.5 : status === 'open' ? 1.2 : 1.8}
+                  strokeDasharray={isSelected && !isActive ? '5 3' : undefined}
                 />
-
-                {/* State Header: s{id} and accept badge */}
-                <text
-                  x={12}
-                  y={22}
-                  fontSize="13px"
-                  fontWeight={700}
-                  fill="var(--color-text)"
-                >
-                  s{n.id}
+                <text x={12} y={21} fontSize="13px" fontWeight={700} fill="var(--color-text)">
+                  {isStart ? `s${n.id} = D0` : `s${n.id}`}
                 </text>
-
-                {isAccept ? (
-                  <g transform={`translate(${n.width - 76}, 8)`}>
-                    <rect
-                      width={66}
-                      height={18}
-                      rx={3}
-                      fill="var(--color-success-subtle)"
-                      stroke="var(--color-success)"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={33}
-                      y={10}
-                      fontSize="10px"
-                      fontWeight={600}
-                      fill="var(--color-success)"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                    >
-                      Alt {n.state.predictedAlt}
-                    </text>
-                  </g>
-                ) : (
-                  <g transform={`translate(${n.width - 66}, 8)`}>
-                    <rect
-                      width={56}
-                      height={18}
-                      rx={3}
-                      fill="var(--color-bg-base)"
-                      stroke="var(--color-border)"
-                      strokeWidth={1}
-                    />
-                    <text
-                      x={28}
-                      y={10}
-                      fontSize="10px"
-                      fill="var(--color-text-muted)"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                    >
-                      {isCz ? 'Hledá se' : 'Pending'}
-                    </text>
-                  </g>
+                <g transform={`translate(${n.width - badgeW - 8}, 8)`}>
+                  <rect width={badgeW} height={18} rx={3} fill={statusBg} stroke={statusColor} strokeWidth={1} />
+                  <text x={badgeW / 2} y={10} fontSize="10px" fontWeight={600} fill={statusColor} textAnchor="middle" dominantBaseline="middle">
+                    {label}
+                  </text>
+                </g>
+                <text x={12} y={38} fontSize="10px" fill="var(--color-text-muted)">
+                  {isCz
+                    ? `${n.state.configs.length} konfigurací, alternativy {${n.uniqueAlts.join(', ')}}`
+                    : `${n.state.configs.length} configurations, alts {${n.uniqueAlts.join(', ')}}`}
+                </text>
+                {n.lines.map((line, i) => (
+                  <text key={i} x={12} y={54 + i * LINE_H} fontSize="10px" fontFamily="monospace" fill="var(--color-text)">
+                    {line.length > 38 ? `${line.slice(0, 37)}…` : line}
+                  </text>
+                ))}
+                {n.more > 0 && (
+                  <text x={12} y={54 + n.lines.length * LINE_H} fontSize="10px" fill="var(--color-text-muted)">
+                    {isCz ? `… a dalších ${n.more} (klikněte)` : `… and ${n.more} more (click)`}
+                  </text>
                 )}
-
-                {/* Configurations and Viable Alternatives Info */}
-                <text
-                  x={12}
-                  y={42}
-                  fontSize="11px"
-                  fill="var(--color-text-muted)"
-                >
-                  {isCz ? `Konfigurace: ${n.state.configs.length}` : `Configurations: ${n.state.configs.length}`}
-                </text>
-                <text
-                  x={12}
-                  y={56}
-                  fontSize="11px"
-                  fill={isAccept ? 'var(--color-success)' : 'var(--color-text)'}
-                  fontWeight={500}
-                >
-                  {isCz ? `Živé alts: [${n.uniqueAlts.join(', ')}]` : `Viable alts: [${n.uniqueAlts.join(', ')}]`}
-                </text>
               </g>
             );
           })}

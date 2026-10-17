@@ -109,7 +109,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Title:** *The IELR(1) Algorithm for Generating Minimal LR(1) Parser Tables for Non-LR(1) Grammars with Conflict Resolution*
 - **Venue:** Science of Computer Programming, Vol. 75, No. 11, pp. 943–979, November 2010.
 - **Identifier / Link:** [https://doi.org/10.1016/j.scico.2009.09.006](https://doi.org/10.1016/j.scico.2009.09.006)
-- **App Usage:** Full journal specification of the 4-phase IELR(1) algorithm adopted in GNU Bison 2.5+: LR(0) basis, inadequacy computation, state splitting, and lookahead annotation.
+- **App Usage:** Journal specification of IELR(1), the algorithm GNU Bison has used since 2.5 (`%define lr.type ielr`). It starts from LALR(1), computes the inadequacies (conflicts) and the lookahead contributions that cause them, splits the states whose merge would change the parser's actions after conflict resolution, and recomputes the lookaheads, all without building canonical LR(1). Its parser behaves like canonical LR(1) after conflict resolution (precedence/associativity, otherwise shift before reduce and the earlier rule). The app gives the same kind of result by merging canonical LR(1) states with equal cores wherever no resolved action changes (see `buildIELR1Automaton`); it does not implement the annotation phases.
 - **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `teachingGuideData.ts`, `transformationInfo.ts`.
 
 ### Aho, Johnson & Ullman (1975)

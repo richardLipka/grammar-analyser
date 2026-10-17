@@ -105,8 +105,8 @@ R -> L`,
     id: 'lalr1_vs_lr1',
     nameEn: 'Distinguishing LALR(1) from IELR(1) and LR(1) (Symmetric)',
     nameCz: 'Rozlišení LALR(1) od IELR(1) a LR(1) (symetrická)',
-    descriptionEn: 'Classic Dragon Book grammar that is LR(1) and IELR(1), but NOT LALR(1). Merging identical LR(0) cores produces a Reduce/Reduce conflict on both "d" and "e". IELR(1) detects the spurious conflict and isolates lookaheads by keeping the context states split, producing a 14-state conflict-free parser identical in power to canonical LR(1).',
-    descriptionCz: 'Klasická gramatika z Dračí knihy, která je LR(1) i IELR(1), ale NENÍ LALR(1). Sloučením stavů se stejným LR(0) jádrem vznikne konflikt redukce-redukce na symbolech "d" a "e". IELR(1) detekuje parazitní konflikt a izoluje symboly dopředu rozdělením stavů podle kontextu, čímž vytvoří bezkolizní tabulku o 14 stavech se silou kanonického LR(1).',
+    descriptionEn: 'Classic Dragon Book grammar that is LR(1) but NOT LALR(1). After "a c" and after "b c" the LR(1) states have the same core {A → c•, B → c•} with the lookaheads A: d, B: e and A: e, B: d; LALR(1) merges them and gets a Reduce/Reduce conflict on both "d" and "e". IELR(1) keeps exactly this core split (its other states are those of LALR(1)), so its table is conflict-free; here it has 14 states like canonical LR(1), because LR(1) differs from LALR(1) only in this core.',
+    descriptionCz: 'Klasická gramatika z Dračí knihy, která je LR(1), ale NENÍ LALR(1). Po „a c“ a po „b c“ mají stavy LR(1) stejné jádro {A → c•, B → c•} s dopředu prohlíženými symboly A: d, B: e a A: e, B: d; LALR(1) je sloučí a vznikne kolize redukce-redukce na symbolech „d“ i „e“. IELR(1) ponechá rozdělené právě toto jádro (ostatní stavy má stejné jako LALR(1)), takže jeho tabulka je bez kolizí; zde má 14 stavů jako kanonický LR(1), protože LR(1) se od LALR(1) liší jen v tomto jádru.',
     category: 'LR',
     grammarText: `S -> "a" A "d" | "b" B "d" | "a" B "e" | "b" A "e"
 A -> "c"
@@ -117,8 +117,8 @@ B -> "c"`,
     id: 'print_vs_expr_ielr',
     nameEn: 'Distinguishing LALR(1) from IELR(1) (Print vs Expression Statements)',
     nameCz: 'Rozlišení LALR(1) od IELR(1) (příkazy print a výrazy)',
-    descriptionEn: 'Realistic compiler construct that is LR(1) and IELR(1), but NOT LALR(1). Identifiers in "print" statements (followed by ";" or "=") and in "expr" statements (followed by "=" or ";") have identical LR(0) cores. Merging them in LALR(1) creates spurious Reduce/Reduce conflicts on both ";" and "=". IELR(1) segregates the lookaheads by keeping the context states separate, eliminating all conflicts.',
-    descriptionCz: 'Realistická konstrukce překladače, která je LR(1) i IELR(1), ale NENÍ LALR(1). Identifikátory v příkazech "print" (následované ";" nebo "=") a v příkazech "expr" (následované "=" nebo ";") mají stejné LR(0) jádro. Jejich sloučení v LALR(1) vytvoří parazitní konflikty redukce-redukce na obou symbolech ";" i "=". IELR(1) izoluje symboly dopředu rozdělením stavů podle kontextu a všechny kolize odstraní.',
+    descriptionEn: 'Realistic compiler construct that is LR(1) but NOT LALR(1). After "print id" and after "expr id" the LR(1) states have the same core {E → id•, F → id•}, but E is followed by ";" in one context and by "=" in the other (and F the other way round). LALR(1) merges them and gets Reduce/Reduce conflicts on both ";" and "=", caused only by the merge. IELR(1) keeps this core split into two states, so its table is conflict-free like canonical LR(1).',
+    descriptionCz: 'Realistická konstrukce překladače, která je LR(1), ale NENÍ LALR(1). Po „print id“ a po „expr id“ mají stavy LR(1) stejné jádro {E → id•, F → id•}, ale za E následuje v jednom kontextu „;“ a ve druhém „=“ (a za F naopak). LALR(1) je sloučí a vzniknou kolize redukce-redukce na symbolech „;“ i „=“, způsobené jen sloučením. IELR(1) ponechá toto jádro rozdělené do dvou stavů, takže jeho tabulka je bez kolizí jako u kanonického LR(1).',
     category: 'LR',
     grammarText: `S -> "print" E ";" | "expr" E "=" | "print" F "=" | "expr" F ";"
 E -> "id"

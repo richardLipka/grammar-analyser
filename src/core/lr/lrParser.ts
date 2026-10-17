@@ -38,7 +38,7 @@ export interface LRParseStep {
   gotoFromState?: number;
   isError?: boolean;
   isAccepted?: boolean;
-  /** Number of actions in the ACTION cell when it holds a conflict (the first one is used). */
+  /** Number of actions in the ACTION cell when it holds a conflict (resolved like Bison's default). */
   conflictCount?: number;
   /** Rule numbers of the reductions so far, including this step (right parse). */
   rightParse: number[];
@@ -117,10 +117,13 @@ export function simulateLRParse(
         `Syntaktická chyba na symbolu '${lookahead}': ve stavu ${name(currentState)} neexistuje platná akce.`);
     }
 
-    const action = availableActions[0];
+    // A conflict is resolved like Bison's default: shift before reduce, the earlier rule in a reduce/reduce conflict.
+    const rank = (a: (typeof availableActions)[number]) =>
+      a.type === 'shift' ? -2 : a.type === 'accept' ? -1 : (a.production?.id ?? Number.MAX_SAFE_INTEGER);
+    const action = availableActions.reduce((best, a) => (rank(a) < rank(best) ? a : best));
     const conflictCount = availableActions.length > 1 ? availableActions.length : undefined;
-    const conflictNote = conflictCount ? ` (conflict: ${conflictCount} actions in this cell, the first one is used)` : '';
-    const conflictNoteCz = conflictCount ? ` (kolize: buňka obsahuje ${conflictCount} akce, použije se první)` : '';
+    const conflictNote = conflictCount ? ` (conflict: ${conflictCount} actions in this cell; as in Bison, shift wins over reduce and the earlier rule over a later one)` : '';
+    const conflictNoteCz = conflictCount ? ` (kolize: buňka obsahuje ${conflictCount} akce; jako v Bisonu má přesun přednost před redukcí a dřívější pravidlo před pozdějším)` : '';
 
     if (action.type === 'shift') {
       let targetState = action.targetState;
