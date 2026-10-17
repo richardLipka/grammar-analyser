@@ -19,6 +19,7 @@ import { AutomatonGraphView } from './ui/views/AutomatonGraphView';
 import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
 import { ALLView } from './ui/views/ALLView';
+import { EarleyView } from './ui/views/EarleyView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
 import { EquivalenceView } from './ui/views/EquivalenceView';
 import { TeachingGuideView } from './ui/views/TeachingGuideView';
@@ -124,6 +125,7 @@ export const App: React.FC = () => {
   const [sampleInput, setSampleInput] = useState(setup.sampleInput);
   const [activeTab, setActiveTab] = useState<TabId>(setup.url.tab ?? 'overview');
   const [lrVariant, setLrVariant] = useState<LRVariantName>('SLR(1)');
+  const [earleyMode, setEarleyMode] = useState<'classic' | 'ettp'>('classic');
   // LR tables and states: lecture f/g with named states (default) or Dragon Book ACTION/GOTO
   const [lrLayout, setLrLayoutState] = useState<LRLayout>(() => readStored(LR_LAYOUT_KEY, ['lecture', 'dragon'] as const, 'lecture'));
   // A theme or language given in the link applies to this visit only
@@ -500,13 +502,14 @@ export const App: React.FC = () => {
     { id: 'graph', icon: <Network size={15} />, label: t.tabGraph, title: t.tabGraphTitle },
     { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership, title: t.tabMembershipTitle },
     { id: 'all', icon: <Network size={15} />, label: t.tabAll, title: t.tabAllTitle },
+    { id: 'earley', icon: <Layers size={15} />, label: t.tabEarley, title: t.tabEarleyTitle },
     { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
   // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
   const TAB_ROWS: TabId[][] = [
-    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all'],
+    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all', 'earley'],
     ['transformations', 'teaching', 'check', 'rd', 'latex']
   ];
 
@@ -1029,8 +1032,9 @@ export const App: React.FC = () => {
                     lr1Table={analysisData.lr1Table}
                     lang={lang}
                     lrLayout={lrLayout}
-                    onNavigateToTab={(tab, variant) => {
+                    onNavigateToTab={(tab, variant, eMode) => {
                       if (variant) setLrVariant(variant);
+                      if (eMode) setEarleyMode(eMode);
                       setActiveTab(tab);
                     }}
                     ambiguity={analysisData.ambiguity}
@@ -1145,6 +1149,16 @@ export const App: React.FC = () => {
                     defaultInput={demoWord}
                     lang={lang}
                     onAttemptLeftRecursionRemoval={!isStale && canAnalyse ? () => applyWholeGrammar('removeLeftRec') : undefined}
+                  />
+                )}
+
+                {activeTab === 'earley' && analyzedGrammar && (
+                  <EarleyView
+                    grammar={analyzedGrammar}
+                    analysis={analysisData.analysis}
+                    defaultInput={demoWord}
+                    lang={lang}
+                    initialMode={earleyMode}
                   />
                 )}
 

@@ -517,5 +517,35 @@ FuncDecl -> "function" "id" "{" ItemList "}"
 Block -> "{" ItemList "}"
 Stmt -> "id" "=" "num" ";"`,
     sampleInput: 'const id ; let id ; function id { let id ; { const id ; id = num ; } }'
+  },
+  {
+    id: 'earley_cycles',
+    nameEn: 'Derivation Cycles (A ⇒⁺ A, Unbounded Earley)',
+    nameCz: 'Derivační cykly (A ⇒⁺ A, Earley & ETTP)',
+    descriptionEn: 'Grammar containing an explicit derivation cycle S -> S. Top-down recursive descent and ALL(*) fail on left recursion or loop infinitely. LR automata experience conflicts. Earley (1970) and ETTP (2025) handle cyclic derivation graphs natively in linear O(n) time without infinite loops.',
+    descriptionCz: 'Gramatika obsahující explicitní derivační cyklus S -> S. Klasický rekurzivní sestup i ALL(*) selžou na levé rekurzi nebo se zacyklí. LR automaty vykazují konflikty. Earley (1970) i ETTP (2025) zpracují cyklus přímo v lineárním čase O(n) bez uváznutí v nekonečné smyčce.',
+    category: 'Ambiguity',
+    grammarText: `S -> S "a" | S | "a"`,
+    sampleInput: 'a a a a a a'
+  },
+  {
+    id: 'earley_inherently_ambiguous',
+    nameEn: 'Non-LL & Non-LR Ambiguous Language (aⁿ bᵐ, n ≤ m ≤ 2n)',
+    nameCz: 'Nejednoznačný jazyk mimo LL a LR (aⁿ bᵐ, n ≤ m ≤ 2n)',
+    descriptionEn: 'Classic context-free language { aⁿ bᵐ | n ≤ m ≤ 2n }. The grammar is not LL(k) or LR(k) for any k because the ratio of terminal b\'s cannot be determined by bounded lookahead. Earley and ETTP parse all words in polynomial time and build all alternative derivation trees.',
+    descriptionCz: 'Klasický bezkontextový jazyk { aⁿ bᵐ | n ≤ m ≤ 2n }. Gramatika není LL(k) ani LR(k) pro žádné k, protože poměr koncových b nelze rozhodnout omezeným pohledem dopředu. Earley i ETTP analyzují všechna slova v polynomiálním čase a naleznou všechny derivační stromy.',
+    category: 'Ambiguity',
+    grammarText: `S -> "a" S "b" | "a" S "b" "b" | ε`,
+    sampleInput: 'a a b b b'
+  },
+  {
+    id: 'earley_equal_ab',
+    nameEn: 'Equal Count of a\'s and b\'s (Heavily Ambiguous CFG)',
+    nameCz: 'Jazyk se shodným počtem a a b (silně víceznačný)',
+    descriptionEn: 'Generates all strings containing an equal number of a\'s and b\'s in arbitrary order. Highly ambiguous and non-deterministic; LL(k), LR(k), and ALL(*) cannot parse it deterministically. Earley and ETTP parse it natively and extract valid derivation trees.',
+    descriptionCz: 'Generuje všechna slova obsahující shodný počet symbolů a a b v libovolném pořadí. Silně víceznačný jazyk, který nelze deterministicky rozložit pomocí LL(k), LR(k) ani ALL(*). Earley i ETTP jej přímo analyzují a sestaví platné derivační stromy.',
+    category: 'Ambiguity',
+    grammarText: `S -> "a" S "b" S | "b" S "a" S | ε`,
+    sampleInput: 'a b b a a b'
   }
 ];

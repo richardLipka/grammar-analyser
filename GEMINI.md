@@ -36,6 +36,7 @@ src/
 │   ├── ll/                 # llTable.ts (LL(1), LL(2) tables), llParser.ts (LL simulator)
 │   ├── lr/                 # lrItem, lrAutomaton (LR(0), LALR(1) by propagation, LR(1)), lrTable, lrParser, glrParser (GLR/GSS), lrConstruction, lrExplain
 │   ├── all/                # allAtn.ts (ATN network), allPredictor.ts (Lookahead DFA & ATN simulation), allParser.ts (ALL simulator)
+│   ├── earley/             # earleyParser.ts (classic Earley 1970), ettpParser.ts (ETTP Scott & Johnstone 2025), earleyCompatibility.ts, earleyExplain.ts
 │   ├── codegen/            # Recursive descent: generators (PL/0, Oberon, C, Python, JS), PL/0 compiler, P-code VM, step simulator, symbol table
 │   ├── export/             # LaTeX and graph export (graphExport.ts, latexExport.ts)
 │   └── presets/            # Built-in example grammars (presetGrammars.ts, rdSampleGrammars.ts)
@@ -177,6 +178,12 @@ All transformations preserve $L(G) = L(G')$ and generate step-by-step educationa
 - **Interactive Step Simulator & Graph Visualization**:
   - Step simulator tracing input token pointer, active ATN configurations, lookahead depth, decision stack, and derivation tree construction.
   - Interactive SVG visualizer for dynamically synthesized Lookahead DFAs using Dagre hierarchical layout, complete with pan, zoom, node drag, and state inspection drawer.
+
+### 5.5 Earley (1970) & Earley Table Traversing Parsers (ETTP, Scott & Johnstone 2025)
+- **Theoretical Foundation**: General context-free chart parsing for arbitrary CFGs (including left/right recursion, syntactic ambiguities, and cycles) with $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ unambiguous, and $\mathcal{O}(n)$ linear deterministic time bounds.
+- **Classic Earley (1970)**: Implements state sets $S_0 \dots S_n$ with Earley items $[A \to \alpha \cdot \beta, j]$ driven by Scanner, Predictor, and Completer operations, using the Aycock & Horspool (2002) nullable optimization to handle $\varepsilon$-rules robustly without cyclic chart looping.
+- **Earley Table Traversing Parsers (ETTP 2025/2026)**: Implements Scott & Johnstone's precomputed Earley transition table. Eliminates runtime dynamic prediction operations (0 predictor steps at runtime), maintaining compact $(q, j)$ state-origin pairs and traversing transitions $\delta(q, X)$ across input sets $S_i$.
+- **Interactive Step Simulator & Derivation Trees**: Full step trace with color-coded operation badges, chart snapshot visualization, ETTP transition table inspector, and synchronized derivation tree generation.
 
 ---
 

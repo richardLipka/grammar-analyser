@@ -11,7 +11,10 @@ import { LatexExportButton } from '../components/LatexExportButton';
 import { ProductionText } from '../components/Symbols';
 import { exportGrammarToLatex } from '../../core/export/latexExport';
 
-type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex';
+import { checkALLCompatibility } from '../../core/all/allParser';
+import { checkEarleyCompatibility, checkETTPCompatibility } from '../../core/earley/earleyCompatibility';
+
+type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex' | 'all' | 'earley';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 interface OverviewViewProps {
@@ -27,7 +30,7 @@ interface OverviewViewProps {
   lang: Language;
   /** Conflicts are counted per state for LR(0) in the lecture layout, per table cell otherwise */
   lrLayout: LRLayout;
-  onNavigateToTab?: (tab: TabId, lrVariant?: LRVariantName) => void;
+  onNavigateToTab?: (tab: TabId, lrVariant?: LRVariantName, earleyMode?: 'classic' | 'ettp') => void;
   /** Search for a word with two derivation trees */
   ambiguity?: AmbiguityResult;
   provenUnambiguous?: 'LL(1)' | 'LR(1)';
@@ -99,6 +102,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   const hasAnyConflicts = !llTable.isLL1 || lrBadges.some(b => b.table && !b.table.isConflictFree);
 
+  const allComp = React.useMemo(() => checkALLCompatibility(grammar, analysis), [grammar, analysis]);
+  const earleyComp = React.useMemo(() => checkEarleyCompatibility(grammar, analysis), [grammar, analysis]);
+  const ettpComp = React.useMemo(() => checkETTPCompatibility(grammar, analysis), [grammar, analysis]);
+
   return (
     <div>
       {/* Automata Classification Badges */}
@@ -168,6 +175,50 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               onClick={() => onNavigateToTab?.('lr', b.variant)}
             />
           ))}
+        </div>
+      </div>
+
+      {/* General & Adaptive Parser Compatibility (ALL(*), Earley, ETTP) */}
+      <div className="card" style={{ marginTop: '16px' }}>
+        <div className="card-title">
+          <span>{t.generalParsersTitle}</span>
+          <ShieldCheck size={18} color="var(--color-primary)" />
+        </div>
+        <p className="hint-text" style={{ marginBottom: '10px' }}>{t.generalParsersHint}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '10px' }}>
+          <BadgeItem
+            label={t.isALL}
+            status={allComp.canParse ? 'ok' : 'no'}
+            detail={
+              allComp.canParse
+                ? (cz ? 'Kompatibilní (bez levé rekurze)' : 'Compatible (no left recursion)')
+                : (cz ? `Nekompatibilní: levá rekurze v { ${allComp.leftRecursiveRules.join(', ')} }` : `Incompatible: left recursion in { ${allComp.leftRecursiveRules.join(', ')} }`)
+            }
+            targetHint={allComp.canParse ? (cz ? 'Otevřít simulátor ALL(*)' : 'Open ALL(*) simulator') : (cz ? 'Zobrazit diagnostiku v záložce ALL(*)' : 'View diagnostics in ALL(*) tab')}
+            onClick={() => onNavigateToTab?.('all')}
+          />
+          <BadgeItem
+            label={t.isEarley}
+            status={earleyComp.canParse ? 'ok' : 'no'}
+            detail={
+              earleyComp.canParse
+                ? (cz ? 'Obecný rozklad O(n³), libovolná CFG' : 'General CFG parsing O(n³)')
+                : (cz ? 'Startovací symbol negeneruje' : 'Start symbol non-generating')
+            }
+            targetHint={cz ? 'Otevřít simulátor Earley (1970)' : 'Open Earley (1970) simulator'}
+            onClick={() => onNavigateToTab?.('earley', undefined, 'classic')}
+          />
+          <BadgeItem
+            label={t.isETTP}
+            status={ettpComp.canParse ? 'ok' : 'no'}
+            detail={
+              ettpComp.canParse
+                ? (cz ? `Předpočítaná tabulka přechodů (${ettpComp.statesCount} stavů)` : `Precomputed table (${ettpComp.statesCount} states)`)
+                : (cz ? 'Chyba sestavení tabulky' : 'Table construction error')
+            }
+            targetHint={cz ? 'Otevřít simulátor ETTP (2025)' : 'Open ETTP (2025) simulator'}
+            onClick={() => onNavigateToTab?.('earley', undefined, 'ettp')}
+          />
         </div>
       </div>
 
