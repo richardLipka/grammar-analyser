@@ -133,7 +133,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
   const [tip, setTip] = useState<{ anchor: DOMRect; content: React.ReactNode } | null>(null);
   const markerId = useId().replace(/:/g, '');
   const isCz = lang === 'cz';
-  const withLookaheads = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)';
+  const withLookaheads = automaton.variant === 'LR(1)' || automaton.variant === 'LALR(1)' || automaton.variant === 'IELR(1)';
 
   const layout = useMemo(() => {
     const g = new dagre.graphlib.Graph();

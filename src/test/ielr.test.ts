@@ -155,6 +155,20 @@ describe('IELR(1) Algorithm (Denny & Malloy 2008, 2010)', () => {
       expect(data.ielr1Table).toBeDefined();
       expect(data.ielr1Table!.isConflictFree).toBe(true);
       expect(data.lalr1Table.isConflictFree).toBe(false);
+
+      // Verify that lookaheads are populated for all states and items
+      const ielr = data.ielr1Automaton!;
+      for (const s of ielr.states) {
+        expect(s.items1).toBeDefined();
+        expect(s.items1!.length).toBeGreaterThan(0);
+        // Verify stateDisplayItems with withLookaheads = true
+        const displayItems = s.items0.map(it0 => ({
+          production: it0.production,
+          dotIndex: it0.dotIndex,
+          lookaheads: s.items1?.filter(it1 => it1.production.id === it0.production.id && it1.dotIndex === it0.dotIndex).map(i => i.lookahead)
+        }));
+        expect(displayItems.some(it => it.lookaheads && it.lookaheads.length > 0)).toBe(true);
+      }
     });
   });
 
