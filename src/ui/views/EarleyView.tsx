@@ -16,7 +16,9 @@ import {
   simulateEarleyParse,
   EarleySimulationResult,
   EarleyStep,
+  EarleyOperation,
   formatEarleyItem,
+  formatLeoItem,
   subscript
 } from '../../core/earley/earleyParser';
 import {
@@ -70,6 +72,8 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   const cz = lang === 'cz';
 
   const [parserMode, setParserMode] = useState<'classic' | 'ettp'>(initialMode);
+  /** Leo's (1991) transitive items in the classic completer. */
+  const [useLeo, setUseLeo] = useState(false);
   const [ettpSubView, setEttpSubView] = useState<'chart' | 'graph'>('chart');
   const [selectedGraphStateId, setSelectedGraphStateId] = useState<number | null>(null);
   const [selectedTreeIdx, setSelectedTreeIdx] = useState<number>(0);
@@ -86,11 +90,16 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   // Tokenize input
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
 
-  // Run Earley simulation
-  const earleySim: EarleySimulationResult = useMemo(
+  // Run Earley simulation, without and with Leo's transitive items (the panel compares the counts)
+  const earleyPlainSim: EarleySimulationResult = useMemo(
     () => simulateEarleyParse(tokenized.tokens, grammar),
     [tokenized, grammar]
   );
+  const earleyLeoSim: EarleySimulationResult = useMemo(
+    () => simulateEarleyParse(tokenized.tokens, grammar, { leo: true }),
+    [tokenized, grammar]
+  );
+  const earleySim = useLeo ? earleyLeoSim : earleyPlainSim;
 
   // Run ETTP simulation
   const ettpSim: ETTPSimulationResult = useMemo(
@@ -112,7 +121,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
     setCurrentStepIdx(0);
     setIsPlaying(false);
     setSelectedTreeIdx(0);
-  }, [inputText, parserMode, grammar]);
+  }, [inputText, parserMode, grammar, useLeo]);
 
   // Autoplay hook
   useAutoPlay(isPlaying, currentStepIdx, totalSteps, playSpeed, setCurrentStepIdx, () => setIsPlaying(false));
@@ -128,7 +137,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
   /** Role of each item that caused the current step, keyed `${set}:${index}`. */
   const sourceRoles = useMemo(() => {
     const m = new Map<string, string>();
-    for (const src of activeStep?.sources ?? []) m.set(`${src.setIndex}:${src.itemIndex}`, src.role);
+    for (const src of activeStep?.sources ?? []) m.set(`${src.role === 'transitive' ? 'L' : ''}${src.setIndex}:${src.itemIndex}`, src.role);
     return m;
   }, [activeStep]);
   const roleLabel = (role: string) =>
@@ -136,7 +145,8 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
       parent: cz ? 'zdroj predikce' : 'predicted from',
       scanned: cz ? 'čte se terminál' : 'scanned item',
       completed: cz ? 'dokončená' : 'completed',
-      waiting: cz ? 'čekala na neterminál' : 'waited for it'
+      waiting: cz ? 'čekala na neterminál' : 'waited for it',
+      transitive: cz ? 'použitá tranzitivní' : 'transitive item used'
     }[role] ?? role);
   const roleColor = (role: string) => (role === 'completed' || role === 'scanned' ? 'var(--color-success)' : 'var(--color-warning)');
 
@@ -209,10 +219,10 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
 
   const theory = cz ? EARLEY_THEORY_GUIDE.cz : EARLEY_THEORY_GUIDE.en;
 
-  const operationName = (op: 'init' | 'predict' | 'scan' | 'complete') =>
-    ({ init: cz ? 'inicializace' : 'init', predict: cz ? 'prediktor' : 'predictor', scan: cz ? 'skener' : 'scanner', complete: cz ? 'kompletor' : 'completer' }[op]);
+  const operationName = (op: EarleyOperation) =>
+    ({ init: cz ? 'inicializace' : 'init', predict: cz ? 'prediktor' : 'predictor', scan: cz ? 'skener' : 'scanner', complete: cz ? 'kompletor' : 'completer', leo: cz ? 'kompletor (Leo)' : 'completer (Leo)', transitive: cz ? 'tranzitivní (Leo)' : 'transitive (Leo)' }[op]);
 
-  const operationBadge = (op: 'init' | 'predict' | 'scan' | 'complete') => {
+  const operationBadge = (op: EarleyOperation) => {
     switch (op) {
       case 'init':
         return <span className="badge badge-info">{cz ? 'Inicializace' : 'Init'}</span>;
@@ -222,6 +232,10 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
         return <span className="badge badge-success">{cz ? 'Skener' : 'Scan'}</span>;
       case 'complete':
         return <span className="badge badge-warning">{cz ? 'Kompletor' : 'Complete'}</span>;
+      case 'leo':
+        return <span className="badge badge-warning">{cz ? 'Kompletor (Leo)' : 'Complete (Leo)'}</span>;
+      case 'transitive':
+        return <span className="badge" style={{ backgroundColor: 'var(--color-primary-subtle)', color: 'var(--color-primary)', border: '1px dashed var(--color-primary)' }}>{cz ? 'Leo: tranzitivní položka' : 'Leo: transitive item'}</span>;
     }
   };
 
@@ -338,6 +352,25 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
             </button>
           )}
         </div>
+
+        {parserMode === 'classic' && (
+          <label
+            style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '10px', fontSize: '12px', cursor: 'pointer', lineHeight: 1.4 }}
+            title={cz
+              ? 'Leo (1991): je-li [A → α • B, j] jediná položka v Sₖ s B za tečkou a B je její poslední symbol, uloží se do Sₖ tranzitivní položka s nejvyšší položkou deterministické redukční cesty a kompletor přidá jen tu.'
+              : 'Leo (1991): if [A → α • B, j] is the only item of Sₖ with B after the dot and B is its last symbol, Sₖ stores a transitive item holding the topmost item of the deterministic reduction path, and the completer adds only that one.'}
+          >
+            <input type="checkbox" checked={useLeo} onChange={e => setUseLeo(e.target.checked)} style={{ marginTop: '2px' }} />
+            <span>
+              <strong>{cz ? 'Leovy tranzitivní položky (Leo 1991)' : "Leo's transitive items (Leo 1991)"}</strong>
+              <span style={{ color: 'var(--color-text-secondary)' }}>
+                {cz
+                  ? ` — pravá rekurze (např. S → a S | ε na aⁿ) pak stojí lineárně mnoho položek místo kvadraticky. Položek bez Lea: ${earleyPlainSim.stats.totalItems}, s Leem: ${earleyLeoSim.stats.totalItems} + ${earleyLeoSim.stats.leoItems} tranzitivních.`
+                  : ` — right recursion (e.g. S → a S | ε on aⁿ) then costs a linear number of items instead of a quadratic one. Items without Leo: ${earleyPlainSim.stats.totalItems}, with Leo: ${earleyLeoSim.stats.totalItems} + ${earleyLeoSim.stats.leoItems} transitive.`}
+              </span>
+            </span>
+          </label>
+        )}
 
         <TokenizedInputNote tokenized={tokenized} lang={lang} />
       </div>
@@ -563,7 +596,8 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                           {cz ? 'Zatím prázdná množina' : 'Set empty so far'}
                         </span>
                       ) : parserMode === 'classic' ? (
-                        (snapshotItems as typeof activeEarleyStep.item[]).map((it, itIdx) => {
+                        <>
+                        {(snapshotItems as typeof activeEarleyStep.item[]).map((it, itIdx) => {
                           const isLatest = activeEarleyStep?.activeSetIndex === setIdx && itIdx === activeEarleyStep.itemIndex;
                           const role = sourceRoles.get(`${setIdx}:${itIdx}`);
                           const tooltipText = `${formatEarleyItem(it)}\nOperation: ${it.operation}${it.triggerSymbol ? `\nTrigger: ${it.triggerSymbol}` : ''}${it.completedItemOrigin !== undefined ? `\nOrigin: ${it.completedItemOrigin}` : ''}`;
@@ -589,7 +623,36 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                               </div>
                             </div>
                           );
-                        })
+                        })}
+                        {earleySim.sets[setIdx].leoItems.slice(0, activeEarleyStep?.leoSizes[setIdx] ?? 0).map((leo, leoIdx) => {
+                          const isLatest = activeEarleyStep?.operation === 'transitive' && activeEarleyStep.activeSetIndex === setIdx && leoIdx === activeEarleyStep.itemIndex;
+                          const role = sourceRoles.get(`L${setIdx}:${leoIdx}`);
+                          return (
+                            <div
+                              key={`leo${leoIdx}`}
+                              title={cz
+                                ? `Tranzitivní položka (Leo) pro ${leo.symbol}: dokončí-li se ${leo.symbol} s počátkem ${setIdx}, kompletor přidá rovnou ${formatEarleyItem(leo)}. Zastupuje ${leo.depth} pol. deterministické redukční cesty.`
+                                : `Transitive item (Leo) for ${leo.symbol}: when ${leo.symbol} is completed with origin ${setIdx}, the completer adds ${formatEarleyItem(leo)} directly. Stands for ${leo.depth} item(s) of the deterministic reduction path.`}
+                              data-latest={isLatest ? 'true' : undefined}
+                              style={{
+                                padding: '5px 8px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: isLatest ? 'var(--color-primary-subtle)' : 'var(--color-bg-base)',
+                                border: isLatest ? '2px solid var(--color-primary)' : role ? `2px dashed ${roleColor(role)}` : '1px dashed var(--color-primary)',
+                                fontSize: '11px',
+                                fontFamily: 'monospace'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{formatLeoItem(leo)}</span>
+                                <span style={{ fontSize: '9.5px', opacity: 0.8, whiteSpace: 'nowrap' }}>
+                                  {role ? roleLabel(role) : (cz ? `Leo, ${leo.depth} pol.` : `Leo, ${leo.depth} items`)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        </>
                       ) : (
                         (snapshotItems as { stateId: number; origin: number }[]).map((it, itIdx) => {
                           const isLatest = activeETTPStep?.activeSetIndex === setIdx && itIdx === activeETTPStep.itemIndex;
@@ -753,6 +816,11 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)' }}>
                   {cz ? `z toho predikcí za běhu: ${earleySim.stats.predictCount}` : `of them runtime predictions: ${earleySim.stats.predictCount}`}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginTop: '4px' }} data-testid="leo-counts">
+                  {cz
+                    ? `bez Lea ${earleyPlainSim.stats.totalItems} položek; s Leem ${earleyLeoSim.stats.totalItems} + ${earleyLeoSim.stats.leoItems} tranzitivních (vynecháno ${earleyLeoSim.stats.skippedItems})`
+                    : `without Leo ${earleyPlainSim.stats.totalItems} items; with Leo ${earleyLeoSim.stats.totalItems} + ${earleyLeoSim.stats.leoItems} transitive (${earleyLeoSim.stats.skippedItems} skipped)`}
                 </div>
               </div>
 
