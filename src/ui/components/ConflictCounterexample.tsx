@@ -96,7 +96,11 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
             {cz ? 'Nesjednocující protipříklad' : 'Non-unifying counterexample'}
           </div>
           <p style={{ margin: '4px 0' }}>
-            {cx.samePrefix
+            {cx.samePrefix && cx.derivations.some(d => !d.lookaheadInContext) && t && variant !== 'LR(0)'
+              ? (cz
+                ? `Obě odvození mají stejnou předponu až po místo kolize (•) a vedou do stavu ${stateName}. Pro ${actionText(cx.derivations.find(d => !d.lookaheadInContext)!.action, undefined, true)} ale žádné odvození do tohoto stavu nemá za • symbol ${t} (viz poznámka u něj).`
+                : `Both derivations have the same prefix up to the conflict point (•) and lead to state ${stateName}. For “${actionText(cx.derivations.find(d => !d.lookaheadInContext)!.action)}”, however, no derivation into this state has ${t} after • (see its note).`)
+              : cx.samePrefix
               ? (cz
                 ? `Dvě odvození se stejnou předponou až po místo kolize (•), která pak pokračují různě. Po přečtení předpony je analyzátor ve stavu ${stateName}${t ? ` se vstupním symbolem ${t}` : ''} a podle prvního odvození má provést jednu akci, podle druhého druhou.`
                 : `Two derivations with the same prefix up to the conflict point (•) that go on differently. After the prefix the parser is in state ${stateName}${t ? ` with the next symbol ${t}` : ''}; the first derivation needs one action, the second the other.`)
@@ -124,7 +128,7 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
                     {cz
                       ? `V žádném odvození, které vede do stavu ${stateName}, nenásleduje po této redukci symbol ${t}. Redukce je v buňce jen proto, že ${t} ∈ FOLLOW(${d.item.production.lhs})${d.followWitness ? ' — např. zde:' : ' (jen díky pravidlům, která se v odvození žádného slova neuplatní).'}`
                       : `In no derivation leading to state ${stateName} does ${t} follow this reduction. The reduction is in the cell only because ${t} ∈ FOLLOW(${d.item.production.lhs})${d.followWitness ? ' — e.g. here:' : ' (only through rules no derivation of a word uses).'}`}
-                    {d.followWitness && <> <Form form={d.followWitness.form} dot={d.followWitness.dot} /></>}
+                    {d.followWitness && <> <Form form={d.followWitness.form} dot={d.followWitness.dot} />.</>}
                     {cz ? ' LALR(1) a LR(1) počítají s výhledem v kontextu a tuto redukci zde nemají.' : ' LALR(1) and LR(1) use the lookahead in context and do not have this reduction here.'}
                   </p>
                 )}

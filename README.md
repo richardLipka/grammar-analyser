@@ -76,6 +76,7 @@
 - **Earley (1970) & ETTP (Scott & Johnstone 2025/2026) Chart Parsers** (tab *Earley / ETTP*):
   - General context-free parsing for arbitrary CFGs (including left/right recursion, ambiguities, and cycles) in $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ for unambiguous and $\mathcal{O}(n)$ for bounded-state grammars
   - **Classic Earley (1970)** with the Aycock & Horspool (2002) fix for $\varepsilon$-rules (the predictor moves the dot over nullable non-terminals, so the completer misses no item)
+  - **Leo's transitive items (1991)** as a switch: on a deterministic reduction path the completer adds only the topmost item, so right recursion (`S → a S | ε` on $a^n$) costs a linear number of items instead of a quadratic one; the item counts with and without Leo are shown, the steps explain every transitive item, and the skipped items are reconstructed for the derivation tree (as Marpa does)
   - **Earley Table Traversing Parsers (ETTP 2025/2026)**: a precomputed table split into kernel and predicted states (as in Aycock & Horspool's split automaton); the sets hold pairs $(q, j)$ = all items of state $q$ with origin $j$, no rule is expanded at runtime; trees from the parser's own chart
   - Interactive step simulator: each step marks the new item and the items it came from, explains acceptance or rejection, highlights the used transition in the automaton graph and the derived subtree in the derivation tree; ETTP transition table inspector
 - **ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)** (tab *ALL(*)*):
@@ -124,6 +125,7 @@
     - **Dragon Book**: numbered states, $\text{ACTION}[s, a]$ with `s5` / `r2` / `acc` and $\text{GOTO}[s, A]$ for non-terminals
   - Strict LR(0): $S' \to S\bullet$ is a complete item, so it conflicts with a shift or another reduction in the same state (an LR(0) language is prefix-free)
   - Shift/Reduce and Reduce/Reduce conflict detection
+  - **Counterexamples for every conflict** (Isradisaikul & Myers 2015, as Bison's `-Wcounterexamples`): a *unifying* one — one word with two derivation trees that part exactly at the conflict, a proof of ambiguity — or a *non-unifying* one: two derivations sharing the prefix up to the conflict point (•), with the note when the prefixes must differ (states merged by LALR) or the lookahead follows only in FOLLOW (SLR/LR(0) approximation); in the table and in the automaton's state panel
   - Interactive SVG State Machine Graph (powered by Dagre) with kernel/closure items, conflict states, pan, zoom, and state inspection
   - The graph explains the construction: for the selected state it highlights the transition that created it, the other transitions into it, and in the predecessors the items whose dot moves over the entry symbol (they become its kernel); clicking an item goes to the state its transition leads to
   - **Construction step by step** (LR(0), SLR(1), LALR(1) states, LR(1)): the initial state as CLOSURE of the initial item, then every GOTO in the order of the construction with the items whose dot moves, the kernel, what CLOSURE adds, and whether the state is new or exists already; the graph keeps its layout and shows the states and transitions created so far
@@ -137,7 +139,7 @@
   - **Long computations do not block the page**: the analysis and the automatic LL(1) attempt run in slices with their progress shown; after every 30 s of computation they pause and ask whether to continue. Stopped after the LALR(1) automaton, the results are shown with the missing parts (exact LL(2), LR(1), ambiguity) marked. LALR(1) is built from the LR(0) states by propagating lookaheads (Dragon Book, Alg. 4.62/4.63), so it does not need the canonical LR(1) collection; automata over 150 states are drawn only on request and tables over 300 rows show their first rows
   - **SVG / PNG Export** of automata and trees with the colours of the active theme
   - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button below the editor copies such a link
-  - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, přesun-redukce, levý/pravý rozklad, nenormované symboly, …)
+  - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, kolize přesun/redukce, levý/pravý rozklad, nenormované symboly, …)
   - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
   - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
   - **Constructs of real languages** (non-terminals named as in real grammars): if–else as matched/open statements (unambiguous, SLR(1), not LL(k)), Pascal's if–then–else resolved by `%nonassoc` as in Bison, Ada's `if … end if` (LL(1)), C `while`/`for` loops (LL(1) with ε), C variable declarations (left-recursive list: SLR(1), not LL(1)), a C function declaration (LL(2), not LL(1)), a JavaScript arrow function called at once (unambiguous but not LR(k): a cover grammar is needed), C's `a * b ;` (ambiguous without the symbol table, the "lexer hack"), assignment vs. procedure call (left factoring; PL/0's `call`), Lisp S-expressions (an LR(0) grammar), and the whole of Wirth's **PL/0** (EBNF repetitions as right-recursive lists: LL(1) and SLR(1), so the recursive-descent tab generates a PL/0 parser written in PL/0, nested like Wirth's compiler)
@@ -222,7 +224,8 @@ See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibl
 - **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
 - **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
 - **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
-- **General CFG Parsing**: Earley (1970), Cocke & Schwartz (1970), Younger (1967), Kasami (1965).
+- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965).
+- **Conflict counterexamples**: Isradisaikul & Myers (2015), the Bison manual.
 - **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).
 
 ---

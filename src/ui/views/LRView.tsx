@@ -116,6 +116,13 @@ export const LR_TECHNIQUE_REFERENCES = [
     topicCz: 'Algoritmus RNGLR pro obecné bezkontextové gramatiky',
     citation: 'Scott, E., Johnstone, A.: Right Nulled Generalized LR Parsers. ACM Transactions on Programming Languages and Systems (TOPLAS) 28(4), 577–618, 2006.',
     url: 'https://doi.org/10.1145/1146809.1146810'
+  },
+  {
+    authorYear: 'Isradisaikul & Myers (2015)',
+    topicEn: 'Counterexamples for LR conflicts (unifying / non-unifying)',
+    topicCz: 'Protipříklady ke kolizím LR tabulek (sjednocující / nesjednocující)',
+    citation: 'Isradisaikul, C., Myers, A. C.: Finding Counterexamples from Parsing Conflicts. PLDI 2015, 555–564. The same feature: GNU Bison 3.7, -Wcounterexamples.',
+    url: 'https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf'
   }
 ];
 

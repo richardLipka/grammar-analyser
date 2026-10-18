@@ -152,6 +152,14 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** General context-free parsing with RNGLR, guaranteeing polynomial-time parsing and correct GSS termination over arbitrary CFGs including cyclic and nullable rules.
 - **Referenced In:** `glrParser.ts`, `LRView.tsx`.
 
+### Isradisaikul & Myers (2015)
+- **Authors:** Chinawat Isradisaikul, Andrew C. Myers
+- **Title:** *Finding Counterexamples from Parsing Conflicts*
+- **Venue:** Proceedings of the 36th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '15), pp. 555–564, 2015.
+- **Identifier / Link:** [https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf](https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf)
+- **App Usage:** Unifying counterexamples (a string with two derivations) and non-unifying ones (two derivations sharing the prefix up to the conflict) from shortest lookahead-sensitive paths; the same feature in GNU Bison 3.7 (`-Wcounterexamples`, manual section "Generation of Counterexamples", https://www.gnu.org/software/bison/manual/html_node/Counterexamples.html).
+- **Referenced In:** `lrCounterexample.ts`, `ConflictCounterexample.tsx`.
+
 ---
 
 ## 4. Recursive Descent Parsing & Architecture
@@ -189,8 +197,24 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Title:** *An Efficient Context-Free Parsing Algorithm*
 - **Venue:** Communications of the ACM (CACM), Vol. 13, No. 2, pp. 94–102, February 1970.
 - **Identifier / Link:** [https://doi.org/10.1145/362007.362035](https://doi.org/10.1145/362007.362035)
-- **App Usage:** Dynamic programming parser handling arbitrary context-free grammars with dotted items, Predictor, Scanner, and Completer in $O(n^3)$ worst-case and $O(n)$ for unambiguous grammars.
-- **Referenced In:** `MembershipView.tsx`.
+- **App Usage:** Dynamic programming parser handling arbitrary context-free grammars with dotted items, Predictor, Scanner, and Completer in $O(n^3)$ worst-case, $O(n^2)$ for unambiguous grammars and $O(n)$ on a large class of grammars (bounded-state, with look-ahead).
+- **Referenced In:** `MembershipView.tsx`, `earleyParser.ts`, `EarleyView.tsx`.
+
+### Leo (1991)
+- **Author:** Joop M. I. M. Leo
+- **Title:** *A General Context-Free Parsing Algorithm Running in Linear Time on Every LR(k) Grammar Without Using Lookahead*
+- **Venue:** Theoretical Computer Science, Vol. 82, No. 1, pp. 165–176, 1991.
+- **Identifier / Link:** [https://doi.org/10.1016/0304-3975(91)90180-A](https://doi.org/10.1016/0304-3975(91)90180-A)
+- **App Usage:** Transitive items on deterministic reduction paths: the completer adds only the topmost item, linear on LR(k) (even LR-regular) grammars; option of the classic Earley simulator.
+- **Referenced In:** `earleyParser.ts`, `earleyExplain.ts`, `EarleyView.tsx`.
+
+### Kegler (2019)
+- **Author:** Jeffrey Kegler
+- **Title:** *Marpa, A Practical General Parser: The Recognizer*
+- **Venue:** arXiv:1910.08129, 2019.
+- **Identifier / Link:** [https://arxiv.org/abs/1910.08129](https://arxiv.org/abs/1910.08129)
+- **App Usage:** Section 7: Leo items as triples (dotted rule, transition symbol, origin), Leo uniqueness, Leo reduction, and the Leo stack expansion used to reconstruct the skipped items for derivation trees.
+- **Referenced In:** `earleyParser.ts`, `earleyExplain.ts`.
 
 ### Cocke & Schwartz (1970)
 - **Authors:** John Cocke, Jacob T. Schwartz
