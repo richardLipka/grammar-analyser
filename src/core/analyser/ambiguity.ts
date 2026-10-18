@@ -59,6 +59,40 @@ export function findAmbiguity(g: Grammar, options: AmbiguityOptions = {}): Ambig
 }
 
 export function* findAmbiguitySteps(g: Grammar, control: JobControl, options: AmbiguityOptions = {}): Job<AmbiguityResult> {
+  let first: { word: string[]; parses: [number[], number[]] } | undefined;
+  const result = yield* ambiguityWitnessSteps(g, control, options, w => {
+    first = w;
+    return true;
+  });
+  if (first) {
+    const { word, parses } = first;
+    return { kind: 'ambiguous', word, parses, trees: [treeFromLeftParse(g, parses[0]), treeFromLeftParse(g, parses[1])] };
+  }
+  return result;
+}
+
+/** A word with two different left parses, found by the search below. */
+export interface AmbiguityWitness {
+  word: string[];
+  parses: [number[], number[]];
+}
+
+/**
+ * The search itself: reports every second leftmost derivation of a sentential form it meets
+ * (completed to a word), shortest forms first, until `onWitness` returns true. Used for the
+ * first witness (findAmbiguity) and for all of them (LR conflict counterexamples).
+ * Returns how the search ended when it was not stopped by `onWitness`.
+ */
+export function ambiguityWitnesses(g: Grammar, options: AmbiguityOptions, onWitness: (w: AmbiguityWitness) => boolean): AmbiguityResult {
+  return runJob(ambiguityWitnessSteps(g, runToEnd(), options, onWitness));
+}
+
+function* ambiguityWitnessSteps(
+  g: Grammar,
+  control: JobControl,
+  options: AmbiguityOptions,
+  onWitness: (w: AmbiguityWitness) => boolean
+): Job<AmbiguityResult> {
   const maxLength = options.maxLength ?? 10;
   const maxForms = options.maxForms ?? 200000;
   const { len: shortest, rule: shortestRule } = shortestYields(g);
@@ -113,7 +147,8 @@ export function* findAmbiguitySteps(g: Grammar, control: JobControl, options: Am
         const second = [...parseOf(head), p.id];
         const { word, rules } = complete(next);
         const parses: [number[], number[]] = [[...first, ...rules], [...second, ...rules]];
-        return { kind: 'ambiguous', word, parses, trees: [treeFromLeftParse(g, parses[0]), treeFromLeftParse(g, parses[1])] };
+        if (onWitness({ word, parses })) return { kind: 'unknown', maxLength, forms: forms.length };
+        continue;
       }
       index.set(key, forms.length);
       forms.push({ form: next, parent: head, rule: p.id });

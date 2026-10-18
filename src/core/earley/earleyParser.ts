@@ -496,7 +496,7 @@ export function simulateEarleyParse(
             `Completer (Leo): ${formatEarleyItem(it)} is complete — ${completedNt} derives “${span}” (from position ${originIdx} to ${i}). S${subscript(originIdx)} has the transitive item ${formatLeoItem(leo)} for ${completedNt}: instead of moving the dot over ${completedNt} in ${formatEarleyItem(w)} and completing the deterministic reduction path item by item, only its topmost item ${formatEarleyItem(topItem)} is added to S${subscript(i)}` +
               (skipped > 0 ? ` (${skipped} item${skipped === 1 ? '' : 's'} skipped; they are reconstructed only for the derivation tree).` : ' (the path has just this one item).'),
             `Kompletor (Leo): ${formatEarleyItem(it)} je dokončená — ${completedNt} generuje „${span}“ (od pozice ${originIdx} do ${i}). S${subscript(originIdx)} má pro ${completedNt} tranzitivní položku ${formatLeoItem(leo)}: místo posunu tečky za ${completedNt} v ${formatEarleyItem(w)} a dokončování deterministické redukční cesty položku po položce se do S${subscript(i)} přidá jen její nejvyšší položka ${formatEarleyItem(topItem)}` +
-              (skipped > 0 ? ` (vynecháno ${skipped} ${skipped === 1 ? 'položka' : skipped < 5 ? 'položky' : 'položek'}; rekonstruují se jen pro derivační strom).` : ' (cesta má jen tuto jednu položku).'),
+              (skipped > 0 ? ` (${skipped === 1 ? 'vynechána 1 položka' : skipped < 5 ? `vynechány ${skipped} položky` : `vynecháno ${skipped} položek`}; rekonstruují se jen pro derivační strom).` : ' (cesta má jen tuto jednu položku).'),
             [
               { setIndex: i, itemIndex: k, role: 'completed' },
               { setIndex: originIdx, itemIndex: leoIndex, role: 'transitive' }

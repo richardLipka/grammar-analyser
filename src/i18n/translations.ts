@@ -812,8 +812,8 @@ export const TRANSLATIONS = {
     conflictsInVariant: 'Konflikty v tabulce {variant}: {count}',
     noConflicts: 'Bez konfliktů: gramatika patří do této třídy.',
     lrTableTitle: 'Rozkladová tabulka {variant}',
-    shiftReduceConflict: 'Konflikt přesun-redukce',
-    reduceReduceConflict: 'Konflikt redukce-redukce',
+    shiftReduceConflict: 'Kolize přesun/redukce',
+    reduceReduceConflict: 'Kolize redukce/redukce',
     bottomUpTreeLabel: 'Derivační strom (budovaný zdola nahoru)',
 
     // Automaton Graph

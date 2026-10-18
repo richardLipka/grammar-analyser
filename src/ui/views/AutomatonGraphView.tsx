@@ -13,6 +13,8 @@ import { ExplainContext, FloatingTip, LookaheadExplanationView, describeItemReas
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { Network, Info, ArrowRight, AlertTriangle, ExternalLink } from 'lucide-react';
 import { ReferenceBar } from '../components/ReferenceBar';
+import { ConflictCounterexample } from '../components/ConflictCounterexample';
+import { createCounterexampleFinder } from '../../core/lr/lrCounterexample';
 
 export const LR_GRAPH_PRIMARY_REFERENCES = [
   {
@@ -176,6 +178,9 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
   const stateConflicts = conflicts.filter(c => c.stateId === selectedStateId);
   // Lecture: states named by their entry symbols (#, E₁); Dragon Book: numbers
   const name = (id: number) => stateLabel(activeTable, id, layout);
+  // Conflict counterexamples (Isradisaikul & Myers 2015), searched when a conflict's panel is opened
+  const counterexampleAutomaton = activeTable.automaton ?? activeAutomaton;
+  const counterexampleFinder = useMemo(() => createCounterexampleFinder(grammar, counterexampleAutomaton), [grammar, counterexampleAutomaton]);
   const fmt = (a: Parameters<typeof formatLayoutAction>[0]) => formatLayoutAction(a, layout, lang);
   const actColumns = lecture ? activeTable.fColumns : activeTable.terminals;
   const actTable = lecture ? activeTable.fTable : activeTable.actionTable;
@@ -648,6 +653,16 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                   {stateConflicts.map((c, i) => (
                     <div key={i} style={{ marginTop: '4px', color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
                       {c.type === 'Shift/Reduce' ? t.shiftReduceConflict : t.reduceReduceConflict}{c.symbol !== LR0_ACTION_COLUMN ? ` [${c.symbol}]` : ''}: {c.actions.map(a => a.production ? `${fmt(a)} (${formatProduction(a.production)})` : fmt(a)).join(' × ')}
+                      <div style={{ fontFamily: 'var(--font-sans)' }}>
+                        <ConflictCounterexample
+                          key={`${selectedVariant}|${c.stateId}|${c.symbol}`}
+                          conflict={c}
+                          finder={counterexampleFinder}
+                          variant={activeTable.variant}
+                          stateName={name(c.stateId)}
+                          lang={lang}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>

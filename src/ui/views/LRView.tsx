@@ -18,6 +18,8 @@ import { InfoButton } from '../components/TransformationInfo';
 import { InfoKey } from '../../core/processor/transformationInfo';
 import { LRAutomaton } from '../../core/lr/lrAutomaton';
 import { ReferenceBar } from '../components/ReferenceBar';
+import { ConflictCounterexample } from '../components/ConflictCounterexample';
+import { createCounterexampleFinder } from '../../core/lr/lrCounterexample';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
@@ -232,6 +234,12 @@ export const LRView: React.FC<LRViewProps> = ({
           : lalr1Automaton
   ) || slr1Automaton || lr0Automaton);
   const [selectedGSSNodeId, setSelectedGSSNodeId] = useState<number | null>(null);
+  // Conflict counterexamples (Isradisaikul & Myers 2015), searched when a conflict's panel is opened
+  const counterexampleAutomaton = activeTable.automaton ?? activeAutomaton;
+  const counterexampleFinder = useMemo(
+    () => (counterexampleAutomaton ? createCounterexampleFinder(grammar, counterexampleAutomaton) : undefined),
+    [grammar, counterexampleAutomaton]
+  );
 
   const glrSimulation: GLRSimulationResult = useMemo(
     () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout, 300, 25, activeAutomaton),
@@ -425,6 +433,16 @@ export const LRView: React.FC<LRViewProps> = ({
                         </span>
                       ))}
                     </div>
+                    {counterexampleFinder && (
+                      <ConflictCounterexample
+                        key={`${selectedVariant}|${usePrecedence}|${c.stateId}|${c.symbol}`}
+                        conflict={c}
+                        finder={counterexampleFinder}
+                        variant={activeTable.variant}
+                        stateName={name(c.stateId)}
+                        lang={lang}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
