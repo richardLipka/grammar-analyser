@@ -79,6 +79,11 @@
   - **Leo's transitive items (1991)** as a switch: on a deterministic reduction path the completer adds only the topmost item, so right recursion (`S → a S | ε` on $a^n$) costs a linear number of items instead of a quadratic one; the item counts with and without Leo are shown, the steps explain every transitive item, and the skipped items are reconstructed for the derivation tree (as Marpa does)
   - **Earley Table Traversing Parsers (ETTP 2025/2026)**: a precomputed table split into kernel and predicted states (as in Aycock & Horspool's split automaton); the sets hold pairs $(q, j)$ = all items of state $q$ with origin $j$, no rule is expanded at runtime; trees from the parser's own chart
   - Interactive step simulator: each step marks the new item and the items it came from, explains acceptance or rejection, highlights the used transition in the automaton graph and the derived subtree in the derivation tree; ETTP transition table inspector
+- **GLL — generalised LL (Scott & Johnstone 2010, 2013) with BSR sets (Scott, Johnstone & van Binsbergen 2019)** (tab *GLL*):
+  - Recursive descent made general: descriptors (L, u, i) of grammar slots, the sets R and U, a graph-structured stack of nodes (L, i) with the pop set P, and the operations `add`, `create` and `pop` as in the papers; any CFG, including left recursion (immediate, indirect, hidden), ε-rules and cycles; the look-ahead `test` with FIRST/FOLLOW as a switch
+  - The derivations are recorded with `bsrAdd` as a BSR set (elements (X ::= α, i, k, j) and (α, i, k, j)); acceptance = (S ::= α, 0, k, n) ∈ Υ; all derivation trees are read from it (count, ∞ with a cycle, the first 50 listed)
+  - Step by step: the descriptor taken from R and every operation it causes, R and U, the BSR set with the new elements, the GSS (nodes with their returns in P), the subtree of the newest rule element and the trees of the whole word
+  - **Shared packed forest (SPPF)** of all trees in one picture, by rules (Tomita) or binarised (Scott & Johnstone 2013): shared symbol nodes, packed nodes per derivation, ambiguous nodes marked, the chosen tree highlighted; built from the GLL BSR set or from the Earley chart (the same forest); the GLR panel shows its trees as a forest too
 - **ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)** (tab *ALL(*)*):
   - Implements the adaptive LL(*) prediction of ANTLR 4: SLL prediction with a cached lookahead DFA, conflict detection and fallback to full-LL prediction with the parser's real stack; ambiguities resolved by the minimal alternative; left recursion refused as not applicable
   - Augmented Transition Networks (ATN) with rule call and return transitions
@@ -88,6 +93,7 @@
   - General bottom-up parsing for non-LR and ambiguous grammars using Graph-Structured Stack (GSS)
   - Forks on Shift/Reduce and Reduce/Reduce conflicts, merges on identical stack frontiers, and produces the complete parse forest
   - Interactive SVG GSS graph visualizer powered by Dagre, with node inspection (origins, LR items, merge notices) and synchronized derivation tree highlighting
+  - The trees found can be shown merged into one shared packed forest
 - **Membership & CYK Step-by-Step** (tab *CYK*):
   - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
   - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
@@ -202,13 +208,15 @@ src/
 │   ├── lr/                 # LR(0), SLR(1), LALR(1), LR(1), GLR parser & GSS engine
 │   ├── all/                # ALL(*) ATN networks, Lookahead DFA synthesis & simulator
 │   ├── earley/             # Classic Earley (1970) & ETTP (2025/2026) chart parsers
+│   ├── gll/                # GLL parser (descriptors, GSS, pop set) & BSR sets with tree extraction
+│   ├── forest/             # Shared packed parse forests from BSR sets, Earley charts and tree lists
 │   ├── codegen/            # Recursive descent code generators (PL/0, Oberon, C, Python, JS), VM & symbol table
 │   ├── export/             # LaTeX exam/problem-set exporter
 │   └── presets/            # Curated university textbook grammars
 ├── i18n/                   # English & Czech academic terminology
 ├── ui/
 │   ├── visualizer/         # Dagre-powered SVG automaton, DFA, GSS & tree visualizers
-│   ├── views/              # Overview, FirstFollow, Transformations, LL, LR, Graph, ALL, Earley, CYK, RD, Words, LaTeX
+│   ├── views/              # Overview, FirstFollow, Transformations, LL, LR, Graph, ALL, Earley, GLL, CYK, RD, Words, LaTeX
 │   └── components/         # Reusable UI widgets & ReferenceBar
 ├── styles/                 # Vanilla CSS design system (Dark, Light, Projector modes)
 └── App.tsx                 # Master application orchestrator
@@ -224,7 +232,7 @@ See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibl
 - **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
 - **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
 - **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
-- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965).
+- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965), Scott & Johnstone (2010, 2013: GLL), Scott, Johnstone & van Binsbergen (2019: BSR sets), Johnstone (2023: reference GLL), Vo et al. (2026: empirical comparison), Tomita (1985: shared packed forests).
 - **Conflict counterexamples**: Isradisaikul & Myers (2015), the Bison manual.
 - **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).
 

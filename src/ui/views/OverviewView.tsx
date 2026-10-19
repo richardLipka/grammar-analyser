@@ -14,7 +14,7 @@ import { exportGrammarToLatex } from '../../core/export/latexExport';
 import { checkALLCompatibility } from '../../core/all/allParser';
 import { checkEarleyCompatibility, checkETTPCompatibility } from '../../core/earley/earleyCompatibility';
 
-type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex' | 'all' | 'earley';
+type TabId = 'overview' | 'firstFollow' | 'transformations' | 'll' | 'lr' | 'graph' | 'words' | 'latex' | 'all' | 'earley' | 'gll';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 
 interface OverviewViewProps {
@@ -222,6 +222,17 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             }
             targetHint={cz ? 'Otevřít simulátor ETTP (2025)' : 'Open ETTP (2025) simulator'}
             onClick={() => onNavigateToTab?.('earley', undefined, 'ettp')}
+          />
+          <BadgeItem
+            label="GLL"
+            status={earleyComp.canParse ? 'ok' : 'no'}
+            detail={
+              earleyComp.canParse
+                ? (cz ? 'Zobecněná analýza LL, libovolná CFG (i levá rekurze), O(n³)' : 'Generalised LL, any CFG (left recursion too), O(n³)')
+                : (cz ? 'Startovací symbol negeneruje' : 'Start symbol non-generating')
+            }
+            targetHint={cz ? 'Otevřít simulátor GLL a sdílený les' : 'Open the GLL simulator and the shared forest'}
+            onClick={() => onNavigateToTab?.('gll')}
           />
         </div>
       </div>

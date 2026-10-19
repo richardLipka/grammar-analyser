@@ -253,6 +253,50 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** Precomputation of an Earley transition table eliminating all dynamic prediction operations at runtime (0 predictor steps), maintaining compact $(q, j)$ state-origin pairs and traversing transitions $\delta(q, X)$ across input sets $S_i$.
 - **Referenced In:** `EarleyView.tsx`, `ettpParser.ts`, `earleyExplain.ts`, `earleyCompatibility.ts`.
 
+### Scott & Johnstone (2010)
+- **Authors:** Elizabeth Scott, Adrian Johnstone
+- **Title:** *GLL Parsing*
+- **Venue:** Electronic Notes in Theoretical Computer Science, Vol. 253, No. 7, pp. 177–189, 2010 (Proceedings of LDTA 2009).
+- **Identifier / Link:** [https://doi.org/10.1016/j.entcs.2010.08.041](https://doi.org/10.1016/j.entcs.2010.08.041) (open access)
+- **App Usage:** The GLL algorithm: descriptors (L, u, i), the sets R, U and P, the GSS, the functions add, create, pop and test(x, A, α) with FIRST/FOLLOW; acceptance in the recogniser.
+- **Referenced In:** `gllParser.ts`, `gllExplain.ts`, `GLLView.tsx`.
+
+### Scott & Johnstone (2013)
+- **Authors:** Elizabeth Scott, Adrian Johnstone
+- **Title:** *GLL Parse-Tree Generation*
+- **Venue:** Science of Computer Programming, Vol. 78, No. 10, pp. 1828–1844, 2013.
+- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2012.03.005](https://doi.org/10.1016/j.scico.2012.03.005); submitted manuscript at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/25269152/GLLsubmit.pdf)
+- **App Usage:** GSS nodes (L, i) labelled with return slots and the base node u₀ = (L₀, 0); the binarised SPPF with symbol, intermediate and packed nodes (the "binarised" form of the forest view).
+- **Referenced In:** `gllParser.ts`, `sppf.ts`, `GLLView.tsx`.
+
+### Scott, Johnstone & van Binsbergen (2019)
+- **Authors:** Elizabeth Scott, Adrian Johnstone, L. Thomas van Binsbergen
+- **Title:** *Derivation Representation Using Binary Subtree Sets*
+- **Venue:** Science of Computer Programming, Vol. 175, pp. 63–84, 2019.
+- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2019.01.008](https://doi.org/10.1016/j.scico.2019.01.008); accepted manuscript at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/33174042/Accepted_Manuscript.pdf)
+- **App Usage:** BSR elements (X ::= α, i, k, j) and (α, i, k, j), bsrAdd, the derivations embedded in a BSR set, the acceptance test (S ::= α, 0, k, n) ∈ Υ, SPPF extraction; §5.5: GLL with bsrAdd in place of getNodeT/getNodeP. The paper's own parser is the clustered (CNP) form with a call-return forest; the app keeps the GSS of 2010/2013.
+- **Referenced In:** `bsr.ts`, `gllParser.ts`, `sppf.ts`, `GLLView.tsx`.
+
+### Johnstone (2023)
+- **Author:** Adrian Johnstone
+- **Title:** *A Reference GLL Implementation*
+- **Venue:** Proceedings of the 16th ACM SIGPLAN International Conference on Software Language Engineering (SLE '23), pp. 43–55, 2023.
+- **Identifier / Link:** [https://doi.org/10.1145/3623476.3623521](https://doi.org/10.1145/3623476.3623521); author copy at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/56267014/sle23RefGLL.pdf)
+- **App Usage:** A deliberately unoptimised GLL interpreter over the grammar (no look-ahead): the model for interpreting slots instead of generating code; the look-ahead test is a switch in the app.
+- **Referenced In:** `gllExplain.ts`.
+
+### Vo, Liyanage, Kang, Rubin & Gopinath (2026)
+- **Authors:** H. Vo, D. Liyanage, H. J. Kang, S. Rubin, R. Gopinath
+- **Title:** *An Empirical Comparison of General Context-Free Parsers*
+- **Venue:** arXiv:2606.08465, 2026.
+- **Identifier / Link:** [https://arxiv.org/abs/2606.08465](https://arxiv.org/abs/2606.08465)
+- **App Usage:** CYK, Valiant, Earley, GLL, RNGLR and BRNGLR measured on the same grammars (with LL(1) and LR(1) baselines); the reason GLL was added next to Earley and GLR.
+- **Referenced In:** `gllExplain.ts`.
+
+### Tomita (1985): shared packed forests
+- The shared-packed forest of all derivation trees (one node per symbol and part, packed alternatives) comes from Tomita's GLR work (see *Tomita (1985)* in section 3); the 2019 BSR paper credits the SPPF to him. The app's forest "by rules" is this form, the "binarised" one is Scott & Johnstone's (2013).
+- **Referenced In:** `sppf.ts`, `ForestVisualizer.tsx`, `gllExplain.ts`.
+
 ---
 
 ## 6. Normal Forms & Equivalent Grammar Transformations

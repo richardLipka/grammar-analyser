@@ -3,6 +3,8 @@ import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
 import { simulateGLRParse, GLRSimulationResult, GLRParseStep } from '../../core/lr/glrParser';
+import { treesToForest, treeInForest } from '../../core/forest/sppf';
+import { ForestVisualizer } from '../visualizer/ForestVisualizer';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { GSSGraphVisualizer } from '../visualizer/GSSGraphVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
@@ -230,6 +232,7 @@ export const LRView: React.FC<LRViewProps> = ({
   const [currentGLRStepIdx, setCurrentGLRStepIdx] = useState<number>(0);
   const [isGLRPlaying, setIsGLRPlaying] = useState<boolean>(false);
   const [glrPlaySpeed, setGLRPlaySpeed] = useState<number>(700);
+  const [showGlrForest, setShowGlrForest] = useState(false);
   const glrTraceRef = useRef<HTMLDivElement>(null);
 
   // The automaton of the table shown (state ids must match): without precedence,
@@ -890,8 +893,32 @@ export const LRView: React.FC<LRViewProps> = ({
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${showGlrForest ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: '11px' }}
+                  onClick={() => setShowGlrForest(v => !v)}
+                  title={cz ? 'Všechny nalezené stromy v jednom sdíleném zabaleném lese (SPPF)' : 'All trees found in one shared packed forest (SPPF)'}
+                >
+                  {cz ? 'Sdílený les' : 'Shared forest'}
+                </button>
               </div>
             )}
+
+            {glrSimulation.totalTrees > 1 && showGlrForest && (() => {
+              const forest = treesToForest(glrSimulation.trees, grammar);
+              const tree = glrSimulation.trees[Math.min(selectedTreeIdx, glrSimulation.trees.length - 1)];
+              return (
+                <div style={{ marginBottom: '12px' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', margin: '0 0 6px' }}>
+                    {cz
+                      ? `Stromy, které GLR našel, sloučené do jednoho lesa: uzly se stejným symbolem a úsekem jsou sdílené, oranžový uzel má více odvození. Les obsahuje ${forest.treeCount === Infinity ? '∞' : forest.treeCount} stromů (sdílením se mohou spojit i části různých stromů); vybraný strom je zvýrazněn. Les všech stromů z obecného algoritmu ukazuje záložka GLL.`
+                      : `The trees GLR found merged into one forest: nodes with the same symbol and part are shared, an orange node has several derivations. The forest holds ${forest.treeCount === Infinity ? '∞' : forest.treeCount} trees (sharing can also combine parts of different trees); the chosen tree is highlighted. The forest of all trees from a general algorithm is in the GLL tab.`}
+                  </p>
+                  <ForestVisualizer forest={forest} tokens={tokenized.tokens} highlight={tree ? treeInForest(tree, grammar, false) : undefined} lang={lang} height="380px" />
+                </div>
+              );
+            })()}
 
             <SimulatorControls
               stepIdx={currentGLRStepIdx}

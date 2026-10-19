@@ -20,6 +20,7 @@ import { WordGeneratorView } from './ui/views/WordGeneratorView';
 import { MembershipView } from './ui/views/MembershipView';
 import { ALLView } from './ui/views/ALLView';
 import { EarleyView } from './ui/views/EarleyView';
+import { GLLView } from './ui/views/GLLView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
 import { EquivalenceView } from './ui/views/EquivalenceView';
 import { TeachingGuideView } from './ui/views/TeachingGuideView';
@@ -503,13 +504,14 @@ export const App: React.FC = () => {
     { id: 'membership', icon: <SearchCheck size={15} />, label: t.tabMembership, title: t.tabMembershipTitle },
     { id: 'all', icon: <Network size={15} />, label: t.tabAll, title: t.tabAllTitle },
     { id: 'earley', icon: <Layers size={15} />, label: t.tabEarley, title: t.tabEarleyTitle },
+    { id: 'gll', icon: <Network size={15} />, label: t.tabGll, title: t.tabGllTitle },
     { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
   // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
   const TAB_ROWS: TabId[][] = [
-    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all', 'earley'],
+    ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all', 'earley', 'gll'],
     ['transformations', 'teaching', 'check', 'rd', 'latex']
   ];
 
@@ -1160,6 +1162,10 @@ export const App: React.FC = () => {
                     lang={lang}
                     initialMode={earleyMode}
                   />
+                )}
+
+                {activeTab === 'gll' && analyzedGrammar && (
+                  <GLLView grammar={analyzedGrammar} defaultInput={demoWord} lang={lang} />
                 )}
 
                 {activeTab === 'rd' && (

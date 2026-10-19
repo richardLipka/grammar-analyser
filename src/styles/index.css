@@ -431,6 +431,19 @@ body {
   box-shadow: 0 6px 6px -6px rgba(0, 0, 0, 0.25);
 }
 
+/* GLL: descriptors and BSR set | GSS | tree side by side on wide screens */
+.gll-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 1000px) {
+  .gll-grid { grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.3fr); }
+}
+@media (min-width: 1500px) {
+  .gll-grid { grid-template-columns: minmax(300px, 0.95fr) minmax(380px, 1.3fr) minmax(340px, 1.15fr); }
+}
+
 /* Conflict Detail Cards & Report Boxes */
 .conflict-detail-card {
   background-color: var(--color-bg-surface);
