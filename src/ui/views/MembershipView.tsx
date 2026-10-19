@@ -45,8 +45,8 @@ export const MEMBERSHIP_PRIMARY_REFERENCES = {
       authorYear: 'Kasami (1965)',
       topicEn: 'Efficient Syntax-Analysis Algorithm',
       topicCz: 'Efektivní syntaktická analýza BKG',
-      citation: 'Kasami, T.: An efficient recognition and syntax-analysis algorithm for context-free languages. Air Force Cambridge Research Lab, Technical Report AFCRL-65-758, 1965 / Coordinated Science Laboratory Report R-257, University of Illinois.',
-      url: 'http://hdl.handle.net/2142/74301'
+      citation: 'Kasami, T.: An efficient recognition and syntax-analysis algorithm for context-free languages. Scientific Report AFCRL-65-758, Air Force Cambridge Research Laboratory, Bedford, MA, 1965 (DTIC AD0631692).',
+      url: 'https://apps.dtic.mil/sti/citations/AD0631692'
     }
   ]
 };

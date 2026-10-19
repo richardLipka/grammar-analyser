@@ -1,5 +1,5 @@
 /**
- * Tests for Generalized LR (GLR) Parser with Graph-Structured Stack (Tomita 1985, Scott & Johnstone 2006)
+ * Tests for Generalized LR (GLR) Parser with Graph-Structured Stack (Tomita 1986, Scott & Johnstone 2006)
  */
 
 import { describe, it, expect } from 'vitest';

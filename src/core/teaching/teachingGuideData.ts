@@ -312,7 +312,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       title: 'Deterministic left corner parsing',
       venue: 'IEEE 11th Annual Symposium on Switching and Automata Theory (SWAT/FOCS), pp. 139–152',
       year: 1970,
-      url: 'https://doi.org/10.1109/SWAT.1970.19',
+      url: 'https://doi.org/10.1109/SWAT.1970.5',
       historicalNote: {
         en: 'Introduced the left-corner grammar transformation and demonstrated its advantages in avoiding artificial ordering blowups.',
         cz: 'Představili transformaci levého rohu a prokázali její výhody oproti umělému lineárnímu uspořádání neterminálů.'
@@ -810,7 +810,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       title: 'Transforming LR(k) grammars to LR(1), SLR(1) and (1,1) bounded right context grammars',
       venue: 'Journal of the ACM, Vol. 23, Issue 3, pp. 511–533',
       year: 1976,
-      url: 'https://doi.org/10.1145/321958.321969',
+      url: 'https://doi.org/10.1145/321958.321972',
       historicalNote: {
         en: 'Demonstrated that LR conflicts caused by lookahead conflation across distinct contexts can be mechanically eliminated by state-induced non-terminal splitting.',
         cz: 'Dokázali, že LR kolize způsobené splynutím lookaheadů napříč kontexty lze mechanicky eliminovat rozštěpením neterminálů podle stavů.'
@@ -849,7 +849,7 @@ export const TEACHING_TECHNIQUES: TechniqueGuide[] = [
       title: 'The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution',
       venue: 'Science of Computer Programming, Vol. 75, Issue 11, pp. 943–979',
       year: 2010,
-      url: 'https://doi.org/10.1016/j.scico.2009.09.006',
+      url: 'https://doi.org/10.1016/j.scico.2009.08.001',
       historicalNote: {
         en: 'Presents modern conflict analysis and inadequacy elimination for LR parsers, implemented in GNU Bison 3.0+.',
         cz: 'Představuje moderní analýzu LR kolizí a eliminaci neadekvátnosti rozkladových tabulek, implementovanou v GNU Bison 3.0+.'

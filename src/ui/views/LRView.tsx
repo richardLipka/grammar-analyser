@@ -40,12 +40,12 @@ export const LR_PRIMARY_REFERENCES: Record<LRVariantName, { authorYear: string; 
   'LALR(1)': {
     authorYear: 'DeRemer (1969), Aho & Ullman (1972)',
     citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, MIT, 1969; Dragon Book (Alg. 4.62 & 4.63).',
-    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+    url: 'https://hdl.handle.net/1721.1/13628'
   },
   'IELR(1)': {
     authorYear: 'Denny & Malloy (2008, 2010)',
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
-    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+    url: 'https://doi.org/10.1016/j.scico.2009.08.001'
   },
   'LR(1)': {
     authorYear: 'Knuth (1965)',
@@ -89,7 +89,7 @@ export const LR_TECHNIQUE_REFERENCES = [
     topicEn: 'IELR(1) Inadequacy Elimination',
     topicCz: 'IELR(1) – odstranění kolizí vzniklých slučováním stavů',
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
-    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+    url: 'https://doi.org/10.1016/j.scico.2009.08.001'
   },
   {
     authorYear: 'Pager (1977)',
@@ -106,11 +106,11 @@ export const LR_TECHNIQUE_REFERENCES = [
     url: 'https://doi.org/10.1145/356628.356629'
   },
   {
-    authorYear: 'Tomita (1985)',
+    authorYear: 'Tomita (1986)',
     topicEn: 'Generalized LR (GLR) & Graph-Structured Stack',
     topicCz: 'Zobecněný LR (GLR) a Graph-Structured Stack',
-    citation: 'Tomita, M.: Efficient Parsing for Natural Language: A Generalized LR Parser. Kluwer Academic Publishers, Boston, 1985.',
-    url: 'https://doi.org/10.1007/978-1-4613-2575-8'
+    citation: 'Tomita, M.: Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems. Kluwer Academic Publishers, Boston, 1986.',
+    url: 'https://doi.org/10.1007/978-1-4757-1885-0'
   },
   {
     authorYear: 'Scott & Johnstone (2006)',
@@ -847,7 +847,7 @@ export const LRView: React.FC<LRViewProps> = ({
           <div>
             <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 600 }}>{cz ? 'Teoretický základ (GLR & GSS):' : 'Theoretical foundation (GLR & GSS):'}</span>
-              <span>Tomita (1985): Generalized LR Parser; Scott & Johnstone (2006): RNGLR Parsing</span>
+              <span>Tomita (1986): Generalized LR Parser; Scott & Johnstone (2006): RNGLR Parsing</span>
               <a href="https://doi.org/10.1145/1146809.1146810" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
                 [DOI]
               </a>

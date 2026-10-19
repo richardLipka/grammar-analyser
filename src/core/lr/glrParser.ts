@@ -2,7 +2,7 @@
  * Generalized LR (GLR) Parser with Graph-Structured Stack (GSS)
  *
  * Implements Tomita's algorithm and Right-Nulled Generalized LR (RNGLR) principles
- * (Tomita 1985, Rekers 1992, Scott & Johnstone 2006).
+ * (Tomita 1986, Rekers 1992, Scott & Johnstone 2006).
  *
  * Key features:
  * - Operates over any LR table (LR(0), SLR(1), LALR(1), LR(1)) with arbitrary

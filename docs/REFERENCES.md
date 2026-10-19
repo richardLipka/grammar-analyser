@@ -39,16 +39,16 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 ### Parr & Fisher (2011)
 - **Authors:** Terence Parr, Kathleen Fisher
 - **Title:** *LL(*): The Foundation of the ANTLR Parser Generator*
-- **Venue:** ACM SIGPLAN Notices, Vol. 46, No. 1 (POPL '11), pp. 425–436, 2011.
-- **Identifier / Link:** [https://doi.org/10.1145/1926385.1926432](https://doi.org/10.1145/1926385.1926432)
+- **Venue:** Proceedings of the 32nd ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '11), pp. 425–436, June 2011 (also ACM SIGPLAN Notices 46(6)).
+- **Identifier / Link:** [https://doi.org/10.1145/1993498.1993548](https://doi.org/10.1145/1993498.1993548)
 - **App Usage:** Regular lookahead DFA construction, cyclic lookahead prediction, and semantic predicates.
 - **Referenced In:** `ALLView.tsx`.
 
 ### Parr, Harwell & Fisher (2014)
 - **Authors:** Terence Parr, Sam Harwell, Kathleen Fisher
 - **Title:** *Adaptive LL(*) Parsing: The Power of Dynamic Analysis*
-- **Venue:** Proceedings of the 35th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '14), pp. 579–589, June 2014.
-- **Identifier / Link:** [https://doi.org/10.1145/2594291.2594326](https://doi.org/10.1145/2594291.2594326)
+- **Venue:** Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA '14), pp. 579–598, October 2014 (also ACM SIGPLAN Notices 49(10)).
+- **Identifier / Link:** [https://doi.org/10.1145/2660193.2660202](https://doi.org/10.1145/2660193.2660202)
 - **App Usage:** Augmented Transition Network (ATN) simulation, dynamic Lookahead DFA materialization on demand, and top-down grammar requirements (identifying that left recursion must be eliminated prior to top-down closure analysis, §3).
 - **Referenced In:** `ALLView.tsx`, `allAtn.ts`, `allPredictor.ts`, `allParser.ts`.
 
@@ -68,7 +68,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Author:** Frank L. DeRemer
 - **Title:** *Practical Translators for LR(k) Languages*
 - **Venue:** Ph.D. Dissertation, Department of Electrical Engineering, Massachusetts Institute of Technology (MIT), Cambridge, MA, September 1969.
-- **Identifier / Link:** [https://dspace.mit.edu/handle/1721.1/13857](https://dspace.mit.edu/handle/1721.1/13857) (MIT DSpace Open Access)
+- **Identifier / Link:** [https://hdl.handle.net/1721.1/13628](https://hdl.handle.net/1721.1/13628) (MIT DSpace)
 - **App Usage:** Invention of SLR(1) and LALR(1) parsers, compressing canonical LR(1) states by merging LR(0) cores.
 - **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `transformationInfo.ts`.
 
@@ -108,7 +108,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Authors:** Joel E. Denny, Brian A. Malloy
 - **Title:** *The IELR(1) Algorithm for Generating Minimal LR(1) Parser Tables for Non-LR(1) Grammars with Conflict Resolution*
 - **Venue:** Science of Computer Programming, Vol. 75, No. 11, pp. 943–979, November 2010.
-- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2009.09.006](https://doi.org/10.1016/j.scico.2009.09.006)
+- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2009.08.001](https://doi.org/10.1016/j.scico.2009.08.001)
 - **App Usage:** Journal specification of IELR(1), the algorithm GNU Bison has used since 2.5 (`%define lr.type ielr`). It starts from LALR(1), computes the inadequacies (conflicts) and the lookahead contributions that cause them, splits the states whose merge would change the parser's actions after conflict resolution, and recomputes the lookaheads, all without building canonical LR(1). Its parser behaves like canonical LR(1) after conflict resolution (precedence/associativity, otherwise shift before reduce and the earlier rule). The app gives the same kind of result by merging canonical LR(1) states with equal cores wherever no resolved action changes (see `buildIELR1Automaton`); it does not implement the annotation phases.
 - **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `teachingGuideData.ts`, `transformationInfo.ts`.
 
@@ -128,11 +128,11 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** Comprehensive tutorial and reference on table-driven shift-reduce LR parsing algorithms, dual state/symbol stacks, and error recovery.
 - **Referenced In:** `LRView.tsx`.
 
-### Tomita (1985)
+### Tomita (1986)
 - **Author:** Masaru Tomita
 - **Title:** *Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems*
-- **Venue:** The Kluwer International Series in Engineering and Computer Science, Vol. 8, Kluwer Academic Publishers, Boston, 1985.
-- **Identifier / Link:** [https://doi.org/10.1007/978-1-4613-2575-8](https://doi.org/10.1007/978-1-4613-2575-8)
+- **Venue:** The Kluwer International Series in Engineering and Computer Science, Vol. 8, Kluwer Academic Publishers, Boston, 1986.
+- **Identifier / Link:** [https://doi.org/10.1007/978-1-4757-1885-0](https://doi.org/10.1007/978-1-4757-1885-0)
 - **App Usage:** Foundational algorithm for Generalized LR (GLR) parsing using the Graph-Structured Stack (GSS) to explore non-deterministic and ambiguous LR paths in parallel.
 - **Referenced In:** `glrParser.ts`, `GSSGraphVisualizer.tsx`, `LRView.tsx`.
 
@@ -140,7 +140,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Author:** Jan Rekers
 - **Title:** *Parser Generation for Interactive Environments*
 - **Venue:** Ph.D. thesis, University of Amsterdam, 1992.
-- **Identifier / Link:** [https://hdl.handle.net/11245/1.103006](https://hdl.handle.net/11245/1.103006)
+- **Identifier / Link:** [https://ir.cwi.nl/pub/29930](https://ir.cwi.nl/pub/29930)
 - **App Usage:** Subtree sharing and packing algorithms for GLR Shared Packed Parse Forests (SPPF) and interactive GSS manipulation.
 - **Referenced In:** `glrParser.ts`.
 
@@ -168,7 +168,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Author:** Peter Lucas
 - **Title:** *Die Strukturanalyse von Formelübersetzern*
 - **Venue:** Elektronische Rechenanlagen, Vol. 3, No. 4, pp. 159–167, 1961.
-- **Identifier / Link:** [https://dblp.org/rec/journals/er/Lucas61.html](https://dblp.org/rec/journals/er/Lucas61.html) (DBLP Computer Science Bibliography)
+- **Identifier / Link:** [https://doi.org/10.1524/itit.1961.3.16.159](https://doi.org/10.1524/itit.1961.3.16.159) (De Gruyter; the journal is now *it – Information Technology*)
 - **App Usage:** Earliest formal description of recursive descent syntax analysis, mapping grammar non-terminals to mutually recursive procedures.
 - **Referenced In:** `RecursiveDescentView.tsx`, `transformationInfo.ts`.
 
@@ -235,8 +235,8 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 ### Kasami (1965)
 - **Author:** Tadao Kasami
 - **Title:** *An Efficient Recognition and Syntax-Analysis Algorithm for Context-Free Languages*
-- **Venue:** Air Force Cambridge Research Laboratory, Scientific Report AFCRL-65-758, Bedford, MA, 1965; also Coordinated Science Laboratory Report R-257, University of Illinois, Urbana, IL.
-- **Identifier / Link:** [http://hdl.handle.net/2142/74301](http://hdl.handle.net/2142/74301) (UIUC IDEALS Permanent Repository Handle)
+- **Venue:** Air Force Cambridge Research Laboratory, Scientific Report AFCRL-65-758, Bedford, MA, 1965.
+- **Identifier / Link:** [https://apps.dtic.mil/sti/citations/AD0631692](https://apps.dtic.mil/sti/citations/AD0631692) (DTIC record AD0631692)
 ### Aycock & Horspool (2002)
 - **Authors:** John Aycock, R. Nigel Horspool
 - **Title:** *Practical Earley Parsing*
@@ -293,8 +293,8 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** CYK, Valiant, Earley, GLL, RNGLR and BRNGLR measured on the same grammars (with LL(1) and LR(1) baselines); the reason GLL was added next to Earley and GLR.
 - **Referenced In:** `gllExplain.ts`.
 
-### Tomita (1985): shared packed forests
-- The shared-packed forest of all derivation trees (one node per symbol and part, packed alternatives) comes from Tomita's GLR work (see *Tomita (1985)* in section 3); the 2019 BSR paper credits the SPPF to him. The app's forest "by rules" is this form, the "binarised" one is Scott & Johnstone's (2013).
+### Tomita (1986): shared packed forests
+- The shared-packed forest of all derivation trees (one node per symbol and part, packed alternatives) comes from Tomita's GLR work (see *Tomita (1986)* in section 3); the 2019 BSR paper credits the SPPF to him. The app's forest "by rules" is this form, the "binarised" one is Scott & Johnstone's (2013).
 - **Referenced In:** `sppf.ts`, `ForestVisualizer.tsx`, `gllExplain.ts`.
 
 ---
@@ -321,7 +321,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Authors:** Yehoshua Bar-Hillel, Micha A. Perles, Eli Shamir
 - **Title:** *On Formal Properties of Simple Phrase Structure Grammars*
 - **Venue:** Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung, Vol. 14, pp. 143–172, 1961.
-- **Identifier / Link:** [https://doi.org/10.1515/9783112613764-007](https://doi.org/10.1515/9783112613764-007)
+- **Identifier / Link:** [https://doi.org/10.1524/stuf.1961.14.14.143](https://doi.org/10.1524/stuf.1961.14.14.143)
 - **App Usage:** Classical grammar reduction algorithm (removal of non-terminating and unreachable symbols), fixed-point terminating set $N_{term}$, and the Pumping Lemma for context-free languages.
 - **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
 
@@ -329,7 +329,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Authors:** Daniel J. Rosenkrantz, Philip M. Lewis II
 - **Title:** *Deterministic Left Corner Parsing*
 - **Venue:** 11th Annual Symposium on Switching and Automata Theory (SWAT '70), pp. 139–152, October 1970.
-- **Identifier / Link:** [https://doi.org/10.1109/SWAT.1970.19](https://doi.org/10.1109/SWAT.1970.19)
+- **Identifier / Link:** [https://doi.org/10.1109/SWAT.1970.5](https://doi.org/10.1109/SWAT.1970.5)
 - **App Usage:** Left-corner grammar transformation eliminating direct and mutual left recursion into LL(1) form without introducing $\varepsilon$-chains.
 - **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
 
@@ -345,7 +345,7 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Authors:** M. Dennis Mickunas, Ronald L. Lancaster, Victor B. Schneider
 - **Title:** *Transforming LR(k) Grammars to LR(1), SLR(1) and (1,1) Bounded Right Context Grammars*
 - **Venue:** Journal of the ACM (JACM), Vol. 23, No. 3, pp. 511–533, July 1976.
-- **Identifier / Link:** [https://doi.org/10.1145/321958.321969](https://doi.org/10.1145/321958.321969)
+- **Identifier / Link:** [https://doi.org/10.1145/321958.321972](https://doi.org/10.1145/321958.321972)
 - **App Usage:** Splitting LR context to eliminate LR conflicts without altering language generation.
 - **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
 
@@ -393,6 +393,6 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **Authors:** John E. Hopcroft, Rajeev Motwani, Jeffrey D. Ullman
 - **Title:** *Introduction to Automata Theory, Languages, and Computation (3rd Edition)*
 - **Venue:** Addison-Wesley / Pearson, Boston, MA, 2006.
-- **Identifier / Link:** [https://www.pearson.com/en-us/subject-catalog/p/introduction-to-automata-theory-languages-and-computation/P200000003294](https://www.pearson.com/en-us/subject-catalog/p/introduction-to-automata-theory-languages-and-computation/P200000003294)
+- **Identifier / Link:** [https://openlibrary.org/isbn/9780321455369](https://openlibrary.org/isbn/9780321455369)
 - **App Usage:** Standard reference for formal grammars, context-free languages, and Chomsky hierarchy.
 - **Referenced In:** `transformationInfo.ts`.

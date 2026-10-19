@@ -3,7 +3,7 @@
  *
  * Implements the ATN data structure based on:
  * Parr, T., Harwell, S., & Fisher, K. (2014).
- * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14, §4.3.
+ * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM OOPSLA '14, §4.3.
  *
  * Every non-terminal A gets a submachine p_A → p_{A,i} → … → p'_A: a rule start
  * state, one path per production (one state before every right-hand-side symbol

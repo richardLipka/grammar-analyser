@@ -56,9 +56,9 @@ export const GLL_PRIMARY_REFERENCES: GLLReference[] = [
     topicEn: 'comparison of general parsers'
   },
   {
-    authorYear: 'Tomita (1985)',
-    citation: 'Tomita, M.: Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems. Kluwer (1985).',
-    url: 'https://doi.org/10.1007/978-1-4613-2575-8',
+    authorYear: 'Tomita (1986)',
+    citation: 'Tomita, M.: Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems. Kluwer Academic Publishers, Boston (1986).',
+    url: 'https://doi.org/10.1007/978-1-4757-1885-0',
     sections: 'the shared-packed forest: one node per symbol and part shared by all trees, packed alternatives where the derivation is ambiguous',
     topicCz: 'sdílený zabalený les',
     topicEn: 'shared packed forest'

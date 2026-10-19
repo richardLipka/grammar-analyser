@@ -3,7 +3,7 @@
  *
  * Visualizes the runtime Graph-Structured Stack for Generalized LR (GLR) parsing
  * as described in:
- * - Tomita, M. (1985). Efficient Parsing for Natural Language: A Generalized LR Parser.
+ * - Tomita, M. (1986). Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems.
  * - Scott, E., & Johnstone, A. (2006). Right Nulled Generalized LR Parsers (RNGLR).
  */
 

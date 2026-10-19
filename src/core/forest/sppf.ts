@@ -1,6 +1,6 @@
 /**
  * Shared packed parse forests (SPPF): all derivation trees of a word in one graph
- * (Tomita 1985/1986, "shared-packed forest"). A node for a symbol over a part of the
+ * (Tomita 1986, "shared-packed forest"). A node for a symbol over a part of the
  * input is shared by every tree that uses it; its packed nodes are the different
  * ways it is derived, so a node with two or more packed nodes is a place of ambiguity.
  *

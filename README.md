@@ -89,7 +89,7 @@
   - Augmented Transition Networks (ATN) with rule call and return transitions
   - Dynamic Lookahead DFA synthesis: caching deterministic lookahead decisions computed via ATN subparser $\varepsilon$-closure simulations
   - Interactive step simulator with Lookahead DFA Dagre SVG graph visualization, micro-step lookahead tracing, and derivation tree building
-- **Generalized LR (GLR) Parser (Tomita 1985, Scott & Johnstone 2006)**:
+- **Generalized LR (GLR) Parser (Tomita 1986, Scott & Johnstone 2006)**:
   - General bottom-up parsing for non-LR and ambiguous grammars using Graph-Structured Stack (GSS)
   - Forks on Shift/Reduce and Reduce/Reduce conflicts, merges on identical stack frontiers, and produces the complete parse forest
   - Interactive SVG GSS graph visualizer powered by Dagre, with node inspection (origins, LR items, merge notices) and synchronized derivation tree highlighting
@@ -232,7 +232,7 @@ See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibl
 - **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
 - **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
 - **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
-- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965), Scott & Johnstone (2010, 2013: GLL), Scott, Johnstone & van Binsbergen (2019: BSR sets), Johnstone (2023: reference GLL), Vo et al. (2026: empirical comparison), Tomita (1985: shared packed forests).
+- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965), Scott & Johnstone (2010, 2013: GLL), Scott, Johnstone & van Binsbergen (2019: BSR sets), Johnstone (2023: reference GLL), Vo et al. (2026: empirical comparison), Tomita (1986: shared packed forests).
 - **Conflict counterexamples**: Isradisaikul & Myers (2015), the Bison manual.
 - **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).
 

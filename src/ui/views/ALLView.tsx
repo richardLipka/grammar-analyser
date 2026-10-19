@@ -41,14 +41,14 @@ interface ALLViewProps {
 export const ALL_PRIMARY_REFERENCES = [
   {
     authorYear: 'Parr, Harwell & Fisher (2014)',
-    citation: 'Parr, T., Harwell, S., Fisher, K.: Adaptive LL(*) parsing: The power of dynamic analysis. In: Proceedings of the 35th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI \'14), pp. 579–589, 2014.',
-    url: 'https://doi.org/10.1145/2594291.2594326',
+    citation: 'Parr, T., Harwell, S., Fisher, K.: Adaptive LL(*) parsing: The power of dynamic analysis. In: Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA \'14), pp. 579–598, 2014.',
+    url: 'https://doi.org/10.1145/2660193.2660202',
     sections: '§2.2 (left recursion), §3 (SLL vs LL, two-stage parsing), §4.3–4.4 (ATN, lookahead DFA), §5.2 (Functions 1–7), §5.3 (conflicts and ambiguities), §6 (correctness)'
   },
   {
     authorYear: 'Parr & Fisher (2011)',
-    citation: 'Parr, T., Fisher, K.: LL(*): The foundation of the ANTLR parser generator. ACM SIGPLAN Notices 46(1), 425–436, 2011.',
-    url: 'https://doi.org/10.1145/1926385.1926432',
+    citation: 'Parr, T., Fisher, K.: LL(*): The foundation of the ANTLR parser generator. In: Proceedings of the 32nd ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI \'11), pp. 425–436, 2011.',
+    url: 'https://doi.org/10.1145/1993498.1993548',
     sections: 'static LL(*) lookahead DFA (the predecessor of ALL(*))'
   }
 ];

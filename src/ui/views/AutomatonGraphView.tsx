@@ -29,14 +29,14 @@ export const LR_GRAPH_PRIMARY_REFERENCES = [
     topicEn: 'LALR(1) State Merging',
     topicCz: 'Slučování stavů v LALR(1)',
     citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, MIT, 1969.',
-    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+    url: 'https://hdl.handle.net/1721.1/13628'
   },
   {
     authorYear: 'Denny & Malloy (2010)',
     topicEn: 'IELR(1) State Splitting',
     topicCz: 'Štěpení stavů v IELR(1)',
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
-    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+    url: 'https://doi.org/10.1016/j.scico.2009.08.001'
   },
   {
     authorYear: 'Pager (1977)',

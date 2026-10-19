@@ -3,7 +3,7 @@
  *
  * Top-down parsing with adaptive prediction (Function 1 `parse` of
  * Parr, T., Harwell, S., & Fisher, K. (2014). Adaptive LL(*) Parsing:
- * The Power of Dynamic Analysis. ACM PLDI '14, §5.2).
+ * The Power of Dynamic Analysis. ACM OOPSLA '14, §5.2).
  *
  * The parser keeps the call stack γ of ATN return states (the follow state q of
  * every active rule edge p –B→ q). At a non-terminal with several productions it

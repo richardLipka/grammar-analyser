@@ -3,7 +3,7 @@
  * fallback to full LL simulation with the parser's call stack.
  *
  * Parr, T., Harwell, S., & Fisher, K. (2014).
- * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM PLDI '14,
+ * Adaptive LL(*) Parsing: The Power of Dynamic Analysis. ACM OOPSLA '14,
  * §3.1–3.2 (SLL vs LL), §4.4 (lookahead DFA), §5.2 (Functions 2–7), §5.3 (conflicts).
  *
  * A configuration (p, i, γ) is an ATN state p, the predicted production i and a

@@ -48,7 +48,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   barhillel61: {
     citation: 'Bar-Hillel, Y., Perles, M., Shamir, E.: On formal properties of simple phrase structure grammars. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961.',
-    url: 'https://doi.org/10.1515/9783112613764-007'
+    url: 'https://doi.org/10.1524/stuf.1961.14.14.143'
   },
   chomsky59: {
     citation: 'Chomsky, N.: On certain formal properties of grammars. Information and Control 2(2), 137–167, 1959.',
@@ -60,7 +60,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   rl70: {
     citation: 'Rosenkrantz, D. J., Lewis, P. M.: Deterministic left corner parsing. 11th Annual Symposium on Switching and Automata Theory, 139–152, 1970.',
-    url: 'https://doi.org/10.1109/SWAT.1970.19'
+    url: 'https://doi.org/10.1109/SWAT.1970.5'
   },
   moore00: {
     citation: 'Moore, R. C.: Removing left recursion from context-free grammars. 1st Meeting of the North American Chapter of the ACL (NAACL), 2000.',
@@ -84,7 +84,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   mickunas76: {
     citation: 'Mickunas, M. D., Lancaster, R. L., Schneider, V. B.: Transforming LR(k) grammars to LR(1), SLR(1) and (1,1) bounded right context grammars. Journal of the ACM 23(3), 511–533, 1976.',
-    url: 'https://doi.org/10.1145/321958.321969'
+    url: 'https://doi.org/10.1145/321958.321972'
   },
   chomsky58: {
     citation: 'Chomsky, N., Miller, G. A.: Finite state languages. Information and Control 1(2), 91–112, 1958.',
@@ -92,7 +92,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   denny10: {
     citation: 'Denny, J. E., Malloy, B. A.: The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution. Science of Computer Programming 75(11), 943–979, 2010.',
-    url: 'https://doi.org/10.1016/j.scico.2009.09.006'
+    url: 'https://doi.org/10.1016/j.scico.2009.08.001'
   },
   knuth65: {
     citation: 'Knuth, D. E.: On the translation of languages from left to right. Information and Control 8(6), 607–639, 1965.',
@@ -100,7 +100,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   deremer69: {
     citation: 'DeRemer, F. L.: Practical Translators for LR(k) Languages. Ph.D. thesis, Department of Electrical Engineering, MIT, Cambridge, MA, 1969.',
-    url: 'https://dspace.mit.edu/handle/1721.1/13857'
+    url: 'https://hdl.handle.net/1721.1/13628'
   },
   deremer71: {
     citation: 'DeRemer, F. L.: Simple LR(k) grammars. Communications of the ACM 14(7), 453–460, 1971.',
@@ -124,7 +124,7 @@ export const REFERENCES: Record<string, Reference> = {
   },
   lucas61: {
     citation: 'Lucas, P.: Die Strukturanalyse von Formelübersetzern. Elektronische Rechenanlagen 3(4), 159–167, 1961.',
-    url: 'https://dblp.org/rec/journals/er/Lucas61.html'
+    url: 'https://doi.org/10.1524/itit.1961.3.16.159'
   },
   wirth76: {
     citation: 'Wirth, N.: Algorithms + Data Structures = Programs. Prentice-Hall, Englewood Cliffs, NJ, 1976.',

@@ -45,7 +45,7 @@ export const TRANSFORMATIONS_PRIMARY_REFERENCES = [
     topicEn: 'Grammar Reduction & Properties',
     topicCz: 'Redukce gramatik a jejich vlastnosti',
     citation: 'Bar-Hillel, Y., Perles, M., Shamir, E.: On formal properties of simple phrase structure grammars. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961.',
-    url: 'https://doi.org/10.1515/9783112613764-007'
+    url: 'https://doi.org/10.1524/stuf.1961.14.14.143'
   }
 ];
 
