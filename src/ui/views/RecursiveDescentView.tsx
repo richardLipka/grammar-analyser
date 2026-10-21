@@ -50,6 +50,8 @@ import {
 } from 'lucide-react';
 import { RD_SAMPLE_GRAMMARS } from '../../core/presets/rdSampleGrammars';
 import { ReferenceBar } from '../components/ReferenceBar';
+import { LRTable } from '../../core/lr/lrTable';
+import { RecursiveAscentView } from './RecursiveAscentView';
 
 /** The KIV/FJP PL/0 interpreter (P-code virtual machine); a program is passed in the hash. */
 export const PL0_INTERPRETER_URL = 'https://richardlipka.github.io/online-pl0-interpreter/';
@@ -88,7 +90,8 @@ export const RECURSIVE_DESCENT_PRIMARY_REFERENCES = [
 ];
 
 type CodeLang = 'pl0' | 'oberon' | 'c' | 'python' | 'js' | 'pcode';
-type SubTab = 'sim' | 'code' | 'symtab';
+type SubTab = 'sim' | 'code' | 'symtab' | 'ascent';
+type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 type ActionType = RuleActionDefinition['actionType'];
 
 const FILE_NAMES: Record<CodeLang, string> = {
@@ -146,6 +149,12 @@ interface RecursiveDescentViewProps {
   onAttemptLL1?: () => void;
   /** Loads a sample grammar as a new grammar (with its word of terminals and its name) */
   onLoadGrammar?: (grammarText: string, sampleInput: string, title: { en: string; cz: string }) => void;
+  /** The LR tables, for recursive ascent (the sub-tab works for any grammar with a conflict-free LR table) */
+  lrTables?: Record<LRVariantName, LRTable | undefined>;
+  lrVariant?: LRVariantName;
+  onSelectLrVariant?: (v: LRVariantName) => void;
+  /** The sub-tab to open first (a link with tab=ascent opens recursive ascent) */
+  initialSubTab?: SubTab;
 }
 
 /**
@@ -161,10 +170,16 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   defaultInput = '',
   lang,
   onAttemptLL1,
-  onLoadGrammar
+  onLoadGrammar,
+  lrTables,
+  lrVariant = 'SLR(1)',
+  onSelectLrVariant,
+  initialSubTab
 }) => {
   const cz = lang === 'cz';
-  const [subTab, setSubTab] = useState<SubTab>('sim');
+  const [subTab, setSubTab] = useState<SubTab>(initialSubTab ?? 'sim');
+  const [ownLrVariant, setOwnLrVariant] = useState<LRVariantName>(lrVariant);
+  const activeLrVariant = onSelectLrVariant ? lrVariant : ownLrVariant;
   const [codeLang, setCodeLang] = useState<CodeLang>('pl0');
   const [inputText, setInputText] = useState(defaultInput);
   const [copied, setCopied] = useState(false);
@@ -423,10 +438,59 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   };
   useEffect(() => setJsRunOutput(null), [vmInput, generated]);
 
+  const subTabBar = (
+    <div className="rd-subtabs" style={{ marginTop: '12px' }}>
+      {([
+        ['sim', <Play size={15} key="i" />, cz ? 'Krokování a tabulka symbolů' : 'Step simulator & symbol table'],
+        ['code', <Code2 size={15} key="i" />, cz ? 'Generovaný kód (PL/0, C, Python, JS…)' : 'Generated code (PL/0, C, Python, JS…)'],
+        ['symtab', <Database size={15} key="i" />, cz ? 'Akce tabulky symbolů' : 'Symbol table actions'],
+        ['ascent', <Layers size={15} key="i" />, cz ? 'Rekurzivní vzestup (LR)' : 'Recursive ascent (LR)']
+      ] as [SubTab, React.ReactNode, string][]).map(([id, icon, label]) => (
+        <button
+          key={id}
+          type="button"
+          className={`rd-subtab-btn ${subTab === id ? 'active' : ''}`}
+          onClick={() => setSubTab(id)}
+          title={id === 'ascent' ? (cz ? 'Analyzátor LR jako procedura pro každý stav – pro gramatiky s tabulkou LR bez kolizí, i když nejsou LL(1)' : 'The LR parser as a procedure per state – for grammars with a conflict-free LR table, also when they are not LL(1)') : undefined}
+        >
+          {icon}
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+
+  // Recursive ascent needs an LR table, not LL(1)
+  if (subTab === 'ascent' && lrTables) {
+    return (
+      <div>
+        <div className="card">
+          <div className="card-title">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Cpu size={18} color="var(--color-primary)" />
+              {cz ? 'Rekurzivní sestup a vzestup' : 'Recursive descent and ascent'}
+            </span>
+          </div>
+          {subTabBar}
+        </div>
+        <RecursiveAscentView
+          grammar={grammar}
+          tables={lrTables}
+          selectedVariant={activeLrVariant}
+          onSelectVariant={onSelectLrVariant ?? setOwnLrVariant}
+          defaultInput={defaultInput}
+          lang={lang}
+          interpreterLink={interpreterLink}
+        />
+      </div>
+    );
+  }
+
   if (!llTable.isLL1) {
     return (
       <div className="card">
         <div className="card-title"><span>{cz ? 'Rekurzivní sestup' : 'Recursive descent'}</span></div>
+        {lrTables && subTabBar}
         <div className="notice-box warning">
           <div className="notice-title">
             <AlertTriangle size={15} />
@@ -437,11 +501,18 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               ? 'Procedura neterminálu vybírá pravidlo podle jednoho symbolu vstupu; při kolizi v rozkladové tabulce by nevěděla, které pravidlo použít. Gramatiku lze upravit (záložka Úpravy gramatiky) nebo zkusit automatický převod.'
               : 'The procedure of a non-terminal chooses the rule by one input symbol; with a conflict in the parse table it would not know which rule to use. Transform the grammar (tab Transformations) or try the automatic transformation.'}
           </p>
-          {onAttemptLL1 && (
-            <button type="button" className="btn btn-accent" onClick={onAttemptLL1}>
-              {cz ? 'Zkusit převést na LL(1)' : 'Try to transform to LL(1)'}
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onAttemptLL1 && (
+              <button type="button" className="btn btn-accent" onClick={onAttemptLL1}>
+                {cz ? 'Zkusit převést na LL(1)' : 'Try to transform to LL(1)'}
+              </button>
+            )}
+            {lrTables && (
+              <button type="button" className="btn btn-secondary" onClick={() => setSubTab('ascent')}>
+                {cz ? 'Rekurzivní vzestup (stačí tabulka LR bez kolizí)' : 'Recursive ascent (a conflict-free LR table is enough)'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -759,32 +830,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
         />
 
         {/* Subtabs selector */}
-        <div className="rd-subtabs" style={{ marginTop: '12px' }}>
-          <button
-            type="button"
-            className={`rd-subtab-btn ${subTab === 'sim' ? 'active' : ''}`}
-            onClick={() => setSubTab('sim')}
-          >
-            <Play size={15} />
-            <span>{cz ? 'Krokování a tabulka symbolů' : 'Step simulator & symbol table'}</span>
-          </button>
-          <button
-            type="button"
-            className={`rd-subtab-btn ${subTab === 'code' ? 'active' : ''}`}
-            onClick={() => setSubTab('code')}
-          >
-            <Code2 size={15} />
-            <span>{cz ? 'Generovaný kód (PL/0, C, Python, JS…)' : 'Generated code (PL/0, C, Python, JS…)'}</span>
-          </button>
-          <button
-            type="button"
-            className={`rd-subtab-btn ${subTab === 'symtab' ? 'active' : ''}`}
-            onClick={() => setSubTab('symtab')}
-          >
-            <Database size={15} />
-            <span>{cz ? 'Akce tabulky symbolů' : 'Symbol table actions'}</span>
-          </button>
-        </div>
+        {subTabBar}
 
         {/* Sample Grammars Quick-Selector */}
         {onLoadGrammar && (

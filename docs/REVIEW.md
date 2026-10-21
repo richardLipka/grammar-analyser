@@ -1003,3 +1003,47 @@ Every URL in `src/`, `README.md` and `docs/REFERENCES.md` was checked: DOIs agai
 | DeRemer 1969 (thesis) | hdl 1721.1/13857 (a 1991 vision thesis) | hdl 1721.1/13628 |
 
 Also corrected: LL(*) appeared at PLDI '11 (not POPL '11, SIGPLAN Notices 46(1)); ALL(*) at OOPSLA '14, pp. 579–598 (not PLDI '14, 579–589; the core comments said PLDI too); Tomita's book is Kluwer 1986 (Crossref/Springer), now "Tomita (1986)" everywhere it is cited; the Kasami report is cited as AFCRL-65-758 only (the "CSL Report R-257, University of Illinois" could not be found anywhere); the Hopcroft–Motwani–Ullman Pearson page is gone, the link is the ISBN record at Open Library. REVIEW.md keeps its history unchanged. Links that answer bots with 403/429 (the Royal Holloway PDFs behind Cloudflare, DTIC, MIT DSpace) were checked by hand or through their APIs.
+
+## 33. Recursive ascent (2026-10-21)
+
+The owner asked about recursive ascent, the LR analogue of recursive descent. It is a fourth sub-tab of *Rekurzivní sestup* ("Rekurzivní vzestup (LR)"): the menu rows (`TAB_ROWS`) stay as they are, and the tab's tooltip now names both methods. It works for every grammar with a conflict-free LR table, also when the grammar is not LL(1); the LL(1) notice of the tab offers it. Link: `tab=ascent` (or `recursive-ascent`) opens the sub-tab (`UrlState.rdPart`). The variant is the one shared with the LR tabs.
+
+**Sources.** Only Horspool's report was read in full: *Recursive ascent-descent parsing*, University of Victoria, 11 June 1991 (webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf), the version of Computer Languages 18(1), 1–15, 1993 (doi 10.1016/0096-0551(93)90027-X); the journal version may differ in details. Its §5.2 gives the scheme implemented here, §5.3 the ascent-descent variant. Roberts 1988 (SIGPLAN Notices 23(8), 23–29, doi 10.1145/47907.47909), Roberts 1989 (IPL 32(5), 263–266, doi 10.1016/0020-0190(89)90054-9 — Horspool writes 1990), Kruseman Aretz 1988 (IPL 29(4), 201–206, doi 10.1016/0020-0190(88)90061-0), Barnard & Cordy 1988 (Computer Languages 13(2), 65–74), Leermakers, Augusteijn & Kruseman Aretz 1992 (TCS 104(2), 313–323, doi 10.1016/0304-3975(92)90128-3) and Pennello 1986 (SIGPLAN Notices 21(7), 145–151, doi 10.1145/13310.13326) are paywalled. Their metadata were checked against Crossref, and the texts say only what Horspool says about them. **Correction to the brief:** Pennello's "Very fast LR parsing" is not recursive ascent. Horspool lists it among the *other* directly executed LR parsers, which are faster than recursive ascent and much smaller, and the app cites it that way.
+
+**The scheme** (`src/core/codegen/recursiveAscent.ts`, Horspool §5.2):
+- one procedure per LR state, entered after the shift into it (the caller reads the terminal);
+- shift t: read t, call the procedure of g(q, t);
+- reduction by A → α, |α| > 0: print the rule number and return (A, |α|). Every caller decrements the count and returns it while it is > 0. The caller where it reaches 0 is the top after popping |α| states: it calls g(q, A) and loops on the result (Horspool's `while (TRUE)` over the gotos, his `return* k` simulated by the count);
+- ε-rule: nothing is popped, so the procedure does the goto itself;
+- accept: the reduction by rule 0 S' → S returns (S', 1) to #, whose goto loop ends the parse on S'. In LR(0), accept fills the whole row, but as in the table-driven parser only `$` accepts;
+- error: an exception in JavaScript and Python; in C and PL/0 the flag `ok` (C returns 0, PL/0 sets `cnt := -1`, so no goto loop runs while unwinding).
+
+A state whose only action is one reduction in every column (a reduce state of LR(0)) reduces without testing the input. The branches come from the Dragon ACTION/GOTO table, which holds the shift targets, so the program follows the resolved table where precedence resolved conflicts. Procedures are named by the lecture states (`E1` for E₁, `lparen2`, `start` for #, `_2` for a clash), and each is commented with its state name and number and all its items, with lookaheads for LALR(1)/IELR(1)/LR(1). Shift and goto lines say `g(E₁, +) = +₁`. Output is like recursive descent: the right parse (the rules of the reductions in their order, = `rightParse` of the LR simulator), then OK or `ERR x`.
+
+**Languages.**
+- *JavaScript* runs in the app; `parse(input)` returns `{ ok, rightParse, output }`.
+- *Python 3*: the recursion limit is raised to 10,000.
+- *C99* has no pairs, so the count is the result and the non-terminal goes in a global `lhs`. It is compiled with `-std=c99 -Wall -Wextra -pedantic -Werror`, without `-Wno-unused-function`.
+- *PL/0* has no function results, so `lhs` and `cnt` are globals. It has no forward declarations either, and the transitions form cycles, so nesting cannot help: one procedure `state` gets the state in `which` and keeps it in its local `mine`, and its activation records on the P-machine stack are the state stack. Since PL/0 has no else, `act` is chosen first. PL/0 identifiers have no `_`, so the non-terminal constants use a digit suffix (`nTx2`). The program runs here on the P-code VM and is linked to the course interpreter.
+- *Oberon* is not generated: with function procedures and procedure variables it would be the C program in other words, and it cannot be run here.
+
+The locals of the JavaScript/Python procedures are `nt` and `count`. They, and the PL/0 globals, are reserved, but case-sensitively, so a non-terminal `T` keeps its constant `nT`.
+
+**Step simulator** (`recursiveAscentSimulator.ts`). It does not execute the program; it keeps the call stack explicitly. Every call (shift, goto, ε-goto) and every return is a step, so a reduction is one return of the reducing state, |α| − 1 returns of callers and one goto. Each step records the frames (= the LR state stack), the pair returned, and line keys (`lineKey`: proc/act/err/goto/ret/head/end per state) that every generator maps to its lines. The view shows, side by side (container queries, three columns at 1920 × 1080):
+- the code in the chosen language, with the executed line, the procedure that acted, and the header of the procedure called;
+- the automaton (`AutomatonGraphVisualizer` with the new `height` and `followZoom`: the top state, zoomed to a readable scale, and the transition used);
+- the call stack beside the LR state stack (entry symbol and lecture name), the returned pair, the input with •, and the right parse.
+
+Below: copy/download, the PL/0 output on the VM, the interpreter link and the JavaScript run; then a correspondence table (state stack = call stack, f/g ↔ calls, R i ↔ return (A, |α|) and decrements, ε, accept, error, right parse) and notes from Horspool: why the count; fast but large; actions hard to place; recursive ascent-descent (generalised left-corner parsing of Demers 1977 extended to LALR(1)/LR(1), ascent until the rule is known at its leftmost free position (Purdom & Brown 1980), then a procedure per rule for the rest = descent, with semantic code at every free position, and far fewer states than LALR(1)).
+
+*Performance:* the automaton visualizer re-rendered every state at every step (about 1 s per step for PL/0's 89 states in the dev build of a hidden pane). Its nodes are now memoized (`GraphNode`, with stable handlers through a ref), as are the code lines; no long task (> 50 ms) is left per step. The LR automaton tab benefits too.
+
+*Tests* (`src/test/recursiveAscent.test.ts`):
+- 400 seeded random grammars × every conflict-free variant. Every variant occurs, there are more than 300 tables and more than 1,000 accepted words, and all words up to length 5 are checked: the table-driven parser accepts exactly L(G) (the Earley oracle of `src/test/earley.ts`); the generated JavaScript and the simulator accept exactly the same words with the same right parse; a rejection stops with ERR at the same symbol; and the simulator's call stack after every call equals the LR state stack after every shift and reduction.
+- The expression grammar: procedure names, item comments in all four languages, the output `6 4 2 6 4 6 3 1 OK`, the exact step kinds, and every line key of every step existing in every language.
+- `S → a S b | ε` (inline goto) and LR(0) `S → a S | b` (unconditional reduce, accept only at the end).
+- All presets with a conflict-free table: unique names, the example word accepted with the table-driven right parse.
+- Names clashing with the programs' own names.
+- PL/0 on the VM = JavaScript on 120 random seeds, words ≤ 4.
+- C (gcc) and Python run on PL/0, the expression grammar and a sample of the random tables, with the same output and the C exit status; skipped without gcc/Python, as in `rdLanguages.test.ts`.
+- `urlState.test.ts`: `tab=ascent`.

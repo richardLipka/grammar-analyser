@@ -505,7 +505,7 @@ export const App: React.FC = () => {
     { id: 'all', icon: <Network size={15} />, label: t.tabAll, title: t.tabAllTitle },
     { id: 'earley', icon: <Layers size={15} />, label: t.tabEarley, title: t.tabEarleyTitle },
     { id: 'gll', icon: <Network size={15} />, label: t.tabGll, title: t.tabGllTitle },
-    { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd },
+    { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd, title: t.tabRdTitle },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
@@ -1177,6 +1177,16 @@ export const App: React.FC = () => {
                     lang={lang}
                     onAttemptLL1={!isStale && canAnalyse ? () => applyWholeGrammar('ll1') : undefined}
                     onLoadGrammar={loadSampleGrammar}
+                    lrTables={{
+                      'LR(0)': analysisData.lr0Table,
+                      'SLR(1)': analysisData.slr1Table,
+                      'LALR(1)': analysisData.lalr1Table,
+                      'IELR(1)': analysisData.ielr1Table,
+                      'LR(1)': analysisData.lr1Table
+                    }}
+                    lrVariant={lrVariant}
+                    onSelectLrVariant={setLrVariant}
+                    initialSubTab={setup.url.rdPart}
                   />
                 )}
 

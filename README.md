@@ -113,6 +113,11 @@
   - Comments give the rules of every procedure above it and the rule of every branch (`(* 2: E' -> + T E' *)`, `/* … */`, `# …`); Wirth's original PL/0 has no comments, so for a compiler without them they have to be deleted
   - Without forward declarations a PL/0 or Oberon procedure can call only itself, enclosing procedures and earlier ones, so the procedures are nested along the calls as `expression ⊃ term ⊃ factor` in Wirth's compiler; when nesting cannot express the calls, PL/0 uses one dispatching procedure and Oberon procedure variables (as ORP.Mod). C (prototypes) and Python (names looked up at the call) need no nesting
   - The **P-code** of the PL/0 program (a built-in PL/0 compiler with Wirth's code generation and the course mnemonics JMC/RET), runnable here, and a button that opens it with the input in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/) (`#code_b64=…&input=…`; on home.zcu.cz the copy `../pl0/` next to the analyser, the same version); its output equals the left parse of the LL(1) simulation
+- **Recursive ascent** (sub-tab *Rekurzivní vzestup (LR)* of the tab *Rekurzivní sestup*, any grammar with a conflict-free LR(0)/SLR(1)/LALR(1)/IELR(1)/LR(1) table; link `tab=ascent`):
+  - The LR parser as **one procedure per LR state**, named by the lecture states (`E1` for E₁, `start` for #) and commented with the state's items: called after the shift into its state, it reads a terminal and calls the procedure of g(state, a), or after a reduction by A → α returns (A, |α|); every caller decrements the count and returns until it is 0, and there calls g(state, A) in a loop (Horspool's multi-level `return* k`); an ε-rule does the goto inline; accept is the rule 0 S' → S returned to #. The output is the right parse, then OK or ERR and the symbol
+  - Generated in **JavaScript** (run in the browser), **Python 3**, **C99** (the non-terminal in a global `lhs`, the count as the result) and **PL/0** (no function results and no forward declarations: one procedure `state` with the state number in its local `mine`, so its activation records are the state stack; run here on the P-code VM and linkable to the KIV/FJP interpreter); Oberon is not generated
+  - **Step simulator**: the code with the executed lines and the active procedure, the automaton with the state on top and the transition used, and the call stack next to the LR state stack (they are the same); a reduction shows as |α| returns and one goto call
+  - A table of the correspondence (state stack = call stack, the returned count = the |α| states popped), the literature (Roberts 1988, 1989; Kruseman Aretz 1988; Leermakers, Augusteijn & Kruseman Aretz 1992; Pennello 1986; Horspool 1993) and a note on Horspool's recursive ascent-descent
 - **Word Generator**:
   - BFS enumeration of the words with the shortest derivations in $L(G)$
   - Random derivation with guaranteed termination (minimal derivation heights)
@@ -162,7 +167,7 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 |---|---|
 | `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
 | `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
-| `tab` | `overview`, `first-follow`, `transformations`, `teaching`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `all`, `rd`, `words`, `latex`, `earley` (or `ettp`) |
+| `tab` | `overview`, `first-follow`, `transformations`, `teaching`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `all`, `rd`, `ascent` (recursive ascent, a sub-tab of `rd`), `words`, `latex`, `earley` (or `ettp`), `gll` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
 | `split` | `1` or `0`: whether words such as `bxc` in the course notation are the symbols `b x c` or one terminal, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
@@ -210,7 +215,7 @@ src/
 │   ├── earley/             # Classic Earley (1970) & ETTP (2025/2026) chart parsers
 │   ├── gll/                # GLL parser (descriptors, GSS, pop set) & BSR sets with tree extraction
 │   ├── forest/             # Shared packed parse forests from BSR sets, Earley charts and tree lists
-│   ├── codegen/            # Recursive descent code generators (PL/0, Oberon, C, Python, JS), VM & symbol table
+│   ├── codegen/            # Recursive descent (PL/0, Oberon, C, Python, JS) and recursive ascent (JS, Python, C, PL/0) generators, VM & symbol table
 │   ├── export/             # LaTeX exam/problem-set exporter
 │   └── presets/            # Curated university textbook grammars
 ├── i18n/                   # English & Czech academic terminology
@@ -232,6 +237,7 @@ See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibl
 - **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
 - **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
 - **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
+- **Recursive Ascent**: Pennello (1986), Roberts (1988, 1989), Kruseman Aretz (1988), Barnard & Cordy (1988), Leermakers, Augusteijn & Kruseman Aretz (1992), Horspool (1993).
 - **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965), Scott & Johnstone (2010, 2013: GLL), Scott, Johnstone & van Binsbergen (2019: BSR sets), Johnstone (2023: reference GLL), Vo et al. (2026: empirical comparison), Tomita (1986: shared packed forests).
 - **Conflict counterexamples**: Isradisaikul & Myers (2015), the Bison manual.
 - **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).

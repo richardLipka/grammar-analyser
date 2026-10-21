@@ -43,6 +43,10 @@ interface AutomatonGraphVisualizerProps {
   visibleEdges?: Set<string>;
   /** The transition of the current step: highlighted instead of the one that created the selected state */
   focusEdge?: { from: number; symbol: string };
+  /** Height of the canvas (CSS) */
+  height?: string;
+  /** Zoom in to at least this scale around a newly selected state (a step simulator following the state) */
+  followZoom?: number;
 }
 
 export interface DisplayItem {
@@ -125,7 +129,9 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
   lookaheadTip,
   visibleStates,
   visibleEdges,
-  focusEdge
+  focusEdge,
+  height = '540px',
+  followZoom
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -183,7 +189,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     return { nodes, edges, width: info.width || 800, height: info.height || 600 };
   }, [automaton, withLookaheads]);
 
-  const { view, fit, zoomBy, reveal, onPointerDown, isDragging, wasDragged } = usePanZoom(
+  const { view, fit, zoomBy, reveal, focus, onPointerDown, isDragging, wasDragged } = usePanZoom(
     containerRef,
     { width: layout.width, height: layout.height },
     layout.nodes.length > 0
@@ -215,8 +221,10 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
       return;
     }
     const n = selectedStateId !== null && selectedStateId !== undefined ? layout.nodes[selectedStateId] : undefined;
-    if (n) reveal(n.x - n.width / 2, n.y - n.height / 2, n.width, n.height);
-  }, [selectedStateId, layout, reveal]);
+    if (!n) return;
+    if (followZoom) focus(n.x - n.width / 2, n.y - n.height / 2, n.width, n.height, followZoom);
+    else reveal(n.x - n.width / 2, n.y - n.height / 2, n.width, n.height);
+  }, [selectedStateId, layout, reveal, focus, followZoom]);
 
   // Tooltip: immediately, or after a delay; `key` keeps a pending delayed tip when the
   // pointer only moves between the parts of the same item row
@@ -257,6 +265,28 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     }
   };
 
+  // The nodes are memoized (a step simulator re-renders the graph at every step); their
+  // handlers stay the same object and read the current props through a ref
+  const latest = useRef({ onSelectState, wasDragged, isDragging, lookaheadTip, itemHint, showTip, hideTip });
+  latest.current = { onSelectState, wasDragged, isDragging, lookaheadTip, itemHint, showTip, hideTip };
+  const nodeHandlers = useMemo((): NodeHandlers => ({
+    select: (id: number) => {
+      if (!latest.current.wasDragged()) latest.current.onSelectState?.(id);
+    },
+    hover: (e: React.MouseEvent<SVGGElement>, nodeId: number, it: DisplayItem, itIdx: number) => {
+      const l = latest.current;
+      if (l.isDragging) return;
+      const la = (e.target as Element).getAttribute('data-la');
+      if (la !== null && l.lookaheadTip) {
+        l.showTip((e.target as Element).getBoundingClientRect(), l.lookaheadTip(nodeId, it, la), 0);
+      } else if (l.itemHint) {
+        const row = e.currentTarget.getBoundingClientRect();
+        l.showTip(row, <div className="lr-explain lr-hint">{l.itemHint(nodeId, it)}</div>, 450, `${nodeId}:${itIdx}`);
+      }
+    },
+    leave: () => latest.current.hideTip()
+  }), []);
+
   /** 'origin' = the creating transition, 'incoming' = another transition into the selected state, 'active' = outgoing */
   const edgeKind = (e: LayoutEdge): '' | 'origin' | 'incoming' | 'active' => {
     if (origin.selected === null) return '';
@@ -272,7 +302,7 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     <div
       ref={containerRef}
       className="graph-canvas"
-      style={{ height: '540px', cursor: isDragging ? 'grabbing' : 'grab' }}
+      style={{ height, cursor: isDragging ? 'grabbing' : 'grab' }}
       onPointerDown={(e) => {
         hideTip();
         onPointerDown(e);
@@ -332,116 +362,20 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
             );
           })}
 
-          {layout.nodes.filter(node => visibleStates === undefined || node.id < visibleStates).map(node => {
-            const isSelected = selectedStateId === node.id;
-            const isAccepting = !!node.state.isAccepting;
-            const hasConflict = !!conflictStates?.has(node.id);
-            const entrySymbol = origin.preds.get(node.id);
-            const isCreator = origin.creator === node.id;
-            const stateCls = isSelected
-              ? 'selected'
-              : isCreator
-                ? 'parent'
-                : entrySymbol !== undefined
-                  ? 'pred'
-                  : hasConflict ? 'conflict' : isAccepting ? 'accepting' : '';
-            const firstClosure = node.items.findIndex(i => !i.isKernel);
-            const separatorAt = firstClosure > 0 ? firstClosure : -1;
-            const tags = [
-              node.id === 0 ? (isCz ? 'počáteční' : 'initial') : '',
-              isAccepting ? (isCz ? 'přijímající' : 'accept') : '',
-              hasConflict ? (isCz ? '⚠ konflikt' : '⚠ conflict') : ''
-            ].filter(Boolean);
-
-            return (
-              <g
-                key={`node_${node.id}`}
-                transform={`translate(${node.x - node.width / 2}, ${node.y - node.height / 2})`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!wasDragged()) onSelectState?.(node.id);
-                }}
-                style={{ cursor: 'pointer' }}
-              >
-                <rect className={`g-node ${stateCls}`} width={node.width} height={node.height} rx={8} />
-                <rect className={`g-node-header ${isSelected ? 'selected' : isCreator ? 'parent' : ''}`} x={1} y={1} width={node.width - 2} height={HEADER_H - 1} rx={7} />
-                <text className={`g-node-title ${isSelected || isCreator ? 'selected' : hasConflict ? 'conflict' : ''}`} x={10} y={18}>
-                  {nodeTitles?.[node.id] ?? `${isCz ? 'Stav' : 'State'} ${node.id}`}{tags.length > 0 ? `  (${tags.join(', ')})` : ''}
-                </text>
-
-                {separatorAt > 0 && (
-                  <line
-                    className="g-closure-sep"
-                    x1={8}
-                    x2={node.width - 8}
-                    y1={HEADER_H + 8 + separatorAt * LINE_H - 2}
-                    y2={HEADER_H + 8 + separatorAt * LINE_H - 2}
-                  />
-                )}
-
-                {node.items.map((it, itIdx) => {
-                  const y = itemBaseline(itIdx, separatorAt);
-                  // In a predecessor of the selected state: the items GOTO moves into its kernel
-                  const isOrigin = entrySymbol !== undefined && it.after[0] === entrySymbol;
-                  const navigable = it.target !== undefined;
-                  return (
-                    <g
-                      key={`item_${itIdx}`}
-                      className={`g-item-row ${navigable ? 'navigable' : ''}`}
-                      onClick={(e) => {
-                        if (!navigable) return;
-                        e.stopPropagation();
-                        if (!wasDragged()) onSelectState?.(it.target!);
-                      }}
-                      // A lookahead explains itself at once, the item after a short pause
-                      onMouseOver={(e) => {
-                        if (isDragging) return;
-                        const la = (e.target as Element).getAttribute('data-la');
-                        if (la !== null && lookaheadTip) {
-                          showTip((e.target as Element).getBoundingClientRect(), lookaheadTip(node.id, it, la), 0);
-                        } else if (itemHint) {
-                          const row = e.currentTarget.getBoundingClientRect();
-                          showTip(row, <div className="lr-explain lr-hint">{itemHint(node.id, it)}</div>, 450, `${node.id}:${itIdx}`);
-                        }
-                      }}
-                      onMouseLeave={hideTip}
-                    >
-                      <rect
-                        className={`g-item-hit ${isOrigin ? (isCreator ? 'origin' : 'origin secondary') : ''}`}
-                        x={4}
-                        y={y - 13.5}
-                        width={node.width - 8}
-                        height={LINE_H - 1}
-                        rx={3}
-                      />
-                      <text className={`g-item ${it.isComplete ? 'reduce' : ''} ${isOrigin ? 'origin' : ''}`} x={10} y={y}>
-                        <tspan>{`${it.lhs} → ${it.before.join(' ')}${it.before.length ? ' ' : ''}`}</tspan>
-                        <tspan className="g-item-dot">•</tspan>
-                        <tspan>{it.after.length ? ` ${it.after.join(' ')}` : ''}</tspan>
-                        {it.lookaheads && (
-                          <>
-                            <tspan>{', '}</tspan>
-                            {it.lookaheads.length === 0 && <tspan className="g-item-la-empty">∅</tspan>}
-                            {it.lookaheads.map((la, laIdx) => (
-                              <React.Fragment key={la}>
-                                {laIdx > 0 && <tspan>{LA_SEP}</tspan>}
-                                <tspan
-                                  className={`g-item-la ${lookaheadTip ? 'explained' : ''}`}
-                                  data-la={la}
-                                >
-                                  {la}
-                                </tspan>
-                              </React.Fragment>
-                            ))}
-                          </>
-                        )}
-                      </text>
-                    </g>
-                  );
-                })}
-              </g>
-            );
-          })}
+          {layout.nodes.filter(node => visibleStates === undefined || node.id < visibleStates).map(node => (
+            <GraphNode
+              key={`node_${node.id}`}
+              node={node}
+              title={nodeTitles?.[node.id] ?? `${isCz ? 'Stav' : 'State'} ${node.id}`}
+              isSelected={selectedStateId === node.id}
+              isCreator={origin.creator === node.id}
+              hasConflict={!!conflictStates?.has(node.id)}
+              entrySymbol={origin.preds.get(node.id)}
+              isCz={isCz}
+              explained={!!lookaheadTip}
+              handlers={nodeHandlers}
+            />
+          ))}
         </g>
       </svg>
 
@@ -449,3 +383,118 @@ export const AutomatonGraphVisualizer: React.FC<AutomatonGraphVisualizerProps> =
     </div>
   );
 };
+
+interface NodeHandlers {
+  select: (id: number) => void;
+  hover: (e: React.MouseEvent<SVGGElement>, nodeId: number, it: DisplayItem, itIdx: number) => void;
+  leave: () => void;
+}
+
+interface GraphNodeProps {
+  node: LayoutNode;
+  title: string;
+  isSelected: boolean;
+  isCreator: boolean;
+  hasConflict: boolean;
+  /** In a predecessor of the selected state: the symbol of its transition into it */
+  entrySymbol?: string;
+  isCz: boolean;
+  /** Lookaheads explain themselves on hover */
+  explained: boolean;
+  handlers: NodeHandlers;
+}
+
+/** One state of the automaton with its items. */
+const GraphNode = React.memo(({ node, title, isSelected, isCreator, hasConflict, entrySymbol, isCz, explained, handlers }: GraphNodeProps) => {
+  const isAccepting = !!node.state.isAccepting;
+  const stateCls = isSelected
+    ? 'selected'
+    : isCreator
+      ? 'parent'
+      : entrySymbol !== undefined
+        ? 'pred'
+        : hasConflict ? 'conflict' : isAccepting ? 'accepting' : '';
+  const firstClosure = node.items.findIndex(i => !i.isKernel);
+  const separatorAt = firstClosure > 0 ? firstClosure : -1;
+  const tags = [
+    node.id === 0 ? (isCz ? 'počáteční' : 'initial') : '',
+    isAccepting ? (isCz ? 'přijímající' : 'accept') : '',
+    hasConflict ? (isCz ? '⚠ konflikt' : '⚠ conflict') : ''
+  ].filter(Boolean);
+
+  return (
+    <g
+      transform={`translate(${node.x - node.width / 2}, ${node.y - node.height / 2})`}
+      onClick={(e) => {
+        e.stopPropagation();
+        handlers.select(node.id);
+      }}
+      style={{ cursor: 'pointer' }}
+    >
+      <rect className={`g-node ${stateCls}`} width={node.width} height={node.height} rx={8} />
+      <rect className={`g-node-header ${isSelected ? 'selected' : isCreator ? 'parent' : ''}`} x={1} y={1} width={node.width - 2} height={HEADER_H - 1} rx={7} />
+      <text className={`g-node-title ${isSelected || isCreator ? 'selected' : hasConflict ? 'conflict' : ''}`} x={10} y={18}>
+        {title}{tags.length > 0 ? `  (${tags.join(', ')})` : ''}
+      </text>
+
+      {separatorAt > 0 && (
+        <line
+          className="g-closure-sep"
+          x1={8}
+          x2={node.width - 8}
+          y1={HEADER_H + 8 + separatorAt * LINE_H - 2}
+          y2={HEADER_H + 8 + separatorAt * LINE_H - 2}
+        />
+      )}
+
+      {node.items.map((it, itIdx) => {
+        const y = itemBaseline(itIdx, separatorAt);
+        // In a predecessor of the selected state: the items GOTO moves into its kernel
+        const isOrigin = entrySymbol !== undefined && it.after[0] === entrySymbol;
+        const navigable = it.target !== undefined;
+        return (
+          <g
+            key={`item_${itIdx}`}
+            className={`g-item-row ${navigable ? 'navigable' : ''}`}
+            onClick={(e) => {
+              if (!navigable) return;
+              e.stopPropagation();
+              handlers.select(it.target!);
+            }}
+            // A lookahead explains itself at once, the item after a short pause
+            onMouseOver={(e) => handlers.hover(e, node.id, it, itIdx)}
+            onMouseLeave={handlers.leave}
+          >
+            <rect
+              className={`g-item-hit ${isOrigin ? (isCreator ? 'origin' : 'origin secondary') : ''}`}
+              x={4}
+              y={y - 13.5}
+              width={node.width - 8}
+              height={LINE_H - 1}
+              rx={3}
+            />
+            <text className={`g-item ${it.isComplete ? 'reduce' : ''} ${isOrigin ? 'origin' : ''}`} x={10} y={y}>
+              <tspan>{`${it.lhs} → ${it.before.join(' ')}${it.before.length ? ' ' : ''}`}</tspan>
+              <tspan className="g-item-dot">•</tspan>
+              <tspan>{it.after.length ? ` ${it.after.join(' ')}` : ''}</tspan>
+              {it.lookaheads && (
+                <>
+                  <tspan>{', '}</tspan>
+                  {it.lookaheads.length === 0 && <tspan className="g-item-la-empty">∅</tspan>}
+                  {it.lookaheads.map((la, laIdx) => (
+                    <React.Fragment key={la}>
+                      {laIdx > 0 && <tspan>{LA_SEP}</tspan>}
+                      <tspan className={`g-item-la ${explained ? 'explained' : ''}`} data-la={la}>
+                        {la}
+                      </tspan>
+                    </React.Fragment>
+                  ))}
+                </>
+              )}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+});

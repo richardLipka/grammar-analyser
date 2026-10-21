@@ -188,6 +188,18 @@ All URLs listed below have been verified for accessibility, persistent resolutio
 - **App Usage:** Specification of the PL/0 educational language, recursive descent compiler architecture, P-code abstract stack machine, and interpreter.
 - **Referenced In:** `RecursiveDescentView.tsx`, `transformationInfo.ts`.
 
+### Recursive ascent (sub-tab of *Rekurzivní sestup*)
+All entries checked against Crossref (title, authors, venue, volume, pages, year). Only Horspool's report was read in full; what the app says about the other works follows its §5.2–5.3 (REVIEW.md §33).
+
+- **Horspool (1993):** R. Nigel Horspool, *Recursive ascent-descent parsing*, Computer Languages 18(1), 1–15, 1993, [https://doi.org/10.1016/0096-0551(93)90027-X](https://doi.org/10.1016/0096-0551(93)90027-X). Read as the report of 11 June 1991 on the author's page, [webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf](https://webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf). §5.2: one procedure per LR state, terminal actions then a `while (TRUE)` loop over the gotos, a reduction sets the global `lhs` and does a multi-level `return* |α|`; §5.3: the left-corner parser as a control component (table-driven or recursive ascent) plus one procedure per rule (recursive descent) — *recursive ascent-descent*. Related: Horspool, *Recursive ascent-descent parsers*, Compiler Compilers (CC '90), LNCS 477, 1–10, 1991, [https://doi.org/10.1007/3-540-53669-8_70](https://doi.org/10.1007/3-540-53669-8_70).
+- **Roberts (1988):** G. H. Roberts, *Recursive ascent: an LR analog to recursive descent*, ACM SIGPLAN Notices 23(8), 23–29, 1988, [https://doi.org/10.1145/47907.47909](https://doi.org/10.1145/47907.47909).
+- **Roberts (1989):** G. H. Roberts, *Another note on recursive ascent*, Information Processing Letters 32(5), 263–266, 1989 (Horspool's list gives 1990), [https://doi.org/10.1016/0020-0190(89)90054-9](https://doi.org/10.1016/0020-0190(89)90054-9).
+- **Kruseman Aretz (1988):** F. E. J. Kruseman Aretz, *On a recursive ascent parser*, Information Processing Letters 29(4), 201–206, 1988, [https://doi.org/10.1016/0020-0190(88)90061-0](https://doi.org/10.1016/0020-0190(88)90061-0).
+- **Barnard & Cordy (1988):** D. T. Barnard, J. R. Cordy, *SL parses the LR languages*, Computer Languages 13(2), 65–74, 1988, [https://doi.org/10.1016/0096-0551(88)90010-0](https://doi.org/10.1016/0096-0551(88)90010-0) — cited by Horspool among the sources of recursive ascent.
+- **Leermakers, Augusteijn & Kruseman Aretz (1992):** *A functional LR parser*, Theoretical Computer Science 104(2), 313–323, 1992, [https://doi.org/10.1016/0304-3975(92)90128-3](https://doi.org/10.1016/0304-3975(92)90128-3).
+- **Pennello (1986):** T. J. Pennello, *Very fast LR parsing*, SIGPLAN '86 Symposium on Compiler Construction, ACM SIGPLAN Notices 21(7), 145–151, 1986, [https://doi.org/10.1145/13310.13326](https://doi.org/10.1145/13310.13326) (proceedings DOI 10.1145/12276.13326). Horspool counts it among the *other* directly executed LR parsers, faster than recursive ascent and much smaller — not recursive ascent itself.
+- **Referenced In:** `RecursiveAscentView.tsx` (`RECURSIVE_ASCENT_REFERENCES`), `recursiveAscent.ts`.
+
 ---
 
 ## 5. General Context-Free Parsing: CYK & Earley

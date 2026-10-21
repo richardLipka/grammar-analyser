@@ -38,7 +38,7 @@ export interface TokenCode {
   name: string;
 }
 
-const PUNCT_NAMES: Record<string, string> = {
+export const PUNCT_NAMES: Record<string, string> = {
   '+': 'plus', '-': 'minus', '*': 'times', '/': 'slash', '(': 'lparen', ')': 'rparen', '[': 'lbrack', ']': 'rbrack',
   '{': 'lbrace', '}': 'rbrace', '=': 'eql', '<': 'lss', '>': 'gtr', ',': 'comma', ';': 'semicolon', '.': 'period',
   ':': 'colon', '!': 'excl', '?': 'quest', '^': 'caret', '%': 'percent', '&': 'amp', '|': 'bar', '#': 'hash',
@@ -50,13 +50,13 @@ const PYTHON_KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert',
 const OBERON_KEYWORDS = new Set(['ARRAY', 'BEGIN', 'BY', 'CASE', 'CONST', 'DIV', 'DO', 'ELSE', 'ELSIF', 'END', 'FALSE', 'FOR', 'IF', 'IMPORT', 'IN', 'IS', 'MOD', 'MODULE', 'NIL', 'OF', 'OR', 'POINTER', 'PROCEDURE', 'RECORD', 'REPEAT', 'RETURN', 'THEN', 'TO', 'TRUE', 'TYPE', 'UNTIL', 'VAR', 'WHILE']);
 const JS_KEYWORDS = new Set(['break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch', 'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'let', 'static', 'enum', 'await', 'async', 'null', 'true', 'false']);
 /** Names used by the generated programs themselves; avoided regardless of case (some PL/0 compilers ignore it) */
-const RESERVED_NAMES = new Set([
+export const RESERVED_NAMES = new Set([
   'sym', 'ok', 'want', 'num', 'dig', 'rule', 'mine', 'which', 'next', 'error', 'expect', 'writenum', 'parse', 'tend', 'parser', 'in', 'out', 'main', 'data', 'pos',
   // JavaScript: the locals of parse and the globals it uses (a function String would replace String(input))
   'input', 'hooks', 'leftparse', 'log', 'terminalname', 'parsestr', 'output', 'res', 'string', 'process', 'require', 'fs', 'console', 'undefined', 'nan', 'infinity'
 ]);
 /** A keyword (or a name the program uses) of one of the target languages */
-const isKeyword = (x: string) => PL0_KEYWORDS.has(x.toLowerCase()) || OBERON_KEYWORDS.has(x.toUpperCase()) || C_KEYWORDS.has(x) || PYTHON_KEYWORDS.has(x) || JS_KEYWORDS.has(x);
+export const isKeyword = (x: string) => PL0_KEYWORDS.has(x.toLowerCase()) || OBERON_KEYWORDS.has(x.toUpperCase()) || C_KEYWORDS.has(x) || PYTHON_KEYWORDS.has(x) || JS_KEYWORDS.has(x);
 const clashes = (names: Set<string>, x: string) => names.has(x) || RESERVED_NAMES.has(x.toLowerCase());
 
 /** Characters for the terminals: their own when single printable ASCII, otherwise substitutes. */
@@ -198,11 +198,11 @@ export function generateRecursiveDescent(g: Grammar, analysis: GrammarAnalysis):
 }
 
 /** The rule as a comment: its number and A -> X Y (ASCII, so every compiler reads it). */
-const ruleText = (p: Production) => `${p.id}: ${p.lhs} -> ${p.rhs.join(' ') || 'eps'}`;
+export const ruleText = (p: Production) => `${p.id}: ${p.lhs} -> ${p.rhs.join(' ') || 'eps'}`;
 /** Text inside (* ... *) of PL/0 and Oberon (Oberon comments nest) */
-const inParens = (x: string) => x.replace(/\*\)/g, '* )').replace(/\(\*/g, '( *');
+export const inParens = (x: string) => x.replace(/\*\)/g, '* )').replace(/\(\*/g, '( *');
 /** Text inside a C comment */
-const inC = (x: string) => x.replace(/\*\//g, '* /').replace(/\/\*/g, '/ *');
+export const inC = (x: string) => x.replace(/\*\//g, '* /').replace(/\/\*/g, '/ *');
 
 function generatePl0(
   g: Grammar,
@@ -433,7 +433,7 @@ function generateOberon(
   return out.join('\n');
 }
 
-function cChar(code: number): string {
+export function cChar(code: number): string {
   if (code === 39) return "'\\''";
   if (code === 92) return "'\\\\'";
   return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : String(code);
@@ -522,7 +522,7 @@ function generateC(
   return out.join('\n');
 }
 
-function pyChar(code: number): string {
+export function pyChar(code: number): string {
   if (code === 39) return '"\'"';
   if (code === 92) return "'\\\\'";
   return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : `chr(${code})`;
@@ -610,7 +610,7 @@ function generatePython(
   return out.join('\n') + '\n';
 }
 
-function jsChar(code: number): string {
+export function jsChar(code: number): string {
   if (code === 39) return "'\\''";
   if (code === 92) return "'\\\\'";
   return code > 32 && code < 127 ? `'${String.fromCharCode(code)}'` : `String.fromCharCode(${code})`;
