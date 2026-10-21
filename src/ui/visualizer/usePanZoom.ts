@@ -134,8 +134,27 @@ export function usePanZoom(
     });
   }, [containerRef]);
 
+  /**
+   * Shows a content rectangle at exactly the scale k (zooming in or out); keeps the view when the
+   * scale is already k and the rectangle is visible, otherwise centres it.
+   */
+  const frame = useCallback((x: number, y: number, width: number, height: number, scale: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const k = clamp(scale, MIN_ZOOM, MAX_ZOOM);
+    setView(v => {
+      const left = v.x + x * k;
+      const top = v.y + y * k;
+      const inside = Math.abs(k - v.k) < 1e-6 && left >= 0 && top >= 0 && left + width * k <= r.width && top + height * k <= r.height;
+      if (inside) return v;
+      return { k, x: r.width / 2 - (x + width / 2) * k, y: r.height / 2 - (y + height / 2) * k };
+    });
+  }, [containerRef]);
+
   /** True when the last pointer gesture was a drag (used to ignore the click that ends it). */
   const wasDragged = () => lastDragMoved.current;
 
-  return { view, fit, zoomBy, reveal, focus, onPointerDown, isDragging, wasDragged };
+  return { view, fit, zoomBy, reveal, focus, frame, onPointerDown, isDragging, wasDragged };
 }

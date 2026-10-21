@@ -35,6 +35,12 @@ import { DerivationNode } from '../generator/wordGenerator';
 import { ambiguityWitnesses, treeFromLeftParse } from '../analyser/ambiguity';
 import { LRAutomaton } from './lrAutomaton';
 import { LRAction, LRConflict, LR0_ACTION_COLUMN } from './lrTable';
+import { testMembership } from '../parser/membership';
+
+/** Trees of one witness word whose pairs are located at their conflict cells. */
+const MAX_TREES_PER_WORD = 40;
+/** Pairs of trees located in all (keeps the first opening of a panel fast on very ambiguous grammars). */
+const MAX_PAIRS = 20000;
 
 /** One derivation of a non-unifying counterexample. */
 export interface CounterexampleDerivation {
@@ -305,19 +311,45 @@ export function createCounterexampleFinder(g: Grammar, automaton: LRAutomaton, o
   const runUnifyingSearch = () => {
     unifying = new Map();
     const found = unifying;
-    const result = ambiguityWitnesses(g, { maxLength, maxForms }, w => {
-      const cell = divergence(w.word, w.parses);
-      if (!cell) return false;
+    const register = (word: string[], parses: [number[], number[]], sequences?: [LRAction[], LRAction[]]) => {
+      const cell = divergence(word, parses, sequences);
+      if (!cell) return;
       const k = `${cell.state}|${cell.lookahead}`;
       if (!found.has(k)) found.set(k, []);
       const list = found.get(k)!;
       const pair = cell.actions.map(actionKey).sort().join('/');
       if (!list.some(e => e.actions.map(actionKey).sort().join('/') === pair)) {
-        list.push({ word: w.word, dot: cell.dot, lookahead: cell.lookahead, trees: [treeFromLeftParse(g, w.parses[0]), treeFromLeftParse(g, w.parses[1])], parses: w.parses, actions: cell.actions });
+        list.push({ word, dot: cell.dot, lookahead: cell.lookahead, trees: [treeFromLeftParse(g, parses[0]), treeFromLeftParse(g, parses[1])], parses, actions: cell.actions });
       }
+    };
+    // The search reports one pair of derivations per form it meets twice and does not expand the
+    // second one, so the pairs of trees that part at other conflict cells would be missed: every
+    // witness word is therefore parsed again and every pair of its trees (up to a limit) is located.
+    const seenWords = new Set<string>();
+    let pairBudget = MAX_PAIRS;
+    let budgetHit = false;
+    const result = ambiguityWitnesses(g, { maxLength, maxForms }, w => {
+      register(w.word, w.parses);
+      const wk = w.word.join('\u0000');
+      if (seenWords.has(wk)) return false;
+      seenWords.add(wk);
+      if (pairBudget <= 0) {
+        budgetHit = true;
+        return false;
+      }
+      const m = testMembership(g, w.word, MAX_TREES_PER_WORD);
+      if (m.moreTrees) budgetHit = true;
+      const parses = m.trees.map(t => t.leftParse);
+      const sequences = parses.map(actionsOf);
+      for (let x = 0; x < parses.length; x++) {
+        for (let y = x + 1; y < parses.length; y++) register(w.word, [parses[x], parses[y]], [sequences[x], sequences[y]]);
+      }
+      pairBudget -= (parses.length * (parses.length - 1)) / 2;
       return false;
     });
-    exhausted = result.kind === 'unknown';
+    // Words with more trees than listed, or not re-parsed for the budget: "not found" is no longer
+    // a statement about all words up to the bound.
+    exhausted = result.kind === 'unknown' || budgetHit;
   };
 
   /** Shift/reduce sequence of a left parse (the reversed rightmost derivation). */
@@ -344,9 +376,8 @@ export function createCounterexampleFinder(g: Grammar, automaton: LRAutomaton, o
   };
 
   /** Where the LR parses of two trees of the same word part: state, lookahead, the two actions. */
-  const divergence = (word: string[], parses: [number[], number[]]) => {
-    const a = actionsOf(parses[0]);
-    const b = actionsOf(parses[1]);
+  const divergence = (word: string[], parses: [number[], number[]], sequences?: [LRAction[], LRAction[]]) => {
+    const [a, b] = sequences ?? [actionsOf(parses[0]), actionsOf(parses[1])];
     const same = (x: LRAction, y: LRAction) => x.type === y.type && x.production?.id === y.production?.id;
     let i = 0;
     while (i < a.length && i < b.length && same(a[i], b[i])) i++;
@@ -455,7 +486,12 @@ export function createCounterexampleFinder(g: Grammar, automaton: LRAutomaton, o
       if (!unifying) runUnifyingSearch();
       const keyAction = (a: LRAction) => actionKey(a);
       const wanted = new Set(c.actions.map(keyAction));
-      const cells = c.symbol === LR0_ACTION_COLUMN
+      // LR(0) decides without the next symbol: its reductions stand in every column of the state,
+      // so a reduce/reduce conflict is the same conflict whatever symbol follows. A shift needs its
+      // own symbol, so a conflict with a shift (or accept) keeps to its column.
+      const stateWide = c.symbol === LR0_ACTION_COLUMN ||
+        (automaton.variant === 'LR(0)' && c.actions.every(a => a.type === 'reduce'));
+      const cells = stateWide
         ? [...unifying!.entries()].filter(([k]) => k.startsWith(`${c.stateId}|`)).flatMap(([, v]) => v)
         : unifying!.get(`${c.stateId}|${c.symbol}`) ?? [];
       const hit = cells.find(e => e.actions.every(a => wanted.has(keyAction(a))));

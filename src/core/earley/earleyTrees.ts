@@ -53,8 +53,10 @@ export function chartTrees(grammar: Grammar, tokens: string[], sets: ChartItem[]
       }
     }
   });
-  // Shorter parts first, so that most subtrees are ready when they are needed.
-  completed.sort((a, b) => a.end - a.origin - (b.end - b.origin) || a.end - b.end);
+  // Shorter parts first, so that most subtrees are ready when they are needed; ties by rule, so
+  // that the trees depend only on which items the chart has, not on the order they were added
+  // (Earley with Leo's reconstructed items gives the same trees as plain Earley).
+  completed.sort((a, b) => a.end - a.origin - (b.end - b.origin) || a.end - b.end || a.production.id - b.production.id);
 
   // Found decompositions stay valid; a failure may succeed once more subtrees are known.
   const found = new Map<string, DerivationNode[]>();

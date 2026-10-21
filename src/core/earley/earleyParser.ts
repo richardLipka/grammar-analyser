@@ -306,6 +306,27 @@ export function simulateEarleyParse(
   /** Leo completions (set i, completed symbol, origin k, transitive item in S_k) for the tree reconstruction. */
   const leoCompletions: { end: number; origin: number; leoIndex: number }[] = [];
 
+  /** Why the deterministic reduction path stops at `symbol` in S_k (for the step texts). */
+  const pathEnd = (symbol: string, k: number, cz: boolean): string => {
+    const waiting = postdotOf(k).get(symbol) ?? [];
+    const set = `S${subscript(k)}`;
+    if (waiting.length === 0) {
+      return cz ? `v ${set} na ${symbol} nečeká žádná položka` : `no item of ${set} waits for ${symbol}`;
+    }
+    if (waiting.length > 1) {
+      return cz
+        ? `v ${set} ${waiting.length < 5 ? 'čekají' : 'čeká'} na ${symbol} ${waiting.length} ${waiting.length < 5 ? 'položky' : 'položek'}, ${symbol} tam tedy není jednoznačný`
+        : `${waiting.length} items of ${set} wait for ${symbol}, so it is not Leo-unique there`;
+    }
+    const only = sets[k].items[waiting[0]];
+    if (only.dot !== only.production.rhs.length - 1) {
+      return cz
+        ? `jediná položka v ${set}, která čeká na ${symbol}, ${formatEarleyItem(only)}, má za ním ještě další symboly`
+        : `the only item of ${set} waiting for ${symbol}, ${formatEarleyItem(only)}, has more symbols after it`;
+    }
+    return cz ? `cyklus jednoduchých pravidel v ${set}` : `a cycle of unit-like rules in ${set}`;
+  };
+
   /**
    * The transitive item for `symbol` in the finished set S_k, created (lazily, as in Leo 1991)
    * together with the ones above it on the deterministic reduction path. Null when the symbol
@@ -379,12 +400,12 @@ export function simulateEarleyParse(
         `Leo: in S${subscript(e.set)} the only item with ${e.symbol} after the dot is ${formatEarleyItem(w)}, and ${e.symbol} is its last symbol. So whenever ${e.symbol} is completed with origin ${e.set}, ${w.production.lhs} is completed with origin ${w.origin} too — ` +
           (aboveItem
             ? `and S${subscript(above!.setIndex)} already has the transitive item ${formatLeoItem(aboveItem)} for ${w.production.lhs}, so the path goes on to its topmost item ${topText}.`
-            : `and there the path ends (${w.production.lhs} is not Leo-unique in S${subscript(w.origin)}), so its topmost item is ${topText}.`) +
+            : `and there the path ends (${pathEnd(w.production.lhs, w.origin, false)}), so its topmost item is ${topText}.`) +
           ` Transitive item ${formatLeoItem(leo)} stored in S${subscript(e.set)}: it stands for ${depth} item${depth === 1 ? '' : 's'} of the deterministic reduction path.`,
         `Leo: v S${subscript(e.set)} je jediná položka s ${e.symbol} za tečkou ${formatEarleyItem(w)} a ${e.symbol} je její poslední symbol. Kdykoli se tedy dokončí ${e.symbol} s počátkem ${e.set}, dokončí se i ${w.production.lhs} s počátkem ${w.origin} — ` +
           (aboveItem
             ? `a S${subscript(above!.setIndex)} už má pro ${w.production.lhs} tranzitivní položku ${formatLeoItem(aboveItem)}, cesta tedy pokračuje až k její nejvyšší položce ${topText}.`
-            : `a tam cesta končí (${w.production.lhs} v S${subscript(w.origin)} jednoznačné není), nejvyšší položka je tedy ${topText}.`) +
+            : `a tam cesta končí (${pathEnd(w.production.lhs, w.origin, true)}), nejvyšší položka je tedy ${topText}.`) +
           ` Do S${subscript(e.set)} uložena tranzitivní položka ${formatLeoItem(leo)}: zastupuje ${depth} ${depth === 1 ? 'položku' : depth < 5 ? 'položky' : 'položek'} deterministické redukční cesty.`,
         [
           { setIndex: e.set, itemIndex: e.waitingIndex, role: 'waiting' },
@@ -494,7 +515,7 @@ export function simulateEarleyParse(
             i,
             topItem,
             `Completer (Leo): ${formatEarleyItem(it)} is complete — ${completedNt} derives “${span}” (from position ${originIdx} to ${i}). S${subscript(originIdx)} has the transitive item ${formatLeoItem(leo)} for ${completedNt}: instead of moving the dot over ${completedNt} in ${formatEarleyItem(w)} and completing the deterministic reduction path item by item, only its topmost item ${formatEarleyItem(topItem)} is added to S${subscript(i)}` +
-              (skipped > 0 ? ` (${skipped} item${skipped === 1 ? '' : 's'} skipped; they are reconstructed only for the derivation tree).` : ' (the path has just this one item).'),
+              (skipped > 0 ? ` (${skipped === 1 ? '1 item skipped; it is' : `${skipped} items skipped; they are`} reconstructed only for the derivation tree).` : ' (the path has just this one item).'),
             `Kompletor (Leo): ${formatEarleyItem(it)} je dokončená — ${completedNt} generuje „${span}“ (od pozice ${originIdx} do ${i}). S${subscript(originIdx)} má pro ${completedNt} tranzitivní položku ${formatLeoItem(leo)}: místo posunu tečky za ${completedNt} v ${formatEarleyItem(w)} a dokončování deterministické redukční cesty položku po položce se do S${subscript(i)} přidá jen její nejvyšší položka ${formatEarleyItem(topItem)}` +
               (skipped > 0 ? ` (${skipped === 1 ? 'vynechána 1 položka' : skipped < 5 ? `vynechány ${skipped} položky` : `vynecháno ${skipped} položek`}; rekonstruují se jen pro derivační strom).` : ' (cesta má jen tuto jednu položku).'),
             [

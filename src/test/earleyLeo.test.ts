@@ -151,4 +151,38 @@ describe("Earley with Leo's transitive items (Leo 1991)", () => {
       if (r.accepted) expect(leaves(r.trees[0])).toEqual(w);
     }
   });
+  it('review §34: the same first tree as plain Earley (the trees depend only on the chart as a set)', () => {
+    const shape = (n: DerivationNode): string => (n.children ? `${n.symbol}(${n.children.map(shape).join(',')})` : n.symbol);
+    const failures: string[] = [];
+    for (const seed of [521, 566, ...Array.from({ length: 120 }, (_, i) => 301 + i)]) {
+      const gr = parseGrammar(randomGrammarText(seed)).grammar;
+      if (!gr) continue;
+      for (const w of wordsUpTo([...gr.terminals], 5)) {
+        const plain = simulateEarleyParse(w, gr);
+        if (!plain.accepted) continue;
+        const leo = simulateEarleyParse(w, gr, { leo: true });
+        if (shape(plain.trees[0]) !== shape(leo.trees[0])) {
+          failures.push(`seed ${seed} "${w.join(' ')}"`);
+          break;
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('review §34: the step texts say why a path ends, with the right number', () => {
+    const r = simulateEarleyParse(['a', 'a', 'a'], g('S -> a S | ε'), { leo: true });
+    const first = r.steps.find(s => s.operation === 'transitive')!;
+    expect(first.descriptionEn).toContain("no item of S₀ waits for S'");
+    expect(first.descriptionCz).toContain("v S₀ na S' nečeká žádná položka");
+    const one = r.steps.find(s => s.operation === 'leo' && s.descriptionEn.includes('1 item skipped'))!;
+    expect(one.descriptionEn).toContain('1 item skipped; it is reconstructed');
+    expect(one.descriptionCz).toContain('vynechána 1 položka');
+    const two = r.steps.find(s => s.operation === 'leo' && s.descriptionEn.includes('2 items skipped'))!;
+    expect(two.descriptionEn).toContain('2 items skipped; they are reconstructed');
+    // a path that ends at a symbol several items wait for
+    const r2 = simulateEarleyParse(['a', 'b'], g('S -> A b | A c\nA -> a B\nB -> ε'), { leo: true });
+    const several = r2.steps.find(s => s.operation === 'transitive' && s.descriptionEn.includes('items of'));
+    if (several) expect(several.descriptionCz).toContain('tam tedy není jednoznačný');
+  });
 });

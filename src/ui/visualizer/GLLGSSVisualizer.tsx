@@ -28,6 +28,8 @@ interface Props {
 
 const MARGIN = 24;
 const NODE_H = 44;
+/** Below this scale the node labels are too small to read. */
+const READABLE_SCALE = 0.7;
 
 const nodeWidth = (text: string) => Math.max(90, Math.round(text.length * 6.6) + 22);
 
@@ -62,12 +64,32 @@ export const GLLGSSVisualizer: React.FC<Props> = ({ result, step, activeNode, po
     return m;
   }, [result, step]);
 
-  const { view, fit, zoomBy, focus, onPointerDown, isDragging } = usePanZoom(containerRef, { width: layout.width, height: layout.height }, layout.nodes.length > 0);
-  // The whole GSS fitted into the canvas is too small to read: keep the active node in view at a readable scale
+  const { view, fit, zoomBy, frame, onPointerDown, isDragging } = usePanZoom(containerRef, { width: layout.width, height: layout.height }, layout.nodes.length > 0);
+  // A GSS that fits the canvas at a readable scale is shown whole (usePanZoom fits it once per run).
+  // A larger one would be too small to read: keep the active node, its edges and the nodes popped
+  // in this step in view at a readable scale instead.
   useEffect(() => {
-    const target = layout.nodes.find(n => n.u.id === (activeNode ?? 0));
-    if (target) focus(target.x - target.w / 2 - 60, target.y - NODE_H / 2 - 40, target.w + 120, NODE_H + 80, 1);
-  }, [step, activeNode, layout, focus]);
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const fitted = Math.min((r.width - 40) / layout.width, (r.height - 78) / layout.height);
+    if (fitted >= READABLE_SCALE) return;
+    const active = activeNode ?? 0;
+    const ids = new Set<number>([active, ...(poppedNodes ?? [])]);
+    for (const { e } of layout.edges) {
+      if (e.createdAt > step) continue;
+      if (e.from === active || e.to === active) ids.add(e.from === active ? e.to : e.from);
+    }
+    const box = layout.nodes.filter(n => ids.has(n.u.id) && n.u.createdAt <= step);
+    if (box.length === 0) return;
+    const x0 = Math.min(...box.map(n => n.x - n.w / 2)) - 30;
+    const x1 = Math.max(...box.map(n => n.x + n.w / 2)) + 30;
+    const y0 = Math.min(...box.map(n => n.y - NODE_H / 2)) - 40;
+    const y1 = Math.max(...box.map(n => n.y + NODE_H / 2)) + 40;
+    // the readable scale, or less when the neighbourhood needs it (never below READABLE_SCALE)
+    const k = Math.max(READABLE_SCALE, Math.min(1, (r.width - 20) / (x1 - x0), (r.height - 20) / (y1 - y0)));
+    frame(x0, y0, x1 - x0, y1 - y0, k);
+  }, [step, activeNode, poppedNodes, layout, frame]);
   const exportBounds = { width: Math.ceil(layout.width + 2 * MARGIN), height: Math.ceil(layout.height + 2 * MARGIN) };
   const exportTransform = `translate(${MARGIN}, ${MARGIN})`;
 

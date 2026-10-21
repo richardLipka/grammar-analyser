@@ -16,6 +16,8 @@ import { createCounterexampleFinder, LRCounterexample, CounterexampleOptions } f
 import { DerivationNode } from '../core/generator/wordGenerator';
 import { randomGrammarText } from './randomGrammar';
 import { PRESET_GRAMMARS } from '../core/presets/presetGrammars';
+import { testMembership } from '../core/parser/membership';
+import { accepts, wordsUpTo } from './earley';
 
 const parse = (text: string): Grammar => {
   const res = parseGrammar(text);
@@ -130,7 +132,9 @@ function check(g: Grammar, a: LRAutomaton, c: LRConflict, cx: LRCounterexample):
     }
     if (stack[stack.length - 1] !== c.stateId) problems.push(`parts in state ${stack[stack.length - 1]}, not ${c.stateId}`);
     const la = read < cx.word.length ? cx.word[read] : END_MARKER;
-    if (t !== null && la !== t) problems.push(`lookahead ${la}`);
+    // LR(0) reduces whatever follows: a reduce/reduce conflict is the same in every column of the state
+    const stateWide = a.variant === 'LR(0)' && c.actions.every(x => x.type === 'reduce');
+    if (t !== null && la !== t && !stateWide) problems.push(`lookahead ${la}`);
     if (read !== cx.dot) problems.push('dot');
     for (const act of [s1[i], s2[i]]) {
       const k = act.startsWith('s:') ? 's' : act;
@@ -297,4 +301,113 @@ describe('LR conflict counterexamples (Isradisaikul & Myers 2015)', () => {
     }
     expect(failures).toEqual([]);
   });
+});
+
+/** Where the LR parses of two trees of the same word part: (state, lookahead, the two actions), replayed independently. */
+function partingCell(g: Grammar, a: LRAutomaton, word: string[], p1: number[], p2: number[]) {
+  const s1 = actions(g, p1);
+  const s2 = actions(g, p2);
+  let i = 0;
+  while (i < s1.length && i < s2.length && s1[i] === s2[i]) i++;
+  if (i >= s1.length || i >= s2.length) return null;
+  const stack = [0];
+  let read = 0;
+  for (const act of s1.slice(0, i)) {
+    let to: number | undefined;
+    if (act.startsWith('s:')) to = a.states[stack[stack.length - 1]].transitions.get(word[read++]);
+    else {
+      const p = g.productions.find(q => `r${q.id}` === act)!;
+      stack.length -= p.rhs.length;
+      to = a.states[stack[stack.length - 1]].transitions.get(p.lhs);
+    }
+    if (to === undefined) return null;
+    stack.push(to);
+  }
+  const key = (x: string) => (x.startsWith('s:') ? 's' : x);
+  return { state: stack[stack.length - 1], la: read < word.length ? word[read] : END_MARKER, acts: [key(s1[i]), key(s2[i])] };
+}
+
+describe('LR conflict counterexamples: review §34', () => {
+  it('a conflict reached only by another pair of trees of a witness word is unifying (S → c A A, A → A A | A c | a)', () => {
+    for (const v of counterexamples('S -> c A A\nA -> A A | A c | a')) {
+      // LR(0) and SLR(1) also have conflicts that only their approximation causes
+      if (v.variant === 'LR(0)' || v.variant === 'SLR(1)') continue;
+      expect(v.results.length, v.variant).toBeGreaterThan(0);
+      for (const { c, cx } of v.results) {
+        expect(cx.kind, `${v.variant} ${c.stateId}/${c.symbol}`).toBe('unifying');
+        expect(check(v.g, v.automaton, c, cx)).toEqual([]);
+        if (cx.kind === 'unifying') expect(testMembership(v.g, cx.word).treeCount).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('preset earley_equal_ab: every LALR(1) conflict is unifying', () => {
+    const preset = PRESET_GRAMMARS.find(p => p.id === 'earley_equal_ab')!;
+    const lalr = counterexamples(preset.grammarText).find(v => v.variant === 'LALR(1)')!;
+    expect(lalr.results.length).toBeGreaterThan(0);
+    for (const { c, cx } of lalr.results) {
+      expect(cx.kind, `${c.stateId}/${c.symbol}`).toBe('unifying');
+      expect(check(lalr.g, lalr.automaton, c, cx)).toEqual([]);
+    }
+  });
+
+  it('LR(0) in the Dragon layout: a reduce/reduce conflict is unifying in every column of the state', () => {
+    const lr0 = counterexamples('S -> A | B\nA -> a\nB -> a').find(v => v.variant === 'LR(0)')!;
+    expect(lr0.results.map(r => r.c.symbol).sort()).toEqual([END_MARKER, 'a'].sort());
+    for (const { c, cx } of [...lr0.results, ...lr0.lecture]) {
+      expect(cx.kind, `${c.stateId}/${c.symbol}`).toBe('unifying');
+      expect(check(lr0.g, lr0.automaton, c, cx)).toEqual([]);
+    }
+    // an unambiguous grammar stays non-unifying in every column
+    const other = counterexamples('S -> A x | B y\nA -> a\nB -> a').find(v => v.variant === 'LR(0)')!;
+    expect(other.results.length).toBeGreaterThan(0);
+    for (const { c, cx } of other.results) {
+      expect(cx.kind).toBe('nonunifying');
+      expect(check(other.g, other.automaton, c, cx)).toEqual([]);
+    }
+  });
+
+  it('a non-unifying counterexample of a finished search: no ambiguous word up to the bound parts at the conflict (brute force, random grammars)', async () => {
+    const L = 5;
+    const failures: string[] = [];
+    let checked = 0;
+    for (let seed = 1; seed <= 150 && failures.length < 5; seed++) {
+      if (seed % 10 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+      const text = randomGrammarText(seed);
+      const g = parseGrammar(text).grammar;
+      if (!g) continue;
+      let ambiguous: { w: string[]; parses: number[][] }[] | undefined;
+      for (const v of counterexamples(text, { maxLength: L, maxForms: 60000 })) {
+        for (const { c, cx } of [...v.results, ...v.lecture]) {
+          if (!cx || cx.kind !== 'nonunifying' || cx.searchExhausted) continue;
+          if (!ambiguous) {
+            ambiguous = [];
+            for (const w of wordsUpTo([...g.terminals], L)) {
+              if (!accepts(g, w)) continue;
+              const m = testMembership(g, w, 30);
+              if (m.treeCount >= 2) ambiguous.push({ w, parses: m.trees.map(t => t.leftParse) });
+            }
+          }
+          checked++;
+          const wanted = new Set(c.actions.map(x => (x.type === 'reduce' ? `r${x.production!.id}` : x.type === 'accept' ? 'acc' : 's')));
+          const anyColumn = c.symbol === LR0_ACTION_COLUMN || (v.variant === 'LR(0)' && c.actions.every(x => x.type === 'reduce'));
+          for (const { w, parses } of ambiguous) {
+            let hit = false;
+            for (let x = 0; x < parses.length && !hit; x++) {
+              for (let y = x + 1; y < parses.length && !hit; y++) {
+                const cell = partingCell(g, v.automaton, w, parses[x], parses[y]);
+                hit = !!cell && cell.state === c.stateId && (anyColumn || cell.la === c.symbol) && cell.acts.every(z => wanted.has(z));
+              }
+            }
+            if (hit) {
+              failures.push(`seed ${seed} [${text.replace(/\n/g, '; ')}] ${v.variant} ${c.stateId}/${c.symbol}: '${w.join(' ')}' parts there`);
+              break;
+            }
+          }
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(50);
+  }, 120000);
 });

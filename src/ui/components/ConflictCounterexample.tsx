@@ -34,6 +34,8 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
   const [open, setOpen] = useState(false);
   const cx: LRCounterexample | null | undefined = useMemo(() => (open ? finder.forConflict(conflict) : undefined), [open, finder, conflict]);
   const t = conflict.symbol === LR0_ACTION_COLUMN ? null : conflict.symbol;
+  /** LR(0) decides without the next symbol (its reductions stand in every column). */
+  const lr0 = variant === 'LR(0)';
 
   /** The action in words; `accusative` for "potřebuje …" in Czech. */
   const actionText = (a: LRAction, shifted?: string, accusative = false) => {
@@ -75,8 +77,8 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
             {cz ? 'Slovo ' : 'The word '}
             <Form form={cx.word} dot={cx.dot} />
             {cz
-              ? ` má dva derivační stromy. V místě • je analyzátor podle obou ve stavu ${stateName} se vstupním symbolem ${cx.lookahead} a tam se oba rozklady rozcházejí: první strom potřebuje ${actionText(cx.actions[0], cx.word[cx.dot], true)}, druhý ${actionText(cx.actions[1], cx.word[cx.dot], true)}. Žádná tabulka LR(k) tuto kolizi neodstraní; pomůže jen jiná gramatika nebo priority.`
-              : ` has two derivation trees. At •, the parser is in state ${stateName} with the next symbol ${cx.lookahead} for both, and there the two parses part: the first tree needs ${actionText(cx.actions[0], cx.word[cx.dot])}, the second ${actionText(cx.actions[1], cx.word[cx.dot])}. No LR(k) table removes this conflict; only another grammar or precedence does.`}
+              ? ` má dva derivační stromy. V místě • je analyzátor podle obou ve stavu ${stateName}${lr0 ? ' (LR(0) rozhoduje bez ohledu na další symbol)' : ` se vstupním symbolem ${cx.lookahead}`} a tam se oba rozklady rozcházejí: první strom potřebuje ${actionText(cx.actions[0], cx.word[cx.dot], true)}, druhý ${actionText(cx.actions[1], cx.word[cx.dot], true)}. Žádná tabulka LR(k) tuto kolizi neodstraní; pomůže jen jiná gramatika nebo priority.`
+              : ` has two derivation trees. At •, the parser is in state ${stateName}${lr0 ? ' for both (LR(0) decides regardless of the next symbol)' : ` with the next symbol ${cx.lookahead} for both`}, and there the two parses part: the first tree needs ${actionText(cx.actions[0], cx.word[cx.dot])}, the second ${actionText(cx.actions[1], cx.word[cx.dot])}. No LR(k) table removes this conflict; only another grammar or precedence does.`}
           </p>
           <div className="ambiguity-trees">
             {cx.trees.map((tree, i) => (
@@ -102,8 +104,12 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
                 : `Both derivations have the same prefix up to the conflict point (•) and lead to state ${stateName}. For “${actionText(cx.derivations.find(d => !d.lookaheadInContext)!.action)}”, however, no derivation into this state has ${t} after • (see its note).`)
               : cx.samePrefix
               ? (cz
-                ? `Dvě odvození se stejnou předponou až po místo kolize (•), která pak pokračují různě. Po přečtení předpony je analyzátor ve stavu ${stateName}${t ? ` se vstupním symbolem ${t}` : ''} a podle prvního odvození má provést jednu akci, podle druhého druhou.`
-                : `Two derivations with the same prefix up to the conflict point (•) that go on differently. After the prefix the parser is in state ${stateName}${t ? ` with the next symbol ${t}` : ''}; the first derivation needs one action, the second the other.`)
+                ? `Dvě odvození se stejnou předponou až po místo kolize (•), která pak pokračují různě. Po přečtení předpony je analyzátor ve stavu ${stateName}${t && !lr0 ? ` se vstupním symbolem ${t}` : ''} a podle prvního odvození má provést jednu akci, podle druhého druhou.${lr0 ? ` LR(0) redukuje bez ohledu na další symbol${t ? `, jeho redukce proto stojí v každém sloupci stavu (i ve sloupci ${t}), ať už ${t} za • následovat může, nebo ne` : ''}.` : ''}`
+                : `Two derivations with the same prefix up to the conflict point (•) that go on differently. After the prefix the parser is in state ${stateName}${t && !lr0 ? ` with the next symbol ${t}` : ''}; the first derivation needs one action, the second the other.${lr0 ? ` LR(0) reduces regardless of the next symbol${t ? `, so its reductions stand in every column of the state (column ${t} too), whether or not ${t} can follow •` : ''}.` : ''}`)
+              : variant === 'LR(0)' || variant === 'SLR(1)'
+              ? (cz
+                ? `Každá položka kolize potřebuje jinou předponu, obě předpony ale vedou do stavu ${stateName}. Tabulka ${variant} vychází z automatu LR(0), který má pro všechny tyto předpony jediný stav, a redukuje ${variant === 'LR(0)' ? 'bez ohledu na další symbol' : 'pro celou množinu FOLLOW'}; kanonický LR(1) automat tyto situace rozlišuje (různé stavy).`
+                : `Each conflict item needs another prefix, but both prefixes lead to state ${stateName}. The ${variant} table is built on the LR(0) automaton, which has one state for all these prefixes, and it reduces ${variant === 'LR(0)' ? 'regardless of the next symbol' : 'on all of FOLLOW'}; the canonical LR(1) automaton keeps these situations apart (different states).`)
               : (cz
                 ? `Každá položka kolize potřebuje jinou předponu, obě předpony ale vedou do stavu ${stateName}. Kanonický LR(1) automat tyto situace rozlišuje (různé stavy); kolize vznikla tím, že je automat ${variant} sloučil.`
                 : `Each conflict item needs another prefix, but both prefixes lead to state ${stateName}. The canonical LR(1) automaton keeps these situations apart (different states); the conflict arises because the ${variant} automaton merges them.`)}
@@ -113,8 +119,8 @@ export const ConflictCounterexample: React.FC<Props> = ({ conflict, finder, vari
                 ? 'Hledání sjednocujícího protipříkladu narazilo na svůj limit; víceznačnost tím není vyloučena.'
                 : 'The search for a unifying counterexample hit its limit; ambiguity is not ruled out.')
               : (cz
-                ? `Žádné slovo do délky ${cx.maxLength} nemá dva stromy, které by se rozcházely právě v této kolizi (víceznačnost obecně nelze rozhodnout).`
-                : `No word up to length ${cx.maxLength} has two trees that part exactly at this conflict (ambiguity is undecidable in general).`)}
+                ? `Omezené hledání (slova do délky ${cx.maxLength}) nenašlo slovo se dvěma stromy, které by se rozcházely právě v této kolizi; víceznačnost tím vyloučena není (obecně je nerozhodnutelná).`
+                : `The bounded search (words up to length ${cx.maxLength}) found no word with two trees that part exactly at this conflict; this does not rule out ambiguity (it is undecidable in general).`)}
           </p>
           <div className="ambiguity-trees">
             {cx.derivations.map((d, i) => (

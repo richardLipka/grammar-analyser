@@ -294,7 +294,7 @@ All entries checked against Crossref (title, authors, venue, volume, pages, year
 - **Title:** *A Reference GLL Implementation*
 - **Venue:** Proceedings of the 16th ACM SIGPLAN International Conference on Software Language Engineering (SLE '23), pp. 43–55, 2023.
 - **Identifier / Link:** [https://doi.org/10.1145/3623476.3623521](https://doi.org/10.1145/3623476.3623521); author copy at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/56267014/sle23RefGLL.pdf)
-- **App Usage:** A deliberately unoptimised GLL interpreter over the grammar (no look-ahead): the model for interpreting slots instead of generating code; the look-ahead test is a switch in the app.
+- **App Usage:** A reference implementation of GLL (descriptors, the GSS, call and return, the pop set), cited as the practical counterpart of the papers; the app interprets grammar slots instead of generating code. (The earlier remark that it has no look-ahead test could not be re-checked against the paper in REVIEW §34 and was removed from the texts.)
 - **Referenced In:** `gllExplain.ts`.
 
 ### Vo, Liyanage, Kang, Rubin & Gopinath (2026)

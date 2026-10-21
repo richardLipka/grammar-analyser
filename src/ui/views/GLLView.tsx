@@ -57,6 +57,8 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
     setStepIdx(0);
     setIsPlaying(false);
     setTreeIdx(0);
+    // A rejected word has no tree of the whole word: back to the step subtree
+    if (!result.accepted) setTreeMode('step');
   }, [result]);
   useAutoPlay(isPlaying, stepIdx, total, speed, setStepIdx, () => setIsPlaying(false));
 
@@ -75,14 +77,19 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
   const popped = useMemo(() => new Set(step?.actions.flatMap(a => (a.type === 'pop' && !a.base ? [a.node] : [])) ?? []), [step]);
 
   // The subtree of the newest rule element (up to this step)
+  // (A rule element whose only derivations repeat a cycle, e.g. (S ::= S S, 0, 0, n) with S ⇒ ε,
+  // has no tree that does not repeat it: then the newest element that has one is shown.)
   const stepTree = useMemo(() => {
-    let element: BSRRuleElement | undefined;
-    for (const e of result.bsr.elements) if (e.kind === 'rule' && e.createdAt <= stepIdx) element = e;
-    if (!element) return undefined;
     const set = result.bsr.upTo(stepIdx);
-    const first = bsrTrees(set, grammar, tokens, element.production.lhs, element.i, element.j, element).next();
-    return first.done ? undefined : { tree: withUniqueIds(first.value), element };
+    const ruleElements = set.elements.filter((e): e is BSRRuleElement => e.kind === 'rule');
+    for (let x = ruleElements.length - 1; x >= Math.max(0, ruleElements.length - 60); x--) {
+      const element = ruleElements[x];
+      const first = bsrTrees(set, grammar, tokens, element.production.lhs, element.i, element.j, element).next();
+      if (!first.done) return { tree: withUniqueIds(first.value), element };
+    }
+    return undefined;
   }, [result, stepIdx, grammar, tokens]);
+  const hasRuleElement = useMemo(() => result.bsr.elements.some(e => e.kind === 'rule' && e.createdAt <= stepIdx), [result, stepIdx]);
   const fullTree = result.trees.length > 0 ? withUniqueIds(result.trees[Math.min(treeIdx, result.trees.length - 1)]) : undefined;
   const shownTree = treeMode === 'full' ? fullTree : stepTree?.tree;
 
@@ -90,10 +97,10 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
   const earleyBSR = useMemo(() => {
     if (forestSource !== 'earley') return null;
     const sim = simulateEarleyParse(tokens, grammar, { maxSteps: 200000 });
-    return earleyChartToBSR(grammar, tokens, sim.sets.map(s => s.items));
+    return { bsr: earleyChartToBSR(grammar, tokens, sim.sets.map(s => s.items)), truncated: sim.truncated ?? false };
   }, [forestSource, tokens, grammar]);
   const forest = useMemo(
-    () => bsrToForest(forestSource === 'earley' && earleyBSR ? earleyBSR : result.bsr, grammar, tokens, { binarised, maxNodes: 600 }),
+    () => bsrToForest(forestSource === 'earley' && earleyBSR ? earleyBSR.bsr : result.bsr, grammar, tokens, { binarised, maxNodes: 600 }),
     [forestSource, earleyBSR, result, grammar, tokens, binarised]
   );
   const forestHighlight = useMemo(
@@ -229,7 +236,7 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
             <ListOrdered size={15} color="var(--color-primary)" />
             <span>{cz ? `R (čeká ${pending.length}) · |U| = ${uSize} · |P| = ${popNow.length}` : `R (${pending.length} waiting) · |U| = ${uSize} · |P| = ${popNow.length}`}</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '130px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '120px', overflowY: 'auto' }}>
             {processed && (
               <div style={{ ...cell, borderColor: 'var(--color-primary)', backgroundColor: 'var(--color-primary-subtle)' }} title={cz ? 'zpracovaný v tomto kroku' : 'processed in this step'}>
                 ✓ {formatDescriptor(processed)}
@@ -247,7 +254,7 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
             <Boxes size={15} color="var(--color-primary)" />
             <span>{cz ? `Množina BSR Υ (${bsrNow.length} prvků)` : `BSR set Υ (${bsrNow.length} elements)`}</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '190px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '170px', overflowY: 'auto' }}>
             {bsrNow.map((e, k) => {
               const isNew = e.createdAt === stepIdx;
               const isTreeRoot = stepTree?.element === e;
@@ -277,7 +284,7 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
               {popped.size > 0 ? (cz ? ` · pop ${[...popped].map(nodeName).join(', ')}` : ` · pop ${[...popped].map(nodeName).join(', ')}`) : ''}
             </span>
           </div>
-          <GLLGSSVisualizer result={result} step={stepIdx} activeNode={processed?.node} poppedNodes={popped} lang={lang} height="370px" />
+          <GLLGSSVisualizer result={result} step={stepIdx} activeNode={processed?.node} poppedNodes={popped} lang={lang} height="340px" />
         </div>
 
         <div className="card" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -309,12 +316,14 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
             {treeMode === 'step'
               ? stepTree
                 ? (cz ? `Podstrom nejnovějšího prvku pravidla ${formatBSRElement(stepTree.element)}, přečtený z Υ v tomto kroku.` : `Subtree of the newest rule element ${formatBSRElement(stepTree.element)}, read from Υ at this step.`)
-                : (cz ? 'Zatím žádný prvek pravidla v Υ.' : 'No rule element in Υ yet.')
+                : hasRuleElement
+                  ? (cz ? 'Nejnovější prvky pravidel v Υ mají zatím jen odvození přes cyklus (A ⇒+ A), strom bez opakování cyklu z nich ještě nevzniká.' : 'The newest rule elements in Υ only have derivations through a cycle (A ⇒+ A) so far; no tree without repeating the cycle yet.')
+                  : (cz ? 'Zatím žádný prvek pravidla v Υ.' : 'No rule element in Υ yet.')
               : (cz ? 'Strom celého slova přečtený z Υ shora od (S ::= α, 0, k, n).' : 'A tree of the whole word read from Υ top-down from (S ::= α, 0, k, n).')}
           </div>
-          <div style={{ flex: 1, minHeight: '330px', display: 'flex' }}>
+          <div style={{ flex: 1, minHeight: '300px', display: 'flex' }}>
             {shownTree ? (
-              <DerivationTreeVisualizer rootNode={shownTree} lang={lang} height="340px" />
+              <DerivationTreeVisualizer rootNode={shownTree} lang={lang} height="310px" />
             ) : (
               <div style={{ margin: 'auto', fontSize: '12px', color: 'var(--color-text-muted)' }}>{cz ? 'Strom zatím není.' : 'No tree yet.'}</div>
             )}
@@ -348,6 +357,13 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
             </label>
           </div>
         </div>
+        {forestSource === 'earley' && earleyBSR?.truncated && (
+          <p style={{ margin: '4px 0', fontSize: '12px', color: 'var(--color-danger)' }}>
+            {cz
+              ? 'Earleyho analýza byla zastavena po 200 000 krocích: tabulka je neúplná, les z ní nemusí odpovídat lesu z GLL.'
+              : 'The Earley run was stopped after 200,000 steps: the chart is incomplete, its forest need not match the GLL one.'}
+          </p>
+        )}
         {forest.root ? (
           <>
             <p style={{ margin: '4px 0 8px', fontSize: '12px', color: 'var(--color-text-secondary)' }} data-testid="forest-stats">

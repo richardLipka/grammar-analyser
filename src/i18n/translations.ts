@@ -900,7 +900,7 @@ export const TRANSLATIONS = {
     onSymbol: 'pro symbol',
     forNonTerminal: 'pro neterminál',
     withLookahead: 's prohlíženým symbolem',
-    conflictingActions: 'Konfliktní akce',
+    conflictingActions: 'Kolizní akce',
     conflictingRules: 'Kolizní pravidla',
     clickToViewErrors: 'Kliknutím zobrazíte konflikty →',
     clickToViewAnalyser: 'Kliknutím otevřete analýzu →',

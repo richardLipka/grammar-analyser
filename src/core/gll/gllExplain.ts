@@ -43,7 +43,7 @@ export const GLL_PRIMARY_REFERENCES: GLLReference[] = [
     authorYear: 'Johnstone (2023)',
     citation: 'Johnstone, A.: A Reference GLL Implementation. Proceedings of the 16th ACM SIGPLAN International Conference on Software Language Engineering (SLE ’23), 43–55 (2023).',
     url: 'https://doi.org/10.1145/3623476.3623521',
-    sections: 'a deliberately unoptimised GLL interpreter over a grammar graph (no look-ahead), descriptors, call and return, pop sets per GSS node',
+    sections: 'a reference implementation of GLL: descriptors, the GSS, call and return, the pop set',
     topicCz: 'referenční GLL',
     topicEn: 'reference GLL'
   },
@@ -97,7 +97,7 @@ Slovo patří do L(G), právě když množina obsahuje (S ::= α, 0, k, n). Stro
       },
       {
         heading: '5. Test výhledu',
-        content: `Původní GLL před započetím alternativy Y ::= γ (a před voláním neterminálu uprostřed pravidla) testuje aktuální symbol a: test(a, Y, γ) platí, když a ∈ FIRST(γ), nebo γ ⇒* ε a a ∈ FOLLOW(Y). Je to jen zrychlení — bez něj vznikne víc deskriptorů, ale výsledek je stejný (přepínač „test výhledu“). Referenční implementace (Johnstone 2023) test záměrně nepoužívá.`
+        content: `Původní GLL před započetím alternativy Y ::= γ (a před voláním neterminálu uprostřed pravidla) testuje aktuální symbol a: test(a, Y, γ) platí, když a ∈ FIRST(γ), nebo γ ⇒* ε a a ∈ FOLLOW(Y). Je to jen zrychlení — bez něj vznikne víc deskriptorů, ale výsledek je stejný (přepínač „test výhledu“).`
       },
       {
         heading: '6. Složitost a srovnání',
@@ -136,7 +136,7 @@ The word is in L(G) iff the set contains (S ::= α, 0, k, n). Trees are read fro
       },
       {
         heading: '5. The look-ahead test',
-        content: `The original GLL tests the current symbol a before starting an alternative Y ::= γ (and before calling a non-terminal in the middle of a rule): test(a, Y, γ) holds when a ∈ FIRST(γ), or γ ⇒* ε and a ∈ FOLLOW(Y). It only saves work — without it more descriptors are created, the result is the same (switch "look-ahead test"). The reference implementation (Johnstone 2023) deliberately leaves it out.`
+        content: `The original GLL tests the current symbol a before starting an alternative Y ::= γ (and before calling a non-terminal in the middle of a rule): test(a, Y, γ) holds when a ∈ FIRST(γ), or γ ⇒* ε and a ∈ FOLLOW(Y). It only saves work — without it more descriptors are created, the result is the same (switch "look-ahead test").`
       },
       {
         heading: '6. Complexity and comparison',
