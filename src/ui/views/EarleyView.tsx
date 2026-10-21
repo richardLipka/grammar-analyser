@@ -782,12 +782,14 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
               </div>
             </div>
 
-            <div style={{ flex: 1, minHeight: '280px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ flex: 1, minHeight: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {currentDerivationTree ? (
                 <DerivationTreeVisualizer
                   rootNode={currentDerivationTree}
                   lang={lang}
                   highlightNodeIds={highlightedNodeIds}
+                  // fitted into what is left of a 1080 px screen below the step panel, taller on taller screens
+                  height="clamp(220px, calc(100vh - 800px), 380px)"
                 />
               ) : (
                 <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '12px', padding: '24px' }}>
