@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
+import { runProgram } from './runProgram';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -134,7 +135,7 @@ describe('recursive descent in C and Python', () => {
 
   describe.skipIf(!gcc || !python)('compiled and run: the same output as the PL/0 program on the P-code VM', () => {
     for (const [i, { label, g, sample }] of grammars().entries()) {
-      it(label, () => {
+      it(label, async () => {
         const gen = generateRecursiveDescent(g, analyzeGrammar(g));
         const pcode = compilePl0(gen.pl0);
         const dir = mkdtempSync(join(tmpdir(), 'rd-'));
@@ -142,15 +143,14 @@ describe('recursive descent in C and Python', () => {
           writeFileSync(join(dir, 'parser.c'), gen.c);
           writeFileSync(join(dir, 'parser.py'), gen.python);
           const exe = join(dir, process.platform === 'win32' ? 'parser.exe' : 'parser');
-          const cc = spawnSync('gcc', ['-std=c99', '-Wall', '-Wextra', '-pedantic', '-Werror', '-Wno-unused-function', '-o', exe, join(dir, 'parser.c')], { encoding: 'utf8' });
+          const cc = await runProgram('gcc', ['-std=c99', '-Wall', '-Wextra', '-pedantic', '-Werror', '-Wno-unused-function', '-o', exe, join(dir, 'parser.c')]);
           expect(cc.stderr, `${label}: gcc`).toBe('');
           expect(cc.status).toBe(0);
           const charOf = new Map(gen.tokens.map(t => [t.terminal, t.char]));
           for (const w of inputs(g, sample, i + 1)) {
             const input = `${w.map(x => charOf.get(x)).join(' ')}$`;
             const expected = normalize(runPcode(pcode, input).output);
-            const c = spawnSync(exe, [], { input, encoding: 'utf8' });
-            const py = spawnSync(python!, [join(dir, 'parser.py')], { input, encoding: 'utf8' });
+            const [c, py] = await Promise.all([runProgram(exe, [], input), runProgram(python!, [join(dir, 'parser.py')], input)]);
             expect(py.stderr, `${label} Python '${input}'`).toBe('');
             expect(normalize(c.stdout), `${label} C '${input}'`).toBe(expected);
             expect(normalize(py.stdout), `${label} Python '${input}'`).toBe(expected);
