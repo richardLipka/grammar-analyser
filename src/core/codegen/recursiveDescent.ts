@@ -335,7 +335,7 @@ function generatePl0(
   return out.join('\n');
 }
 
-function oberonChar(code: number): string {
+export function oberonChar(code: number): string {
   return code >= 32 && code < 127 && code !== 34 ? `"${String.fromCharCode(code)}"` : `${code.toString(16).toUpperCase().padStart(2, '0')}X`;
 }
 

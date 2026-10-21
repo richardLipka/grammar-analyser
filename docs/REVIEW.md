@@ -1025,7 +1025,8 @@ A state whose only action is one reduction in every column (a reduce state of LR
 - *Python 3*: the recursion limit is raised to 10,000.
 - *C99* has no pairs, so the count is the result and the non-terminal goes in a global `lhs`. It is compiled with `-std=c99 -Wall -Wextra -pedantic -Werror`, without `-Wno-unused-function`.
 - *PL/0* has no function results, so `lhs` and `cnt` are globals. It has no forward declarations either, and the transitions form cycles, so nesting cannot help: one procedure `state` gets the state in `which` and keeps it in its local `mine`, and its activation records on the P-machine stack are the state stack. Since PL/0 has no else, `act` is chosen first. PL/0 identifiers have no `_`, so the non-terminal constants use a digit suffix (`nTx2`). The program runs here on the P-code VM and is linked to the course interpreter.
-- *Oberon* is not generated: with function procedures and procedure variables it would be the C program in other words, and it cannot be run here.
+- *Oberon-07* (added in the parity pass below): no forward declarations, and a function procedure has one RETURN at its end, so one function `State(q)` holds the states as CASE branches. A branch sets `count`, and the goto loop is `WHILE ok & (count = 0)`. It is not compiled here: there is no Oberon compiler; a test checks that every IF/WHILE/CASE/PROCEDURE has its END.
+- *P-code*: the PL/0 program compiled by the built-in compiler, shown like recursive descent's P-code tab.
 
 The locals of the JavaScript/Python procedures are `nt` and `count`. They, and the PL/0 globals, are reserved, but case-sensitively, so a non-terminal `T` keeps its constant `nT`.
 
@@ -1047,3 +1048,62 @@ Below: copy/download, the PL/0 output on the VM, the interpreter link and the Ja
 - PL/0 on the VM = JavaScript on 120 random seeds, words ≤ 4.
 - C (gcc) and Python run on PL/0, the expression grammar and a sample of the random tables, with the same output and the C exit status; skipped without gcc/Python, as in `rdLanguages.test.ts`.
 - `urlState.test.ts`: `tab=ascent`.
+
+
+### 33.1 Parity with recursive descent (2026-10-21)
+
+The owner asked whether recursive ascent covers languages in the same sense as recursive descent, including the step simulator. Six gaps were found in the review of a676689; all are closed.
+
+1. **Input as in recursive descent.** The ascent sub-tab uses RD's input field and `scanInput` with the same token classes: names become the identifier terminal and numbers the number terminal, and the lexemes are kept and shown. The word is shared between the sub-tabs. The RD sample selector, now `sampleRow`, is on the ascent sub-tab too; loading a sample is a preset load, as in §26. The view of recursive descent was reorganised: the sample row, the input field and the action editor (`symtabSection`) are defined before the LL(1) gate. So the sub-tab *Akce tabulky symbolů* also opens for grammars that are not LL(1); recursive ascent uses its actions.
+2. **Derivation tree, bottom up.** Every frame holds the tree of its symbol (a leaf after a shift). A reduction joins the trees of the handle under A; the joined node is pending while the returns run, and the goto gives it to the new frame. The step shows the forest of the stack (`⋯` over several trees) with the new node highlighted, and acceptance shows the tree of S. Test: the final tree equals `simulateLRParse`'s tree on every accepted word of the random test; on the RD samples it equals recursive descent's tree.
+3. **Languages = RD's.** Oberon-07 (above) and a P-code view were added. All languages carry the state/item comments and the action-placement comments (below). The JavaScript has hooks like RD's: `onEnter(state)`, `onMatch(terminal, char)` and `onRule(rule, lhs, rhs)` (in the helpers `shift` and `reduce`).
+4. **Semantic actions** (`src/core/codegen/recursiveAscentActions.ts`). Every RD action becomes events at a dot position d of its rule p:
+   - a declaration or type at the identifier at position i: d = i + 1;
+   - a scope from k to c: open at d = k, close at d = c + 1;
+   - an end of scope after i: d = i + 1;
+   - own code, and names without a position: d = 0.
+
+   An event runs when the parser **enters a state whose kernel is exactly {p@d}**: the transition over rhs[d−1] then determines the rule and the position. In a state where p@d shares the kernel with other items, and always at d = 0, it waits for the **reduction by p** (`where`: transition / mixed / reduction). A deferred event with symbols after it is **late**: the rest of the rule is parsed first.
+
+   For late events, `isFreePosition` builds the table of the same variant with a marker M → ε inserted at d. If it stays conflict-free, the position is free (Purdom & Brown 1980; Horspool 1991 §4.1), and Yacc's mid-rule action could go there. The simulator does not insert markers; it says so.
+
+   An identifier shifted into r is:
+   - a use (looked up at once) if no kernel item of r declares at that position;
+   - a declaration if all of them do;
+   - otherwise undecided until the reduction of its rule.
+
+   The events of one rule instance are keyed by the frame of its dot 0, so left-recursive instances with the same base do not mix. The simulator reports per step which actions ran, where and why. Undeclared and redeclared names stop the parse like RD (`stopOnSemanticErrors`, the same switch). The program comments say "on entry: …" at a state and "actions here: …" at a reduction.
+
+   The generated programs, like RD's, check syntax only. All five RD sample grammars place every detected action at a transition (nothing is late); with every conflict-free table, their scopes, declarations (kind, type), lookups, right parse and tree equal those of recursive descent.
+5. **Help and comparison.** The tab has "Rekurzivní vzestup: co ukázka umí a co ne" (Czech/English) and a table recursive descent vs recursive ascent:
+   - grammar class: LL(1) vs a conflict-free LR table;
+   - procedure per non-terminal vs per state;
+   - the decision; the call stack; the return;
+   - left vs right parse;
+   - tree top-down vs bottom-up;
+   - where actions can go;
+   - the size of the program; writing it by hand.
+
+   A card lists every action with its placement, the reason and the free-position result.
+6. **Tests** (`recursiveAscent.test.ts`, now 44 tests):
+   - the random test also compares the trees;
+   - every RD sample, read by `scanInput`, with all conflict-free tables: no late action, and acceptance, right parse, tree, scopes and lookups equal RD's;
+   - PL/0 with an undeclared name (`! z`, and a local of p used in the main program): a semantic error at the same input position as RD, accepted with the switch off;
+   - a small grammar (`S → id ";" | id "=" id ";"`):
+     - a scope opened after `begin`: transition;
+     - the declaration of `id` in `S → id ;`: deferred and late, free position;
+     - own code at position 0: reduction;
+     - uses undecided at the shift and decided at the reduction;
+   - `isFreePosition` false for S → • a b next to S → a c;
+   - Oberon (END balance, one CASE branch per state) and P-code for every preset with a conflict-free table;
+   - the JavaScript hooks see the right parse.
+
+   The long tests (random grammars, presets, PL/0 on the VM) now yield to the runner after every grammar: without it the full suite ended with vitest's worker RPC timeout (Timeout calling onTaskUpdate), although every test passed.
+
+*Layout* at 1920 × 1080: code | automaton above the tree | call stack, LR stack, the actions of the step and the symbol table (open scopes). With the step panel sticky, all of it is on screen together.
+
+*What remains:*
+- markers are not inserted (late actions stay late);
+- Oberon is not compiled;
+- the generated programs have no symbol table (as in RD);
+- P-code lines are not highlighted in the step (the compiler keeps no source lines).

@@ -3,15 +3,17 @@ import { Grammar } from '../../core/ast/grammar';
 import { LRTable } from '../../core/lr/lrTable';
 import { AscentLang, GeneratedAscent, canGenerateAscent, generateRecursiveAscent, lineKey } from '../../core/codegen/recursiveAscent';
 import { simulateRecursiveAscent, AscentSimulation, AscentStep } from '../../core/codegen/recursiveAscentSimulator';
-import { compilePl0, formatPcode } from '../../core/codegen/pl0Compiler';
+import { ascentEvents, placeEvents, placementText, describeEvent, EventPlacement } from '../../core/codegen/recursiveAscentActions';
+import { DeclarationKeywordConfig, RuleActionDefinition, Scope } from '../../core/codegen/symbolTable';
+import { compilePl0 } from '../../core/codegen/pl0Compiler';
 import { runPcode } from '../../core/codegen/pcodeVm';
-import { tokenizeInput } from '../../core/parser/inputTokenizer';
-import { TokenizedInputNote } from '../components/TokenizedInputNote';
+import { ScannedInput } from '../../core/parser/inputTokenizer';
+import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { AutomatonGraphVisualizer } from '../visualizer/AutomatonGraphVisualizer';
 import { ReferenceBar } from '../components/ReferenceBar';
 import { Language } from '../../i18n/translations';
-import { AlertTriangle, CheckCircle2, Copy, Check, Download, ExternalLink, Play, XCircle, BookOpen, Layers } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Copy, Check, Download, ExternalLink, Play, XCircle, BookOpen, Layers, Database, Settings2 } from 'lucide-react';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
 const VARIANTS: LRVariantName[] = ['LR(0)', 'SLR(1)', 'LALR(1)', 'IELR(1)', 'LR(1)'];
@@ -77,18 +79,29 @@ const CodeLine = React.memo(({ n, text, cls }: { n: number; text: string; cls: s
   </div>
 ));
 
-const FILE_NAMES: Record<AscentLang, string> = { js: 'parser.js', python: 'parser.py', c: 'parser.c', pl0: 'parser.pl0' };
-const LANG_LABELS: Record<AscentLang, string> = { js: 'JavaScript', python: 'Python', c: 'C', pl0: 'PL/0' };
+const FILE_NAMES: Record<AscentLang, string> = { js: 'parser.js', python: 'parser.py', c: 'parser.c', oberon: 'Parser.Mod', pl0: 'parser.pl0', pcode: 'parser.pcode.txt' };
+const LANG_LABELS: Record<AscentLang, [string, string]> = { js: ['JavaScript', 'JavaScript'], python: ['Python', 'Python'], c: ['C', 'C'], oberon: ['Oberon', 'Oberon'], pl0: ['PL/0', 'PL/0'], pcode: ['P-kód', 'P-code'] };
+const LANGS: AscentLang[] = ['js', 'python', 'c', 'oberon', 'pl0', 'pcode'];
 
 interface RecursiveAscentViewProps {
   grammar: Grammar;
   tables: Record<LRVariantName, LRTable | undefined>;
   selectedVariant: LRVariantName;
   onSelectVariant: (v: LRVariantName) => void;
-  defaultInput?: string;
   lang: Language;
   /** A link that opens a P-code program with its input in the PL/0 interpreter */
   interpreterLink: (pcode: string, input: string) => string;
+  /** The input field of recursive descent (the same word on both sub-tabs) */
+  inputField: React.ReactNode;
+  /** The input read as in recursive descent: names and numbers as the identifier and number terminals, with their texts */
+  tokenized: ScannedInput;
+  /** The symbol-table actions of recursive descent and their keywords */
+  keywords: DeclarationKeywordConfig;
+  ruleActions: RuleActionDefinition[];
+  stopOnSemanticErrors: boolean;
+  onStopOnSemanticErrorsChange: (v: boolean) => void;
+  /** Opens the editor of the actions */
+  onEditActions?: () => void;
 }
 
 export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
@@ -96,13 +109,17 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
   tables,
   selectedVariant,
   onSelectVariant,
-  defaultInput = '',
   lang,
-  interpreterLink
+  interpreterLink,
+  inputField,
+  tokenized,
+  keywords,
+  ruleActions,
+  stopOnSemanticErrors,
+  onStopOnSemanticErrorsChange,
+  onEditActions
 }) => {
   const cz = lang === 'cz';
-  const [inputText, setInputText] = useState(defaultInput);
-  useEffect(() => setInputText(defaultInput), [defaultInput]);
   const [codeLang, setCodeLang] = useState<AscentLang>('js');
   const [stepIdx, setStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -115,22 +132,27 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
   const usable = VARIANTS.filter(v => tables[v] && canGenerateAscent(tables[v]!));
   const ok = !!table && canGenerateAscent(table);
 
+  // Where the actions of recursive descent can run in this automaton
+  const placements: EventPlacement[] = useMemo(
+    () => (ok ? placeEvents(grammar, table!, ascentEvents(grammar, ruleActions)) : []),
+    [grammar, table, ok, ruleActions]
+  );
   const generated = useMemo((): { gen: GeneratedAscent; pcode: ReturnType<typeof compilePl0>; pcodeText: string } | { error: string } | null => {
     if (!ok) return null;
     try {
-      const gen = generateRecursiveAscent(grammar, table!);
-      const pcode = compilePl0(gen.code.pl0);
-      return { gen, pcode, pcodeText: formatPcode(pcode) };
+      const gen = generateRecursiveAscent(grammar, table!, { placements });
+      return { gen, pcode: compilePl0(gen.code.pl0), pcodeText: gen.code.pcode };
     } catch (err) {
       return { error: String(err) };
     }
-  }, [grammar, table, ok]);
+  }, [grammar, table, ok, placements]);
   const gen = generated && 'gen' in generated ? generated.gen : null;
 
-  const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
   const simulation: AscentSimulation | null = useMemo(
-    () => (gen && tokenized.unknown.length === 0 ? simulateRecursiveAscent(tokenized.tokens, gen, table!) : null),
-    [gen, tokenized, table]
+    () => (gen && tokenized.unknown.length === 0
+      ? simulateRecursiveAscent(tokenized.tokens, gen, table!, { lexemes: tokenized.lexemes, placements, keywords, stopOnSemanticErrors })
+      : null),
+    [gen, tokenized, table, placements, keywords, stopOnSemanticErrors]
   );
   useEffect(() => {
     setStepIdx(0);
@@ -249,6 +271,63 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
       ['the right parse', 'the rule numbers printed at the reductions, in the same order']
     ];
 
+  const comparison: [string, string, string][] = cz
+    ? [
+      ['Gramatiky', 'LL(1): tabulka LL(1) bez kolizí, bez levé rekurze', 'tabulka LR bez kolizí (LR(0), SLR(1), LALR(1), IELR(1), LR(1)); levá rekurze nevadí, LR(1) zahrnuje LL(1)'],
+      ['Procedura', 'pro každý neterminál', 'pro každý stav LR automatu'],
+      ['Rozhodnutí', 'na začátku pravidla podle aktuálního symbolu (množiny řídicích symbolů)', 'po přečtení části pravé strany podle stavu a aktuálního symbolu (tabulka f)'],
+      ['Zásobník volání', 'neterminály od kořene k aktuálnímu uzlu, každý s pozicí v pravidle', 'zásobník stavů LR: každá aktivace je jeden stav'],
+      ['Návrat', 'po zpracování pravé strany o jednu úroveň', 'po redukci o |α| úrovní (počet ve výsledku)'],
+      ['Výstup', 'levý rozklad (pravidla při expanzi)', 'pravý rozklad (pravidla při redukci)'],
+      ['Derivační strom', 'shora dolů: kořen první, větve se doplňují', 'zdola nahoru: les na zásobníku, redukce spojují stromy, kořen poslední'],
+      ['Sémantické akce', 'kdekoli v pravidle – pravidlo je známo od začátku', 'jen kde jádro stavu určuje pravidlo, jinak až při redukci (Yacc: značky M → ε na volných místech)'],
+      ['Velikost programu', 'úměrná gramatice', 'úměrná počtu stavů (obvykle mnohem víc)'],
+      ['Psaní ručně', 'běžné', 'prakticky nemožné – stavy se počítají z automatu']
+    ]
+    : [
+      ['Grammars', 'LL(1): a conflict-free LL(1) table, no left recursion', 'a conflict-free LR table (LR(0), SLR(1), LALR(1), IELR(1), LR(1)); left recursion is fine, LR(1) contains LL(1)'],
+      ['Procedure', 'one per non-terminal', 'one per state of the LR automaton'],
+      ['Decision', 'at the start of the rule, by the current symbol (the director sets)', 'after reading part of the right-hand side, by the state and the current symbol (the table f)'],
+      ['Call stack', 'the non-terminals from the root to the current node, each with its position in the rule', 'the LR state stack: every activation is one state'],
+      ['Return', 'one level, after the right-hand side', '|α| levels after a reduction (the count in the result)'],
+      ['Output', 'the left parse (rules at expansion)', 'the right parse (rules at reduction)'],
+      ['Derivation tree', 'top down: the root first, branches filled in', 'bottom up: a forest on the stack, reductions join trees, the root last'],
+      ['Semantic actions', 'anywhere in the rule – the rule is known from the start', 'only where the kernel of a state fixes the rule, otherwise at the reduction (Yacc: markers M → ε at free positions)'],
+      ['Size of the program', 'proportional to the grammar', 'proportional to the number of states (usually much more)'],
+      ['Written by hand', 'common', 'practically impossible – the states come from the automaton']
+    ];
+
+  const helpCan = cz
+    ? [
+      'Pro každou tabulku LR bez kolizí (i s konflikty vyřešenými prioritami) vygeneruje analyzátor rekurzivním vzestupem v JavaScriptu, Pythonu, C, Oberonu a PL/0 a ukáže P-kód; JavaScript a P-kód spustí zde, P-kód otevře v interpretu PL/0.',
+      'Krokuje volání a návraty procedur: zásobník volání vedle zásobníku stavů, návrat (A, |α|) a snižování počtu, přechod g, provedený řádek kódu, stav v automatu a les derivačních stromů, který redukce spojují.',
+      'Vstup čte stejně jako rekurzivní sestup (jména a čísla jako terminály identifikátoru a čísla) a nabízí stejné ukázkové gramatiky a programy.',
+      'Akce tabulky symbolů rekurzivního sestupu provede tam, kde analyzátor LR zná pravidlo: při vstupu do stavu, jehož jádro tvoří jen položka akce, jinak při redukci. U každé akce řekne, kde a proč proběhla, označí akce, které proběhnou později než v sestupu, a ověří, zda by šly posunout značkou M → ε (volné místo).',
+      'Identifikátor je deklarace, nebo použití podle pravidla; nerozhodne-li to stav, rozhodne až redukce. Nedeklarované a dvakrát deklarované jméno je sémantická chyba (stejný přepínač jako v sestupu).'
+    ]
+    : [
+      'For every conflict-free LR table (also with conflicts resolved by precedence) it generates a recursive-ascent parser in JavaScript, Python, C, Oberon and PL/0 and shows the P-code; it runs the JavaScript and the P-code here and opens the P-code in the PL/0 interpreter.',
+      'It steps through the calls and returns of the procedures: the call stack beside the state stack, the return (A, |α|) and the decrements, the goto g, the line of code executed, the state in the automaton, and the forest of derivation trees that the reductions join.',
+      'It reads the input as recursive descent does (names and numbers as the identifier and number terminals) and offers the same sample grammars and programs.',
+      'It runs the symbol-table actions of recursive descent where the LR parser knows the rule: on entering a state whose kernel is just the item of the action, otherwise at the reduction. For every action it says where and why it ran, marks the actions that run later than in descent, and checks whether a marker M → ε could move them (a free position).',
+      'An identifier is a declaration or a use according to its rule; where the state does not decide it, the reduction does. An undeclared name and a name declared twice are semantic errors (the same switch as in descent).'
+    ];
+  const helpCannot = cz
+    ? [
+      'Značkové neterminály (akce Yaccu uprostřed pravidla) nevkládá: akci, kterou stav neurčí, provede až při redukci a jen ohlásí, že je pozdě. Rozsah otevřený až při redukci tak neobsahuje jména deklarovaná uvnitř pravidla a jejich použití mohou skončit chybou.',
+      'Akce na začátku pravidla (pozice 1 u rozsahu, vlastní kód při výběru pravidla) proběhnou vždy až při redukci: analyzátor LR pravidlo předem nezná.',
+      'Generované programy kontrolují jen syntaxi, tabulku symbolů nemají (akce jsou v nich jen v komentářích); JavaScript má háčky onEnter, onMatch, onRule. Oberon zde nelze přeložit ani spustit.',
+      'Tabulka symbolů je stejná demonstrace jako v rekurzivním sestupu: žádné typy, druhy jmen, adresy ani kód; žádné zotavení z chyb.',
+      'Jen deterministické tabulky (bez kolizí); krokování nejvýše 2 000 + 100 kroků na symbol vstupu.'
+    ]
+    : [
+      'It does not insert marker non-terminals (Yacc\'s mid-rule actions): an action that no state determines runs at the reduction, and the step only says that it is late. A scope opened at the reduction does not hold the names declared inside the rule, and their uses may end in an error.',
+      'Actions at the start of a rule (a scope from position 1, own code when the rule is chosen) always run at the reduction: the LR parser does not know the rule in advance.',
+      'The generated programs check the syntax only and have no symbol table (the actions are only in comments); the JavaScript has the hooks onEnter, onMatch, onRule. Oberon cannot be compiled or run here.',
+      'The symbol table is the same demonstration as in recursive descent: no types, kinds of names, addresses or code; no error recovery.',
+      'Deterministic (conflict-free) tables only; the step simulator stops after 2,000 + 100 steps per input symbol.'
+    ];
+
   const stepKindLabel = (s: AscentStep): string => {
     const labels: Record<AscentStep['kind'], [string, string]> = {
       call: ['volání', 'call'], shift: ['přesun', 'shift'], reduce: ['redukce: návrat', 'reduce: return'],
@@ -331,16 +410,28 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
               </span>
             )}
           </div>
-          <input
-            type="text"
-            className="grammar-textarea"
-            style={{ minHeight: 'unset', height: '38px', padding: '6px 12px', marginBottom: '6px' }}
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            placeholder={cz ? 'Slovo: tokeny oddělené mezerami, nebo bez mezer' : 'Word: tokens separated by spaces, or without spaces'}
-            aria-label={cz ? 'Slovo' : 'Word'}
-          />
-          <TokenizedInputNote tokenized={tokenized} lang={lang} />
+          {inputField}
+          <div className="ra-options">
+            <span className="hint-text">
+              <Database size={12} />{' '}
+              {placements.length === 0
+                ? (cz ? 'Bez akcí tabulky symbolů: jen syntaktická analýza.' : 'No symbol-table actions: parsing only.')
+                : (cz
+                  ? `Akce tabulky symbolů z rekurzivního sestupu: ${placements.filter(p => p.where === 'transition').length} při vstupu do stavu, ${placements.filter(p => p.where !== 'transition').length} až při redukci (${placements.filter(p => p.late).length} později než v sestupu).`
+                  : `Symbol-table actions of recursive descent: ${placements.filter(p => p.where === 'transition').length} on entering a state, ${placements.filter(p => p.where !== 'transition').length} at the reduction (${placements.filter(p => p.late).length} later than in descent).`)}
+            </span>
+            {onEditActions && (
+              <button type="button" className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={onEditActions}>
+                <Settings2 size={12} /> <span>{cz ? 'Upravit akce' : 'Edit the actions'}</span>
+              </button>
+            )}
+            {placements.length > 0 && (
+              <label className="rd-check">
+                <input type="checkbox" checked={stopOnSemanticErrors} onChange={e => onStopOnSemanticErrorsChange(e.target.checked)} />
+                <span>{cz ? 'Nedeklarované a dvakrát deklarované jméno zastaví analýzu' : 'An undeclared name or a name declared twice stops the parse'}</span>
+              </label>
+            )}
+          </div>
 
           {simulation && step && (
             <>
@@ -360,13 +451,18 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                 <div className="ra-col">
                   <div className="ra-panel-head">
                     <div className="construction-modes" role="group" aria-label={cz ? 'Jazyk' : 'Language'}>
-                      {(['js', 'python', 'c', 'pl0'] as const).map(l => (
+                      {LANGS.map(l => (
                         <button key={l} type="button" className={`btn ${codeLang === l ? 'btn-primary' : 'btn-secondary'}`} style={{ padding: '3px 8px', fontSize: '11px' }} aria-pressed={codeLang === l} onClick={() => setCodeLang(l)}>
-                          {LANG_LABELS[l]}
+                          {LANG_LABELS[l][cz ? 0 : 1]}
                         </button>
                       ))}
                     </div>
                   </div>
+                  {codeLang === 'pcode' && (
+                    <p className="hint-text" style={{ margin: 0 }}>
+                      {cz ? 'P-kód programu v PL/0; řádky kroku se zvýrazňují jen ve zdrojových jazycích.' : 'The P-code of the PL/0 program; the lines of a step are highlighted in the source languages only.'}
+                    </p>
+                  )}
                   <div className="ra-code" ref={codeRef} data-testid="ra-code">
                     {codeLines.map((text, i) => {
                       const n = i + 1;
@@ -380,7 +476,7 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                   </div>
                 </div>
 
-                <div className="ra-col">
+                <div className="ra-col ra-col-middle">
                   {automaton.states.length > GRAPH_STATE_LIMIT && !showLargeGraph ? (
                     <div className="notice-box warning">
                       <p style={{ margin: '0 0 8px', fontSize: '12.5px' }}>
@@ -395,10 +491,24 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                       nodeTitles={nodeTitles}
                       focusEdge={focusEdge}
                       lang={lang}
-                      height="560px"
+                      height="330px"
                       followZoom={0.8}
                     />
                   )}
+                  <div className="ra-tree" data-testid="ra-tree">
+                    {step.tree ? (
+                      <DerivationTreeVisualizer rootNode={step.tree} height="300px" lang={lang} highlightNodeIds={step.activeNodeIds} filename="recursive_ascent_tree" />
+                    ) : (
+                      <p className="hint-text" style={{ padding: '10px' }}>
+                        {cz ? 'Zásobník je zatím prázdný: strom začne prvním přesunem.' : 'The stack is empty so far: the tree starts with the first shift.'}
+                      </p>
+                    )}
+                    <p className="hint-text" style={{ margin: '2px 0 0' }}>
+                      {cz
+                        ? 'Strom roste zdola: každý rámec drží strom svého symbolu, redukce spojí stromy rukojeti pod A (⋯ = několik stromů na zásobníku).'
+                        : 'The tree grows bottom up: every frame holds the tree of its symbol, a reduction joins the trees of the handle under A (⋯ = several trees on the stack).'}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="ra-col ra-col-right">
@@ -447,6 +557,34 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                         <code>{step.rightParse.join(' ') || '–'}</code>
                       </div>
                     </div>
+                    {step.actions.length > 0 && (
+                      <div className="ra-action-notes">
+                        <div className="ra-mini-title">{cz ? 'Akce v tomto kroku' : 'Actions in this step'}</div>
+                        <ul>
+                          {step.actions.map((a, i) => (
+                            <li key={i} className={a.late ? 'late' : ''}>{cz ? a.text.cz : a.text.en}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {step.symbolTable && (
+                      <div className="ra-symtab" data-testid="ra-symtab">
+                        <div className="ra-mini-title">{cz ? 'Tabulka symbolů (otevřené rozsahy)' : 'Symbol table (open scopes)'}</div>
+                        {[...step.symbolTable.scopeStack].reverse().map((sc: Scope) => (
+                          <div key={sc.id} className="ra-scope">
+                            <div className="ra-scope-head">{sc.name} <span className="hint-text">({cz ? 'úroveň' : 'level'} {sc.level})</span></div>
+                            {sc.symbols.length === 0 ? <div className="hint-text">–</div> : sc.symbols.map((sy, i) => (
+                              <div
+                                key={i}
+                                className={`ra-symbol ${step.declared && step.declared.scopeId === sc.id && step.declared.name === sy.name && i === sc.symbols.length - 1 ? 'new' : ''} ${step.lookup?.scopeId === sc.id && step.lookup.name === sy.name ? 'found' : ''}`}
+                              >
+                                <code>{sy.name}</code> <span className="hint-text">{sy.kind}{sy.type ? ` : ${sy.type}` : ''}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -458,7 +596,10 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                     ? (cz ? `Slovo přijato. Pravý rozklad: ${simulation.rightParse.join(' ') || '–'} (stejný jako v záložce LR analyzátory).` : `Word accepted. Right parse: ${simulation.rightParse.join(' ') || '–'} (the same as on the tab LR parsers).`)
                     : simulation.stopped
                       ? (cz ? 'Zastaveno po limitu kroků.' : 'Stopped at the step limit.')
-                      : (cz ? 'Slovo odmítnuto.' : 'Word rejected.')}
+                      : simulation.semanticError
+                        ? (cz ? 'Slovo odmítnuto pro sémantickou chybu (tabulka symbolů), ne pro syntaxi.' : 'Word rejected for a semantic error (the symbol table), not for its syntax.')
+                        : (cz ? 'Slovo odmítnuto.' : 'Word rejected.')}
+                  {simulation.undeclared.length > 0 && !stopOnSemanticErrors && (cz ? ` Nedeklarováno: ${[...new Set(simulation.undeclared.map(u => u.name))].join(', ')}.` : ` Not declared: ${[...new Set(simulation.undeclared.map(u => u.name))].join(', ')}.`)}
                 </span>
               </div>
             </>
@@ -491,9 +632,13 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                 ? (cz ? 'Python 3: python parser.py < vstup. Funkce vrací dvojici (A, počet); chyba je výjimka ParseError. Hloubka rekurze je zvýšena na 10 000 (zásobník stavů roste s délkou vstupu).' : 'Python 3: python parser.py < input. A function returns the pair (A, count); an error is the exception ParseError. The recursion limit is raised to 10,000 (the state stack grows with the input).')
                 : codeLang === 'c'
                   ? (cz ? 'C99 (gcc -std=c99 parser.c): funkce vrací počet a neterminál je v globální proměnné lhs, protože C nevrací dvojice. Chyba nastaví ok = 0 a funkce se vracejí bez dalších akcí. Návratový kód programu je 0 pro přijaté slovo.' : 'C99 (gcc -std=c99 parser.c): a function returns the count and the non-terminal is in the global variable lhs, since C returns no pairs. An error sets ok = 0 and the functions return without further actions. The exit status is 0 for an accepted word.')
+                  : codeLang === 'oberon'
+                    ? (cz ? 'Oberon-07 (moduly In a Out) nemá dopředné deklarace a funkční procedura smí mít jen jeden RETURN na konci. Proto je jediná funkce State(q): stavy jsou větve příkazu CASE, větev nastaví count (|α| po redukci, výsledek volání minus jedna po přesunu nebo přechodu) a přechodová smyčka WHILE běží, dokud je count nula. Překladačem Oberonu zde ověřen není.' : 'Oberon-07 (modules In and Out) has no forward declarations, and a function procedure may have only one RETURN, at its end. So there is one function State(q): the states are the branches of a CASE, a branch sets count (|α| after a reduction, the result of the call minus one after a shift or a goto) and the goto loop WHILE runs while count is zero. It is not checked by an Oberon compiler here.')
+                    : codeLang === 'pcode'
+                      ? (cz ? 'P-kód programu v PL/0 přeložený jako ve Wirthově překladači, ve tvaru pro interpret PL/0 z předmětu KIV/FJP (tlačítko níže jej otevře se vstupem).' : 'The P-code of the PL/0 program, compiled as by Wirth\'s compiler, in the form read by the PL/0 interpreter of the KIV/FJP course (the button below opens it with the input).')
                   : (cz ? 'PL/0 nemá návratové hodnoty ani dopředné deklarace (přechody automatu tvoří cykly, nestačilo by ani vnoření procedur). Proto je jediná procedura state: číslo stavu dostane v proměnné which a uchová si je v lokální proměnné mine – její aktivační záznamy na zásobníku P-stroje jsou doslova zásobník stavů. Výsledek redukce je v globálních proměnných lhs a cnt. PL/0 nemá else: procedura nejdřív do act určí akci, pak ji provede.' : 'PL/0 has neither function results nor forward declarations (the transitions of the automaton form cycles, so not even nested procedures would do). There is one procedure state: it gets the state number in the variable which and keeps it in its local variable mine – its activation records on the stack of the P-machine are literally the state stack. The result of a reduction is in the global variables lhs and cnt. PL/0 has no else: the procedure first determines the action in act, then performs it.')}
             {' '}
-            {cz ? 'Oberon se negeneruje: má funkční procedury a procedurové proměnné, šlo by tedy o program v C jinými slovy, a zde jej nelze spustit.' : 'Oberon is not generated: it has function procedures and procedure variables, so it would be the C program in other words, and it cannot be run here.'}
+            {cz ? 'Programy kontrolují jen syntaxi; akce tabulky symbolů provádí krokování, v kódu jsou u stavů a redukcí v komentářích (kde by proběhly).' : 'The programs check the syntax only; the symbol-table actions are run by the step simulator, and the code says in comments at the states and reductions where they would run.'}
           </p>
           <div className="rd-tokens">
             <span className="hint-text">{cz ? 'Terminály na vstupu (každý jedním znakem, vstup končí znakem $):' : 'Terminals in the input (one character each, the input ends with $):'}</span>
@@ -537,6 +682,111 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
           )}
         </div>
       )}
+
+      {gen && (
+        <div className="card">
+          <div className="card-title">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Database size={16} color="var(--color-primary)" />
+              {cz ? 'Kde mohou proběhnout akce tabulky symbolů' : 'Where the symbol-table actions can run'}
+            </span>
+            {onEditActions && (
+              <button type="button" className="btn btn-secondary" style={{ padding: '2px 8px', fontSize: '11px' }} onClick={onEditActions}>
+                <Settings2 size={12} /> <span>{cz ? 'Upravit akce' : 'Edit the actions'}</span>
+              </button>
+            )}
+          </div>
+          <p className="hint-text">
+            {cz
+              ? 'Rekurzivní sestup zná pravidlo od chvíle, kdy je vybere, akci tedy provede na kterékoli pozici pravé strany. Analyzátor LR pravidlo zná, až když jádro stavu tvoří jediná položka: akce na pozici d pravidla p proběhne při vstupu do stavu s jádrem {p, tečka na pozici d}; v ostatních stavech (a vždy na začátku pravidla) počká na redukci podle p. Taková akce proběhne později – po zbytku pravé strany. Yacc ji umisťuje značkovým neterminálem M → ε, ale jen na volném místě, kde značka nezpůsobí kolizi (Horspool 1991, §4.1; Purdom a Brown 1980); sloupec Volné místo to ověřuje sestrojením tabulky se značkou.'
+              : 'Recursive descent knows the rule from the moment it chooses it, so it can do an action at any position of the right-hand side. An LR parser knows the rule only where a single item makes up the kernel of a state: an action at position d of rule p runs on entering a state whose kernel is {p with the dot at d}; in other states (and always at the start of a rule) it waits for the reduction by p. Such an action runs later – after the rest of the right-hand side. Yacc places it by a marker non-terminal M → ε, but only at a free position, where the marker causes no conflict (Horspool 1991, §4.1; Purdom and Brown 1980); the column Free position checks this by building the table with the marker.'}
+          </p>
+          {placements.length === 0 ? (
+            <p className="hint-text" style={{ fontWeight: 600 }}>
+              {cz ? 'Gramatika nemá žádné akce (rozpoznané ani ručně zadané); analýza je jen syntaktická.' : 'The grammar has no actions (detected or entered by hand); the parse is syntactic only.'}
+            </p>
+          ) : (
+            <div className="data-table-container">
+              <table className="data-table ra-placements" data-testid="ra-placements">
+                <thead>
+                  <tr>
+                    <th>{cz ? 'Pravidlo' : 'Rule'}</th>
+                    <th>{cz ? 'Akce' : 'Action'}</th>
+                    <th>{cz ? 'Kdy proběhne' : 'When it runs'}</th>
+                    <th>{cz ? 'Proč' : 'Why'}</th>
+                    <th>{cz ? 'Volné místo' : 'Free position'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {placements.map(pl => (
+                    <tr key={pl.index} className={pl.late ? 'ra-late' : ''}>
+                      <td style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+                        {pl.rule.id}: {pl.rule.lhs} → {pl.rule.rhs.map((x, i) => (i === pl.dot ? `• ${x}` : x)).join(' ')}{pl.dot === pl.rule.rhs.length ? ' •' : ''}{pl.rule.rhs.length === 0 ? 'ε' : ''}
+                      </td>
+                      <td>{cz ? describeEvent(pl).cz : describeEvent(pl).en}</td>
+                      <td>
+                        <span className={`badge ${pl.where === 'transition' ? 'badge-success' : pl.late ? 'badge-warning' : 'badge-secondary'}`}>
+                          {pl.where === 'transition'
+                            ? (cz ? `při vstupu do ${pl.knownStates.map(name).join(', ')}` : `on entering ${pl.knownStates.map(name).join(', ')}`)
+                            : pl.where === 'mixed'
+                              ? (cz ? 'při vstupu, jinde až při redukci' : 'on entering, elsewhere at the reduction')
+                              : (cz ? 'při redukci' : 'at the reduction')}
+                        </span>
+                        {pl.late && <div className="hint-text">{cz ? 'později než v sestupu' : 'later than in descent'}</div>}
+                      </td>
+                      <td style={{ fontSize: '11.5px' }}>{cz ? placementText(pl, name).cz : placementText(pl, name).en}</td>
+                      <td>{pl.late ? (pl.freePosition === true ? (cz ? 'ano – značka by šla' : 'yes – a marker would do') : pl.freePosition === false ? (cz ? 'ne – značka by způsobila kolizi' : 'no – a marker causes a conflict') : (cz ? 'neověřeno' : 'not tested')) : '–'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-title">
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <BookOpen size={16} color="var(--color-primary)" />
+            {cz ? 'Rekurzivní sestup a rekurzivní vzestup' : 'Recursive descent and recursive ascent'}
+          </span>
+        </div>
+        <div className="data-table-container">
+          <table className="data-table ra-correspondence" data-testid="ra-comparison">
+            <thead>
+              <tr>
+                <th></th>
+                <th>{cz ? 'Rekurzivní sestup' : 'Recursive descent'}</th>
+                <th>{cz ? 'Rekurzivní vzestup' : 'Recursive ascent'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comparison.map(([a, b, c], i) => (
+                <tr key={i}><th scope="row">{a}</th><td>{b}</td><td>{c}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <details className="rd-help" open>
+          <summary>{cz ? 'Rekurzivní vzestup: co ukázka umí a co ne' : 'Recursive ascent: what this demonstration can and cannot do'}</summary>
+          <p className="rd-help-lead">
+            {cz
+              ? 'Jde o demonstrační nástroj: ukazuje, jak analyzátor LR vypadá jako program z procedur a jak se v něm projeví známé pravidlo – ne o generátor analyzátorů pro praxi.'
+              : 'This is a demonstration tool: it shows what an LR parser looks like as a program of procedures and what knowing the rule means in it – not a parser generator for practice.'}
+          </p>
+          <div className="rd-help-columns">
+            <div>
+              <h4>{cz ? 'Umí' : 'Can'}</h4>
+              <ul>{helpCan.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </div>
+            <div>
+              <h4>{cz ? 'Neumí' : 'Cannot'}</h4>
+              <ul>{helpCannot.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </div>
+          </div>
+        </details>
+      </div>
 
       <div className="card">
         <div className="card-title">

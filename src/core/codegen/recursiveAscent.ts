@@ -20,13 +20,15 @@
  * `while (TRUE)` part). So the call stack is the LR state stack, and the
  * returned count is the number of states that still have to be popped.
  *
- * Targets: JavaScript (run in the app), Python, C and PL/0. PL/0 has neither
- * function results nor forward declarations: the result is in the global
- * variables lhs and cnt, and one procedure `state` gets the state number in
- * `which` and keeps it in its local `mine` (its activation records are the
- * LR stack). Oberon is not generated: it has function procedures and
- * procedure variables, so it would be the C program in other words, and it
- * could not be run here.
+ * Targets: JavaScript (run in the app), Python, C, Oberon-07 and PL/0 (with
+ * its P-code). PL/0 has neither function results nor forward declarations:
+ * the result is in the global variables lhs and cnt, and one procedure
+ * `state` gets the state number in `which` and keeps it in its local `mine`
+ * (its activation records are the LR stack). Oberon-07 has no forward
+ * declarations either and allows one RETURN at the end of a function: one
+ * function State(q) with a CASE over the states. With placed rule actions
+ * (recursiveAscentActions.ts) the comments say which actions run on entering
+ * a state and which at a reduction; the programs themselves check syntax only.
  *
  * The input is the one of the recursive-descent programs (tokenCodes): every
  * terminal one character, spaces skipped, $ at the end. Output: the right
@@ -50,8 +52,11 @@ import {
   inC,
   cChar,
   pyChar,
-  jsChar
+  jsChar,
+  oberonChar
 } from './recursiveDescent';
+import { compilePl0, formatPcode } from './pl0Compiler';
+import { EventPlacement, describeEvent } from './recursiveAscentActions';
 
 /** One branch of a state procedure: what the state does on some input symbols. */
 export type AscentAction =
@@ -86,6 +91,7 @@ export type LineMap = Map<string, number>;
  * - act:q:t — the branch of q for the input symbol t ($ included); act:q:* for an unconditional one;
  * - err:q — the syntax error of q; goto:q:A — the goto of q over A; ret:q — q returns the count;
  * - head:q, end:q — the first line (the comment) and the last line of the procedure of q;
+ * - entry:q — the comment line with the actions run on entering q (only with rule actions);
  * - main — the start of the parse.
  */
 export const lineKey = {
@@ -97,10 +103,12 @@ export const lineKey = {
   /** the first line (the comment with the items) and the last line of the procedure of q */
   head: (q: number) => `head:${q}`,
   end: (q: number) => `end:${q}`,
+  /** the comment line with the actions run on entering q */
+  entry: (q: number) => `entry:${q}`,
   main: 'main'
 };
 
-export type AscentLang = 'js' | 'python' | 'c' | 'pl0';
+export type AscentLang = 'js' | 'python' | 'c' | 'oberon' | 'pl0' | 'pcode';
 
 export interface GeneratedAscent {
   tokens: TokenCode[];
@@ -211,7 +219,12 @@ class Emitter {
   }
 }
 
-export function generateRecursiveAscent(g: Grammar, table: LRTable): GeneratedAscent {
+export interface AscentGenerationOptions {
+  /** Placed rule actions: comments say which run on entering a state and which wait for the reduction */
+  placements?: EventPlacement[];
+}
+
+export function generateRecursiveAscent(g: Grammar, table: LRTable, options: AscentGenerationOptions = {}): GeneratedAscent {
   if (!canGenerateAscent(table)) throw new Error('The table has conflicts');
   const tokens = tokenCodes(g);
   const automaton = table.automaton!;
@@ -223,18 +236,28 @@ export function generateRecursiveAscent(g: Grammar, table: LRTable): GeneratedAs
   const states = ascentStates(g, table, taken);
   const tokenOf = new Map(tokens.map(t => [t.terminal, t]));
   const constOf = (t: string) => (t === END_MARKER ? 'tend' : tokenOf.get(t)!.name);
-  const ctx: Ctx = { g, table, tokens, states, augmentedStart, ntNames, constOf };
+  // Where the rule actions run: on entering a state whose kernel fixes the rule, or at the reduction
+  const entryNotes = new Map<number, string[]>();
+  const reduceNotes = new Map<number, string[]>();
+  for (const pl of options.placements ?? []) {
+    const what = describeEvent(pl).en;
+    for (const q of pl.knownStates) entryNotes.set(q, [...(entryNotes.get(q) || []), `on entry: ${what}`]);
+    if (pl.where !== 'transition') reduceNotes.set(pl.rule.id, [...(reduceNotes.get(pl.rule.id) || []), `${what}${pl.late ? ' (later than in recursive descent)' : ''}`]);
+  }
+  const ctx: Ctx = { g, table, tokens, states, augmentedStart, ntNames, constOf, entryNotes, reduceNotes };
   const js = generateJs(ctx);
   const python = generatePython(ctx);
   const c = generateC(ctx);
+  const oberon = generateOberon(ctx);
   const pl0 = generatePl0(ctx);
+  const pl0Text = pl0.text();
   return {
     tokens,
     states,
     augmentedStart,
     ntNames,
-    code: { js: js.text(), python: python.text(), c: c.text(), pl0: pl0.text() },
-    lines: { js: js.map, python: python.map, c: c.map, pl0: pl0.map }
+    code: { js: js.text(), python: python.text(), c: c.text(), oberon: oberon.text(), pl0: pl0Text, pcode: formatPcode(compilePl0(pl0Text)) },
+    lines: { js: js.map, python: python.map, c: c.map, oberon: oberon.map, pl0: pl0.map, pcode: new Map() }
   };
 }
 
@@ -246,12 +269,22 @@ interface Ctx {
   augmentedStart: string;
   ntNames: Map<string, string>;
   constOf: (t: string) => string;
+  /** Comments: the actions run on entering a state, and those deferred to the reduction of a rule */
+  entryNotes: Map<number, string[]>;
+  reduceNotes: Map<number, string[]>;
 }
 
 /** The variant of the table, for the header comment */
 const variantOf = (ctx: Ctx) => ctx.table.variant;
 const stateTitle = (s: AscentState) => `state ${s.name} (${s.id})`;
 const reduceText = (p: Production) => `reduce ${ruleText(p)}`;
+/** The actions at the reduction by p, for the comment of its branch */
+const reduceSuffix = (ctx: Ctx, p: Production) => {
+  const notes = ctx.reduceNotes.get(p.id);
+  return notes ? `; actions here: ${notes.join(', ')}` : '';
+};
+/** Comment lines with the actions run on entering q */
+const entryLines = (ctx: Ctx, q: number) => ctx.entryNotes.get(q) || [];
 const hasCount = (s: AscentState) => s.actions.some(a => a.kind === 'shift' || (a.kind === 'reduce' && a.production.rhs.length === 0)) || s.gotos.length > 0;
 
 function generateJs(ctx: Ctx): Emitter {
@@ -274,9 +307,10 @@ function generateJs(ctx: Ctx): Emitter {
   out.push('');
   out.push('/**');
   out.push(' * @param {string} input - one character per terminal, ending with $');
+  out.push(' * @param {Object} [hooks] - optional: onEnter(state), onMatch(terminal, char), onRule(ruleId, lhs, rhs)');
   out.push(' * @returns {{ ok: boolean, rightParse: number[], output: string }}');
   out.push(' */');
-  out.push("export function parse(input = '') {");
+  out.push("export function parse(input = '', hooks = {}) {");
   out.push('  const data = String(input);');
   out.push('  let pos = 0;');
   out.push('  let sym = tend; // the current input symbol');
@@ -291,18 +325,34 @@ function generateJs(ctx: Ctx): Emitter {
   out.push('  function error() {');
   out.push('    throw ParseError;');
   out.push('  }');
+  out.push('');
+  out.push('  // read the terminal t (the shift)');
+  out.push('  function shift(t) {');
+  out.push('    if (hooks.onMatch) hooks.onMatch(t, sym);');
+  out.push('    next();');
+  out.push('  }');
+  out.push('');
+  out.push('  // the reduction by rule: lhs -> rhs returns [lhs, |rhs|]');
+  out.push('  function reduce(rule, lhs, rhs) {');
+  out.push('    rightParse.push(rule);');
+  out.push('    if (hooks.onRule) hooks.onRule(rule, lhs, rhs);');
+  out.push('    return [lhs, rhs.length];');
+  out.push('  }');
   for (const s of states) {
     out.push('');
     out.push(`  // ${stateTitle(s)}`, lineKey.head(s.id));
     for (const it of s.items) out.push(`  //   ${it}`);
+    entryLines(ctx, s.id).forEach(x => out.push(`  //   ${x}`, lineKey.entry(s.id)));
     out.push(`  function ${s.proc}() {`, lineKey.proc(s.id));
     if (hasCount(s)) out.push('    let nt, count;');
+    out.push(`    if (hooks.onEnter) hooks.onEnter(${JSON.stringify(s.name)});`);
     const branch = (a: AscentAction): string => {
-      if (a.kind === 'shift') return `next(); [nt, count] = ${procOf(a.target)}(); count--; break; // shift ${a.terminal}: g(${s.name}, ${a.terminal}) = ${name(a.target)}`;
+      if (a.kind === 'shift') return `shift(${constOf(a.terminal)}); [nt, count] = ${procOf(a.target)}(); count--; break; // shift ${a.terminal}: g(${s.name}, ${a.terminal}) = ${name(a.target)}`;
       if (a.kind === 'accept') return `return [${JSON.stringify(augmentedStart)}, 1]; // accept: ${ruleText(ctx.table.automaton!.augmentedProduction)}, back to #`;
       const p = a.production;
-      if (p.rhs.length === 0) return `rightParse.push(${p.id}); nt = ${JSON.stringify(p.lhs)}; count = 0; break; // ${reduceText(p)}: goto here`;
-      return `rightParse.push(${p.id}); return [${JSON.stringify(p.lhs)}, ${p.rhs.length}]; // ${reduceText(p)}`;
+      const call = `reduce(${p.id}, ${JSON.stringify(p.lhs)}, ${JSON.stringify(p.rhs)})`;
+      if (p.rhs.length === 0) return `[nt, count] = ${call}; break; // ${reduceText(p)}: goto here${reduceSuffix(ctx, p)}`;
+      return `return ${call}; // ${reduceText(p)}${reduceSuffix(ctx, p)}`;
     };
     if (s.unconditional) {
       out.push(`    ${branch(s.actions[0]).replace(/ break;/, '')} (whatever the input symbol)`, lineKey.act(s.id, '*'));
@@ -405,6 +455,7 @@ function generatePython(ctx: Ctx): Emitter {
     out.push('');
     out.push(`# ${stateTitle(s)}`, lineKey.head(s.id));
     for (const it of s.items) out.push(`#   ${it}`);
+    entryLines(ctx, s.id).forEach(x => out.push(`#   ${x}`, lineKey.entry(s.id)));
     out.push(`def ${s.proc}():`, lineKey.proc(s.id));
     const body = (a: AscentAction, ind: string, keys: string[]) => {
       if (a.kind === 'shift') {
@@ -424,7 +475,7 @@ function generatePython(ctx: Ctx): Emitter {
     const comment = (a: AscentAction) =>
       a.kind === 'shift' ? `shift ${a.terminal}: g(${s.name}, ${a.terminal}) = ${name(a.target)}`
         : a.kind === 'accept' ? `accept: ${ruleText(ctx.table.automaton!.augmentedProduction)}, back to #`
-          : a.production.rhs.length === 0 ? `${reduceText(a.production)}: goto here` : reduceText(a.production);
+          : `${a.production.rhs.length === 0 ? `${reduceText(a.production)}: goto here` : reduceText(a.production)}${reduceSuffix(ctx, a.production)}`;
     if (s.unconditional) {
       out.push(`    # ${comment(s.actions[0])} (whatever the input symbol)`, lineKey.act(s.id, '*'));
       body(s.actions[0], '    ', []);
@@ -525,6 +576,7 @@ function generateC(ctx: Ctx): Emitter {
     out.push('');
     out.push(`/* ${stateTitle(s)}`, lineKey.head(s.id));
     for (const it of s.items) out.push(` *   ${inC(it)}`);
+    entryLines(ctx, s.id).forEach(x => out.push(` *   ${inC(x)}`, lineKey.entry(s.id)));
     out.push(' */');
     out.push(`static int ${s.proc}(void)`, lineKey.proc(s.id));
     out.push('{');
@@ -533,8 +585,8 @@ function generateC(ctx: Ctx): Emitter {
       if (a.kind === 'shift') return `next(); count = ${procOf(a.target)}() - 1; break; /* shift ${inC(a.terminal)}: g(${inC(s.name)}, ${inC(a.terminal)}) = ${inC(name(a.target))} */`;
       if (a.kind === 'accept') return `lhs = ${ntNames.get(augmentedStart)}; return 1; /* accept: ${inC(ruleText(ctx.table.automaton!.augmentedProduction))}, back to # */`;
       const p = a.production;
-      if (p.rhs.length === 0) return `printf("${p.id} "); lhs = ${ntNames.get(p.lhs)}; count = 0; break; /* ${inC(reduceText(p))}: goto here */`;
-      return `printf("${p.id} "); lhs = ${ntNames.get(p.lhs)}; return ${p.rhs.length}; /* ${inC(reduceText(p))} */`;
+      if (p.rhs.length === 0) return `printf("${p.id} "); lhs = ${ntNames.get(p.lhs)}; count = 0; break; /* ${inC(reduceText(p) + ': goto here' + reduceSuffix(ctx, p))} */`;
+      return `printf("${p.id} "); lhs = ${ntNames.get(p.lhs)}; return ${p.rhs.length}; /* ${inC(reduceText(p) + reduceSuffix(ctx, p))} */`;
     };
     if (s.unconditional) {
       out.push(`  ${branch(s.actions[0]).replace(/ break;/, '').replace(/ \*\/$/, ' (whatever the input symbol) */')}`, lineKey.act(s.id, '*'));
@@ -572,6 +624,97 @@ function generateC(ctx: Ctx): Emitter {
   out.push('  printf("\\n");');
   out.push('  return ok ? 0 : 1;');
   out.push('}');
+  return out;
+}
+
+/**
+ * Oberon-07: no forward declarations and a single RETURN at the end of a function
+ * procedure. One function procedure State(q) holds all states in a CASE; a
+ * branch sets count (|α| after a reduction, the result of the call minus one
+ * after a shift or a goto) and the goto loop runs while it is 0.
+ */
+function generateOberon(ctx: Ctx): Emitter {
+  const { states, augmentedStart, constOf, ntNames } = ctx;
+  const out = new Emitter();
+  const name = (q: number) => states[q].name;
+  out.push(`MODULE Parser; (* recursive ascent, generated from the ${variantOf(ctx)} table *)`);
+  out.push('  IMPORT In, Out;');
+  out.push('');
+  out.push('  (* every terminal is one input character; the input ends with $ *)');
+  out.push('  (* Oberon-07 has no forward declarations: one function procedure State *)');
+  out.push('  (* gets the state; a reduction by A -> alpha sets lhs = A and returns |alpha| *)');
+  out.push('  CONST');
+  for (const t of ctx.tokens) out.push(`    ${t.name} = ${oberonChar(t.code)}; (* ${inParens(t.terminal)} *)`);
+  out.push('    tend = "$";');
+  for (const [A, n] of ntNames) out.push(`    ${n} = ${[...ntNames.keys()].indexOf(A) + 1}; (* ${inParens(A)} *)`);
+  out.push('');
+  out.push('  VAR sym: CHAR; ok: BOOLEAN; lhs, res: INTEGER;');
+  out.push('');
+  out.push('  PROCEDURE Next;');
+  out.push('  BEGIN');
+  out.push('    REPEAT In.Char(sym) UNTIL ~In.Done OR (sym > " ");');
+  out.push('    IF ~In.Done THEN sym := tend END');
+  out.push('  END Next;');
+  out.push('');
+  out.push('  PROCEDURE Error;');
+  out.push('  BEGIN');
+  out.push('    IF ok THEN Out.Ln; Out.String("ERR "); Out.Char(sym); ok := FALSE END');
+  out.push('  END Error;');
+  out.push('');
+  out.push('  PROCEDURE State(q: INTEGER): INTEGER;');
+  out.push('    VAR count: INTEGER; (* the states still to pop when this activation returns *)');
+  out.push('  BEGIN');
+  out.push('    count := -1;');
+  out.push('    IF ok THEN');
+  out.push('      CASE q OF');
+  states.forEach((s, si) => {
+    out.push(`      ${si === 0 ? '  ' : '| '}${s.id}: (* ${inParens(stateTitle(s))} *)`, lineKey.head(s.id), lineKey.proc(s.id));
+    for (const it of s.items) out.push(`          (*   ${inParens(it)} *)`);
+    entryLines(ctx, s.id).forEach(x => out.push(`          (*   ${inParens(x)} *)`, lineKey.entry(s.id)));
+    const stmts = (a: AscentAction): string => {
+      if (a.kind === 'shift') return `Next; count := State(${a.target}) - 1 (* ${inParens(`shift ${a.terminal}: g(${s.name}, ${a.terminal}) = ${name(a.target)}`)} *)`;
+      if (a.kind === 'accept') return `lhs := ${ntNames.get(augmentedStart)}; count := 1 (* accept: ${inParens(ruleText(ctx.table.automaton!.augmentedProduction))} *)`;
+      const p = a.production;
+      return `Out.Int(${p.id}, 0); Out.Char(" "); lhs := ${ntNames.get(p.lhs)}; count := ${p.rhs.length} (* ${inParens(`${reduceText(p)}${p.rhs.length === 0 ? ', goto here' : ''}${reduceSuffix(ctx, p)}`)} *)`;
+    };
+    if (s.unconditional) {
+      out.push(`          ${stmts(s.actions[0])}`, lineKey.act(s.id, '*'));
+    } else {
+      s.actions.forEach((a, i) => {
+        const cols = a.kind === 'shift' ? [a.terminal] : a.kind === 'accept' ? [END_MARKER] : a.columns;
+        const cond = cols.map(t => `(sym = ${constOf(t)})`).join(' OR ');
+        out.push(`          ${i === 0 ? 'IF' : 'ELSIF'} ${cond} THEN ${stmts(a)}`, ...cols.map(t => lineKey.act(s.id, t)));
+      });
+      if (s.actions.length === 0) out.push('          Error', lineKey.err(s.id));
+      else {
+        out.push('          ELSE Error', lineKey.err(s.id));
+        out.push('          END');
+      }
+    }
+    if (s.gotos.length > 0 || s.id === 0) {
+      out.lines[out.lines.length - 1] += ';';
+      out.push(`          WHILE ok & (count = 0) DO (* the reduction ends here: goto(${inParens(s.name)}, lhs) *)`);
+      s.gotos.forEach(({ nt, target }, i) =>
+        out.push(`            ${i === 0 ? 'IF' : 'ELSIF'} lhs = ${ntNames.get(nt)} THEN count := State(${target}) - 1 (* ${inParens(`g(${s.name}, ${nt}) = ${name(target)}`)} *)`, lineKey.goto(s.id, nt)));
+      if (s.id === 0) out.push(`            ${s.gotos.length === 0 ? 'IF' : 'ELSIF'} lhs = ${ntNames.get(augmentedStart)} THEN count := 1 (* accepted: leaves the loop *)`, lineKey.goto(s.id, augmentedStart));
+      out.push('            ELSE Error');
+      out.push('            END');
+      out.push('          END', lineKey.ret(s.id));
+    }
+    out.mark(lineKey.ret(s.id));
+    out.mark(lineKey.end(s.id));
+  });
+  out.push('      END');
+  out.push('    END');
+  out.push('    RETURN count');
+  out.push('  END State;');
+  out.push('');
+  out.push('BEGIN', lineKey.main);
+  out.push('  ok := TRUE; In.Open; Next;');
+  out.push('  res := State(0);');
+  out.push('  IF ok THEN Out.Ln; Out.String("OK") END;');
+  out.push('  Out.Ln');
+  out.push('END Parser.');
   return out;
 }
 
@@ -636,6 +779,7 @@ function generatePl0(ctx: Ctx): Emitter {
     const last = si === states.length - 1;
     out.push(`  (* ${stateTitle({ ...s, name: s.asciiName })} *)`, lineKey.head(s.id));
     for (const it of s.items) out.push(`  (*   ${asciiItem(it)} *)`);
+    entryLines(ctx, s.id).forEach(x => out.push(`  (*   ${inParens(x)} *)`, lineKey.entry(s.id)));
     out.push(`  if mine = ${s.id} then`, lineKey.proc(s.id));
     out.push('  begin');
     const stmts = (a: AscentAction): string[] => {
@@ -646,7 +790,7 @@ function generatePl0(ctx: Ctx): Emitter {
     const comment = (a: AscentAction) =>
       a.kind === 'shift' ? `shift ${a.terminal}: g(${s.asciiName}, ${a.terminal}) = ${ascii(a.target)}`
         : a.kind === 'accept' ? `accept: ${ruleText(ctx.table.automaton!.augmentedProduction)}`
-          : a.production.rhs.length === 0 ? `${reduceText(a.production)}, goto here` : reduceText(a.production);
+          : `${a.production.rhs.length === 0 ? `${reduceText(a.production)}, goto here` : reduceText(a.production)}${reduceSuffix(ctx, a.production)}`;
     // A statement is one or more lines; statements of a sequence are separated by ';'
     type Line = [string, string[]];
     const body: Line[][] = [];

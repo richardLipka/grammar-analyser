@@ -460,95 +460,6 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
     </div>
   );
 
-  // Recursive ascent needs an LR table, not LL(1)
-  if (subTab === 'ascent' && lrTables) {
-    return (
-      <div>
-        <div className="card">
-          <div className="card-title">
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Cpu size={18} color="var(--color-primary)" />
-              {cz ? 'Rekurzivní sestup a vzestup' : 'Recursive descent and ascent'}
-            </span>
-          </div>
-          {subTabBar}
-        </div>
-        <RecursiveAscentView
-          grammar={grammar}
-          tables={lrTables}
-          selectedVariant={activeLrVariant}
-          onSelectVariant={onSelectLrVariant ?? setOwnLrVariant}
-          defaultInput={defaultInput}
-          lang={lang}
-          interpreterLink={interpreterLink}
-        />
-      </div>
-    );
-  }
-
-  if (!llTable.isLL1) {
-    return (
-      <div className="card">
-        <div className="card-title"><span>{cz ? 'Rekurzivní sestup' : 'Recursive descent'}</span></div>
-        {lrTables && subTabBar}
-        <div className="notice-box warning">
-          <div className="notice-title">
-            <AlertTriangle size={15} />
-            <span>{cz ? `Gramatika není LL(1) (kolize: ${llTable.conflicts.length})` : `The grammar is not LL(1) (${llTable.conflicts.length} conflicts)`}</span>
-          </div>
-          <p style={{ margin: '4px 0 8px', fontSize: '12.5px' }}>
-            {cz
-              ? 'Procedura neterminálu vybírá pravidlo podle jednoho symbolu vstupu; při kolizi v rozkladové tabulce by nevěděla, které pravidlo použít. Gramatiku lze upravit (záložka Úpravy gramatiky) nebo zkusit automatický převod.'
-              : 'The procedure of a non-terminal chooses the rule by one input symbol; with a conflict in the parse table it would not know which rule to use. Transform the grammar (tab Transformations) or try the automatic transformation.'}
-          </p>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {onAttemptLL1 && (
-              <button type="button" className="btn btn-accent" onClick={onAttemptLL1}>
-                {cz ? 'Zkusit převést na LL(1)' : 'Try to transform to LL(1)'}
-              </button>
-            )}
-            {lrTables && (
-              <button type="button" className="btn btn-secondary" onClick={() => setSubTab('ascent')}>
-                {cz ? 'Rekurzivní vzestup (stačí tabulka LR bez kolizí)' : 'Recursive ascent (a conflict-free LR table is enough)'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!generated || 'error' in generated) {
-    return (
-      <div className="card">
-        <div className="report-box danger">{generated && 'error' in generated ? generated.error : ''}</div>
-      </div>
-    );
-  }
-
-  const { gen, pcodeText } = generated;
-  const text = codeLang === 'pcode' ? pcodeText : gen[codeLang];
-  const fileName = FILE_NAMES[codeLang];
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard unavailable */
-    }
-  };
-
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // The word to parse: shared by the simulator and the generated programs
   const inputField = (
     <>
@@ -798,6 +709,328 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
     </details>
   );
 
+
+  const sampleRow = (
+    <>
+      {/* Sample Grammars Quick-Selector */}
+      {onLoadGrammar && (
+        <div className="rd-sample-row">
+          <span className="rd-sample-label">
+            <BookOpen size={14} color="var(--color-primary)" />
+            {cz ? 'Ukázkové gramatiky s deklaracemi a rozsahy:' : 'Sample grammars with declarations and scopes:'}
+          </span>
+          <select
+            className="grammar-textarea"
+            style={{ minHeight: 'unset', height: '32px', padding: '4px 10px', fontSize: '12px', width: 'auto', flex: 1, maxWidth: '460px' }}
+            value={currentSample?.id ?? ''}
+            onChange={e => {
+              const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === e.target.value);
+              if (sample) {
+                onLoadGrammar(sample.grammarText, sample.sampleInput, { en: sample.nameEn, cz: sample.nameCz });
+                setInputText(sample.namedInput);
+              }
+            }}
+          >
+            <option value="" disabled>{cz ? 'Vyberte ukázkovou gramatiku…' : 'Select a sample grammar…'}</option>
+            {RD_SAMPLE_GRAMMARS.map(s => (
+              <option key={s.id} value={s.id}>
+                {cz ? s.nameCz : s.nameEn}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {currentSample && (
+        <p className="hint-text" style={{ marginTop: '6px' }}>{cz ? currentSample.descriptionCz : currentSample.descriptionEn}</p>
+      )}
+    </>
+  );
+
+  const symtabSection = (
+  <div className="card">
+    <div className="card-title">
+      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <BookOpen size={18} color="var(--color-primary)" />
+        {cz ? 'Akce tabulky symbolů u pravidel gramatiky' : 'Symbol table actions of the grammar rules'}
+      </span>
+    </div>
+
+    <p className="hint-text" style={{ marginBottom: '12px' }}>
+      {cz
+        ? 'Procedura pravidla může kromě syntaktické analýzy pracovat s tabulkou symbolů: po přečtení identifikátoru deklarovat jeho jméno (jméno je text ze vstupu, např. x pro terminál id), otevřít rozsah před některým symbolem pravé strany a zavřít ho po jiném. Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven. Akce se rozpoznají podle klíčových slov níže; v tabulce je lze upravit.'
+        : 'Besides parsing, the procedure of a rule can work with the symbol table: declare the name of an identifier after reading it (the name is the text of the input, e.g. x for the terminal id), and open a scope before one symbol of the right-hand side and close it after another. Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards. The actions are detected from the keywords below and can be edited in the table.'}
+    </p>
+
+    {symbolTableHelp}
+
+    <label className="rd-check" style={{ margin: '0 0 12px' }}>
+      <input type="checkbox" checked={stopOnSemanticErrors} onChange={e => setStopOnSemanticErrors(e.target.checked)} />
+      <span>{cz ? 'Nedeklarované jméno a jméno deklarované v jednom rozsahu dvakrát jsou sémantické chyby, které zastaví rekurzivní sestup' : 'An undeclared name and a name declared twice in one scope are semantic errors that stop the recursive descent'}</span>
+    </label>
+
+    {/* Editable Keyword Configuration Box */}
+    <div className="rd-keywords-box">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <span style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <SlidersHorizontal size={15} color="var(--color-primary)" />
+          {cz ? 'Klíčová slova pro rozpoznání deklarací a rozsahů' : 'Keywords for detecting declarations and scopes'}
+        </span>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
+          onClick={() => setShowKeywordEditor(s => !s)}
+        >
+          {showKeywordEditor ? (cz ? 'Skrýt' : 'Hide') : (cz ? 'Zobrazit' : 'Show')}
+        </button>
+      </div>
+
+      {showKeywordEditor && (
+        <>
+          <div className="rd-keywords-grid">
+            {([
+              ['procKeywords', cz ? 'Procedury a funkce (za slovem následuje jméno a vlastní rozsah)' : 'Procedures and functions (followed by the name; own scope)'],
+              ['scopeOpeners', cz ? 'Začátek bloku (rozsahem je, jen když jsou v něm deklarace)' : 'Start of a block (a scope only when it contains declarations)'],
+              ['scopeClosers', cz ? 'Konec bloku' : 'End of a block'],
+              ['declKeywords', cz ? 'Deklarace (var, const – const a val jsou konstanty)' : 'Declarations (var, const – const and val are constants)'],
+              ['typeKeywords', cz ? 'Datové typy (int x deklaruje x typu int)' : 'Data types (int x declares x of type int)'],
+              ['idSymbols', cz ? 'Terminály identifikátorů (jména ze vstupu)' : 'Identifier terminals (names in the input)']
+            ] as [keyof typeof keywordInputs, string][]).map(([field, label]) => (
+              <label key={field} className="rd-keyword-field">
+                <span className="rd-keyword-label">{label}</span>
+                <input
+                  type="text"
+                  className="rd-keyword-input"
+                  value={keywordInputs[field]}
+                  onChange={e => setKeywordInputs(k => ({ ...k, [field]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') applyKeywordChanges(); }}
+                />
+              </label>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-primary" onClick={applyKeywordChanges}>
+              <Sparkles size={13} />
+              <span>{cz ? 'Rozpoznat akce podle těchto slov' : 'Detect the actions with these words'}</span>
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={resetKeywordsToDefault}>
+              <RotateCcw size={13} />
+              <span>{cz ? 'Výchozí klíčová slova' : 'Default keywords'}</span>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '14px 0 8px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700 }}>
+        {actionMode === 'none'
+          ? (cz ? 'Akce jsou vypnuté (jen syntaktická analýza)' : 'Actions are off (parsing only)')
+          : actionMode === 'custom'
+            ? (cz ? 'Akce upravené ručně' : 'Actions edited by hand')
+            : (cz ? 'Rozpoznané akce' : 'Detected actions')}
+      </div>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <button
+          type="button"
+          className={`btn ${actionMode === 'none' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ padding: '3px 8px', fontSize: '11px' }}
+          onClick={() => setActionMode('none')}
+        >
+          {cz ? 'Vypnout akce' : 'Switch actions off'}
+        </button>
+        <button
+          type="button"
+          className={`btn ${actionMode === 'auto' ? 'btn-primary' : 'btn-secondary'}`}
+          style={{ padding: '3px 8px', fontSize: '11px' }}
+          onClick={() => setActionMode('auto')}
+        >
+          <Sparkles size={11} />
+          <span>{cz ? 'Rozpoznat znovu' : 'Detect again'}</span>
+        </button>
+      </div>
+    </div>
+
+    {isPureSyntaxMode && actionMode !== 'none' && (
+      <div className="report-box info" style={{ margin: '8px 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Info size={16} />
+        <span style={{ fontSize: '12px' }}>
+          {cz
+            ? 'V gramatice nebyly rozpoznány deklarace ani bloky s deklaracemi, simulace je jen syntaktická. Akce lze přidat v tabulce ručně nebo upravit klíčová slova výše.'
+            : 'No declarations or blocks with declarations were recognised in the grammar, so the simulation is purely syntactic. Add actions in the table by hand or adjust the keywords above.'}
+        </span>
+      </div>
+    )}
+
+    <div className="data-table-container">
+      <table className="data-table rd-actions-table">
+        <thead>
+          <tr>
+            <th style={{ width: '44px' }}>{cz ? 'Č.' : 'No.'}</th>
+            <th>{cz ? 'Pravidlo' : 'Rule'}</th>
+            <th>{cz ? 'Akce' : 'Actions'}</th>
+            <th>{cz ? 'Co provede' : 'What it does'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grammar.productions.map(p => {
+            const acts = ruleActions.filter(a => a.ruleId === p.id && a.actionType !== 'none');
+            return (
+              <tr key={p.id}>
+                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{p.id}</td>
+                <td style={{ fontFamily: 'var(--font-mono)' }}>
+                  <span className="sym-nt">{p.lhs}</span> → {p.rhs.map((s, i) => <span key={i} title={`${i + 1}`}>{s} </span>)}{p.rhs.length === 0 && 'ε'}
+                </td>
+                <td>
+                  {acts.map((act, k) => renderActionEditor(p, act, k))}
+                  {actionMode !== 'none' && (
+                    <button
+                      type="button"
+                      className="rd-icon-btn rd-add-action"
+                      onClick={() => editActions(list => [...list, newAction(p, p.rhs.length === 0 ? 'custom' : 'addSymbol')])}
+                      title={cz ? 'Přidat akci' : 'Add an action'}
+                    >
+                      <Plus size={12} />
+                      <span>{cz ? 'akce' : 'action'}</span>
+                    </button>
+                  )}
+                </td>
+                <td style={{ fontSize: '11.5px' }}>
+                  {acts.length === 0
+                    ? <span className="hint-text">–</span>
+                    : acts.map((act, k) => <div key={k}>{describeAction(act, p)}</div>)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+    <p className="hint-text" style={{ marginTop: '8px', fontSize: '11.5px' }}>
+      <ArrowRight size={11} />{' '}
+      {cz
+        ? 'Pozice jsou pořadí symbolů pravé strany (1 = první). $type = typové klíčové slovo přečtené naposled, $name = jméno deklarované naposled (název rozsahu procedury). Vlastní kód (JS) se provede při výběru pravidla s objektem ctx (ctx.symTab je tabulka symbolů).'
+        : 'Positions count the symbols of the right-hand side (1 = the first). $type = the type keyword read last, $name = the name declared last (the scope name of a procedure). Own code (JS) runs when the rule is chosen, with the object ctx (ctx.symTab is the symbol table).'}
+    </p>
+  </div>
+  );
+
+  // Recursive ascent needs an LR table, not LL(1)
+  if (subTab === 'ascent' && lrTables) {
+    return (
+      <div>
+        <div className="card">
+          <div className="card-title">
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Cpu size={18} color="var(--color-primary)" />
+              {cz ? 'Rekurzivní sestup a vzestup' : 'Recursive descent and ascent'}
+            </span>
+          </div>
+          {subTabBar}
+          {sampleRow}
+        </div>
+        <RecursiveAscentView
+          grammar={grammar}
+          tables={lrTables}
+          selectedVariant={activeLrVariant}
+          onSelectVariant={onSelectLrVariant ?? setOwnLrVariant}
+          lang={lang}
+          interpreterLink={interpreterLink}
+          inputField={inputField}
+          tokenized={tokenized}
+          keywords={keywordConfig}
+          ruleActions={ruleActions}
+          stopOnSemanticErrors={stopOnSemanticErrors}
+          onStopOnSemanticErrorsChange={setStopOnSemanticErrors}
+          onEditActions={() => setSubTab('symtab')}
+        />
+      </div>
+    );
+  }
+
+  if (subTab === 'symtab' && !llTable.isLL1) {
+    return (
+      <div>
+        <div className="card">
+          <div className="card-title"><span>{cz ? 'Rekurzivní sestup a vzestup' : 'Recursive descent and ascent'}</span></div>
+          {subTabBar}
+          {sampleRow}
+          <p className="hint-text" style={{ marginTop: '6px' }}>
+            {cz
+              ? 'Gramatika není LL(1), rekurzivní sestup ji neanalyzuje; akce tabulky symbolů používá i rekurzivní vzestup.'
+              : 'The grammar is not LL(1), so recursive descent cannot parse it; the symbol-table actions are used by recursive ascent too.'}
+          </p>
+        </div>
+        {symtabSection}
+      </div>
+    );
+  }
+
+  if (!llTable.isLL1) {
+    return (
+      <div className="card">
+        <div className="card-title"><span>{cz ? 'Rekurzivní sestup' : 'Recursive descent'}</span></div>
+        {lrTables && subTabBar}
+        {sampleRow}
+        <div className="notice-box warning">
+          <div className="notice-title">
+            <AlertTriangle size={15} />
+            <span>{cz ? `Gramatika není LL(1) (kolize: ${llTable.conflicts.length})` : `The grammar is not LL(1) (${llTable.conflicts.length} conflicts)`}</span>
+          </div>
+          <p style={{ margin: '4px 0 8px', fontSize: '12.5px' }}>
+            {cz
+              ? 'Procedura neterminálu vybírá pravidlo podle jednoho symbolu vstupu; při kolizi v rozkladové tabulce by nevěděla, které pravidlo použít. Gramatiku lze upravit (záložka Úpravy gramatiky) nebo zkusit automatický převod.'
+              : 'The procedure of a non-terminal chooses the rule by one input symbol; with a conflict in the parse table it would not know which rule to use. Transform the grammar (tab Transformations) or try the automatic transformation.'}
+          </p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onAttemptLL1 && (
+              <button type="button" className="btn btn-accent" onClick={onAttemptLL1}>
+                {cz ? 'Zkusit převést na LL(1)' : 'Try to transform to LL(1)'}
+              </button>
+            )}
+            {lrTables && (
+              <button type="button" className="btn btn-secondary" onClick={() => setSubTab('ascent')}>
+                {cz ? 'Rekurzivní vzestup (stačí tabulka LR bez kolizí)' : 'Recursive ascent (a conflict-free LR table is enough)'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!generated || 'error' in generated) {
+    return (
+      <div className="card">
+        <div className="report-box danger">{generated && 'error' in generated ? generated.error : ''}</div>
+      </div>
+    );
+  }
+
+  const { gen, pcodeText } = generated;
+  const text = codeLang === 'pcode' ? pcodeText : gen[codeLang];
+  const fileName = FILE_NAMES[codeLang];
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const verdict = simulation.accepted
     ? (cz
       ? `Slovo přijato v ${simulation.steps.length} krocích. Levý rozklad: ${simulation.leftParse.join(' ')}`
@@ -832,37 +1065,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
         {/* Subtabs selector */}
         {subTabBar}
 
-        {/* Sample Grammars Quick-Selector */}
-        {onLoadGrammar && (
-          <div className="rd-sample-row">
-            <span className="rd-sample-label">
-              <BookOpen size={14} color="var(--color-primary)" />
-              {cz ? 'Ukázkové gramatiky s deklaracemi a rozsahy:' : 'Sample grammars with declarations and scopes:'}
-            </span>
-            <select
-              className="grammar-textarea"
-              style={{ minHeight: 'unset', height: '32px', padding: '4px 10px', fontSize: '12px', width: 'auto', flex: 1, maxWidth: '460px' }}
-              value={currentSample?.id ?? ''}
-              onChange={e => {
-                const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === e.target.value);
-                if (sample) {
-                  onLoadGrammar(sample.grammarText, sample.sampleInput, { en: sample.nameEn, cz: sample.nameCz });
-                  setInputText(sample.namedInput);
-                }
-              }}
-            >
-              <option value="" disabled>{cz ? 'Vyberte ukázkovou gramatiku…' : 'Select a sample grammar…'}</option>
-              {RD_SAMPLE_GRAMMARS.map(s => (
-                <option key={s.id} value={s.id}>
-                  {cz ? s.nameCz : s.nameEn}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {currentSample && (
-          <p className="hint-text" style={{ marginTop: '6px' }}>{cz ? currentSample.descriptionCz : currentSample.descriptionEn}</p>
-        )}
+        {sampleRow}
       </div>
 
       {/* SUBTAB 1: Visual Simulator */}
@@ -1392,175 +1595,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       )}
 
       {/* SUBTAB 3: Rule actions of the symbol table */}
-      {subTab === 'symtab' && (
-        <div className="card">
-          <div className="card-title">
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <BookOpen size={18} color="var(--color-primary)" />
-              {cz ? 'Akce tabulky symbolů u pravidel gramatiky' : 'Symbol table actions of the grammar rules'}
-            </span>
-          </div>
-
-          <p className="hint-text" style={{ marginBottom: '12px' }}>
-            {cz
-              ? 'Procedura pravidla může kromě syntaktické analýzy pracovat s tabulkou symbolů: po přečtení identifikátoru deklarovat jeho jméno (jméno je text ze vstupu, např. x pro terminál id), otevřít rozsah před některým symbolem pravé strany a zavřít ho po jiném. Každý jiný přečtený identifikátor je použití jména: hledá se od nejvnitřnějšího otevřeného rozsahu ven. Akce se rozpoznají podle klíčových slov níže; v tabulce je lze upravit.'
-              : 'Besides parsing, the procedure of a rule can work with the symbol table: declare the name of an identifier after reading it (the name is the text of the input, e.g. x for the terminal id), and open a scope before one symbol of the right-hand side and close it after another. Every other identifier read is a use of a name: it is looked up from the innermost open scope outwards. The actions are detected from the keywords below and can be edited in the table.'}
-          </p>
-
-          {symbolTableHelp}
-
-          <label className="rd-check" style={{ margin: '0 0 12px' }}>
-            <input type="checkbox" checked={stopOnSemanticErrors} onChange={e => setStopOnSemanticErrors(e.target.checked)} />
-            <span>{cz ? 'Nedeklarované jméno a jméno deklarované v jednom rozsahu dvakrát jsou sémantické chyby, které zastaví rekurzivní sestup' : 'An undeclared name and a name declared twice in one scope are semantic errors that stop the recursive descent'}</span>
-          </label>
-
-          {/* Editable Keyword Configuration Box */}
-          <div className="rd-keywords-box">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <SlidersHorizontal size={15} color="var(--color-primary)" />
-                {cz ? 'Klíčová slova pro rozpoznání deklarací a rozsahů' : 'Keywords for detecting declarations and scopes'}
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }}
-                onClick={() => setShowKeywordEditor(s => !s)}
-              >
-                {showKeywordEditor ? (cz ? 'Skrýt' : 'Hide') : (cz ? 'Zobrazit' : 'Show')}
-              </button>
-            </div>
-
-            {showKeywordEditor && (
-              <>
-                <div className="rd-keywords-grid">
-                  {([
-                    ['procKeywords', cz ? 'Procedury a funkce (za slovem následuje jméno a vlastní rozsah)' : 'Procedures and functions (followed by the name; own scope)'],
-                    ['scopeOpeners', cz ? 'Začátek bloku (rozsahem je, jen když jsou v něm deklarace)' : 'Start of a block (a scope only when it contains declarations)'],
-                    ['scopeClosers', cz ? 'Konec bloku' : 'End of a block'],
-                    ['declKeywords', cz ? 'Deklarace (var, const – const a val jsou konstanty)' : 'Declarations (var, const – const and val are constants)'],
-                    ['typeKeywords', cz ? 'Datové typy (int x deklaruje x typu int)' : 'Data types (int x declares x of type int)'],
-                    ['idSymbols', cz ? 'Terminály identifikátorů (jména ze vstupu)' : 'Identifier terminals (names in the input)']
-                  ] as [keyof typeof keywordInputs, string][]).map(([field, label]) => (
-                    <label key={field} className="rd-keyword-field">
-                      <span className="rd-keyword-label">{label}</span>
-                      <input
-                        type="text"
-                        className="rd-keyword-input"
-                        value={keywordInputs[field]}
-                        onChange={e => setKeywordInputs(k => ({ ...k, [field]: e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter') applyKeywordChanges(); }}
-                      />
-                    </label>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                  <button type="button" className="btn btn-primary" onClick={applyKeywordChanges}>
-                    <Sparkles size={13} />
-                    <span>{cz ? 'Rozpoznat akce podle těchto slov' : 'Detect the actions with these words'}</span>
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={resetKeywordsToDefault}>
-                    <RotateCcw size={13} />
-                    <span>{cz ? 'Výchozí klíčová slova' : 'Default keywords'}</span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', margin: '14px 0 8px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 700 }}>
-              {actionMode === 'none'
-                ? (cz ? 'Akce jsou vypnuté (jen syntaktická analýza)' : 'Actions are off (parsing only)')
-                : actionMode === 'custom'
-                  ? (cz ? 'Akce upravené ručně' : 'Actions edited by hand')
-                  : (cz ? 'Rozpoznané akce' : 'Detected actions')}
-            </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                type="button"
-                className={`btn ${actionMode === 'none' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 8px', fontSize: '11px' }}
-                onClick={() => setActionMode('none')}
-              >
-                {cz ? 'Vypnout akce' : 'Switch actions off'}
-              </button>
-              <button
-                type="button"
-                className={`btn ${actionMode === 'auto' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '3px 8px', fontSize: '11px' }}
-                onClick={() => setActionMode('auto')}
-              >
-                <Sparkles size={11} />
-                <span>{cz ? 'Rozpoznat znovu' : 'Detect again'}</span>
-              </button>
-            </div>
-          </div>
-
-          {isPureSyntaxMode && actionMode !== 'none' && (
-            <div className="report-box info" style={{ margin: '8px 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Info size={16} />
-              <span style={{ fontSize: '12px' }}>
-                {cz
-                  ? 'V gramatice nebyly rozpoznány deklarace ani bloky s deklaracemi, simulace je jen syntaktická. Akce lze přidat v tabulce ručně nebo upravit klíčová slova výše.'
-                  : 'No declarations or blocks with declarations were recognised in the grammar, so the simulation is purely syntactic. Add actions in the table by hand or adjust the keywords above.'}
-              </span>
-            </div>
-          )}
-
-          <div className="data-table-container">
-            <table className="data-table rd-actions-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '44px' }}>{cz ? 'Č.' : 'No.'}</th>
-                  <th>{cz ? 'Pravidlo' : 'Rule'}</th>
-                  <th>{cz ? 'Akce' : 'Actions'}</th>
-                  <th>{cz ? 'Co provede' : 'What it does'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {grammar.productions.map(p => {
-                  const acts = ruleActions.filter(a => a.ruleId === p.id && a.actionType !== 'none');
-                  return (
-                    <tr key={p.id}>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{p.id}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>
-                        <span className="sym-nt">{p.lhs}</span> → {p.rhs.map((s, i) => <span key={i} title={`${i + 1}`}>{s} </span>)}{p.rhs.length === 0 && 'ε'}
-                      </td>
-                      <td>
-                        {acts.map((act, k) => renderActionEditor(p, act, k))}
-                        {actionMode !== 'none' && (
-                          <button
-                            type="button"
-                            className="rd-icon-btn rd-add-action"
-                            onClick={() => editActions(list => [...list, newAction(p, p.rhs.length === 0 ? 'custom' : 'addSymbol')])}
-                            title={cz ? 'Přidat akci' : 'Add an action'}
-                          >
-                            <Plus size={12} />
-                            <span>{cz ? 'akce' : 'action'}</span>
-                          </button>
-                        )}
-                      </td>
-                      <td style={{ fontSize: '11.5px' }}>
-                        {acts.length === 0
-                          ? <span className="hint-text">–</span>
-                          : acts.map((act, k) => <div key={k}>{describeAction(act, p)}</div>)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="hint-text" style={{ marginTop: '8px', fontSize: '11.5px' }}>
-            <ArrowRight size={11} />{' '}
-            {cz
-              ? 'Pozice jsou pořadí symbolů pravé strany (1 = první). $type = typové klíčové slovo přečtené naposled, $name = jméno deklarované naposled (název rozsahu procedury). Vlastní kód (JS) se provede při výběru pravidla s objektem ctx (ctx.symTab je tabulka symbolů).'
-              : 'Positions count the symbols of the right-hand side (1 = the first). $type = the type keyword read last, $name = the name declared last (the scope name of a procedure). Own code (JS) runs when the rule is chosen, with the object ctx (ctx.symTab is the symbol table).'}
-          </p>
-        </div>
-      )}
+      {subTab === 'symtab' && symtabSection}
     </div>
   );
 };

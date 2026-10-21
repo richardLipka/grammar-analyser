@@ -10,7 +10,13 @@
  *   of the table-driven parser;
  * - the PL/0 program on the P-code VM prints what the JavaScript prints;
  * - C (gcc) and Python print the same, where the toolchain exists (skipped
- *   otherwise, as in rdLanguages.test.ts).
+ *   otherwise, as in rdLanguages.test.ts);
+ * - the derivation tree after acceptance is the LR parser's tree;
+ * - parity with recursive descent: the RD sample programs read by scanInput,
+ *   the RD symbol-table actions placed in the automaton (on entering a state or
+ *   at the reduction), the same scopes, declarations and lookups, and an
+ *   undeclared name stops at the same symbol;
+ * - Oberon and the P-code are generated; the JavaScript hooks see the right parse.
  */
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'child_process';
@@ -33,6 +39,13 @@ import { LRTable, buildLRTable } from '../core/lr/lrTable';
 import { simulateLRParse } from '../core/lr/lrParser';
 import { GeneratedAscent, canGenerateAscent, generateRecursiveAscent, lineKey } from '../core/codegen/recursiveAscent';
 import { simulateRecursiveAscent } from '../core/codegen/recursiveAscentSimulator';
+import { ascentEvents, placeEvents, isFreePosition } from '../core/codegen/recursiveAscentActions';
+import { simulateRecursiveDescent } from '../core/codegen/rdSimulator';
+import { suggestSymbolActions, DEFAULT_KEYWORD_CONFIG, tokenClasses, RuleActionDefinition, Scope } from '../core/codegen/symbolTable';
+import { scanInput } from '../core/parser/inputTokenizer';
+import { RD_SAMPLE_GRAMMARS } from '../core/presets/rdSampleGrammars';
+import { formatPcode } from '../core/codegen/pl0Compiler';
+import { DerivationNode } from '../core/generator/wordGenerator';
 import { compilePl0 } from '../core/codegen/pl0Compiler';
 import { runPcode } from '../core/codegen/pcodeVm';
 import { exampleWord } from '../core/generator/exampleWord';
@@ -41,6 +54,9 @@ import { randomGrammarText } from './randomGrammar';
 import { accepts, wordsUpTo } from './earley';
 
 const yieldToRunner = () => new Promise(resolve => setTimeout(resolve, 0));
+
+/** A tree without node ids and marks */
+const shape = (n?: DerivationNode): unknown => (n ? { s: n.symbol, c: n.children?.map(shape) } : undefined);
 
 /** The tables of all five variants (with the grammar's precedence, as in the app). */
 function tables(g: Grammar): LRTable[] {
@@ -102,6 +118,7 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
             acceptedWords++;
             expect(res.rightParse, `${label} right parse '${word}'`).toEqual(last.rightParse);
             expect(sim.rightParse, `${label} simulator right parse '${word}'`).toEqual(last.rightParse);
+            expect(shape(sim.finalTree), `${label} tree '${word}'`).toEqual(shape(lr.finalTree));
           } else {
             const errTok = last.remainingInput[0];
             const errChar = errTok === '$' ? '$' : gen.tokens.find(t => t.terminal === errTok)!.char;
@@ -115,7 +132,7 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
         });
         checked++;
       }
-      if (seed % 10 === 0) await yieldToRunner();
+      await yieldToRunner();
     }
     // every variant occurs, and not only rejections are checked
     expect([...variants.keys()].sort()).toEqual(['IELR(1)', 'LALR(1)', 'LR(0)', 'LR(1)', 'SLR(1)']);
@@ -137,9 +154,9 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
     expect(res.output).toBe('6 4 2 6 4 6 3 1 \nOK');
     // every line key of a step exists in every language
     const sim = simulateRecursiveAscent(['a', '+', 'a', '*', 'a'], gen, slr);
-    for (const lang of ['js', 'python', 'c', 'pl0'] as const) {
-      for (const st of sim.steps) for (const key of st.lineKeys) expect(gen.lines[lang].has(key), `${lang} ${key}`).toBe(true);
-      expect(gen.code[lang].split('\n')[gen.lines[lang].get(lineKey.proc(1))! - 1]).toMatch(/E1|mine = 1/);
+    for (const lang of ['js', 'python', 'c', 'oberon', 'pl0'] as const) {
+      for (const st of sim.steps) for (const key of st.lineKeys.filter(k => !k.startsWith('entry:'))) expect(gen.lines[lang].has(key), `${lang} ${key}`).toBe(true);
+      expect(gen.code[lang].split('\n')[gen.lines[lang].get(lineKey.proc(1))! - 1]).toMatch(/E1|E₁|mine = 1/);
     }
     expect(sim.steps.map(s => s.kind)).toEqual([
       'call', 'shift', 'reduce', 'goto', 'reduce', 'goto', 'reduce', 'goto', 'shift', 'shift', 'reduce', 'goto', 'reduce', 'goto',
@@ -151,7 +168,7 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
     const g = parseGrammar('S -> a S b | ε').grammar!;
     const slr = tables(g)[1];
     const gen = generateRecursiveAscent(g, slr);
-    expect(gen.code.js).toMatch(/rightParse\.push\(2\); nt = "S"; count = 0; break; \/\/ reduce 2: S -> eps: goto here/);
+    expect(gen.code.js).toContain('[nt, count] = reduce(2, "S", []); break; // reduce 2: S -> eps: goto here');
     const sim = simulateRecursiveAscent(['a', 'b'], gen, slr);
     expect(sim.steps.map(s => s.kind)).toEqual(['call', 'shift', 'epsilon', 'shift', 'reduce', 'return', 'return', 'goto', 'reduce', 'accept']);
     expect(sim.rightParse).toEqual([2, 1]);
@@ -160,7 +177,7 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
     const lr0 = tables(g0)[0];
     expect(lr0.variant).toBe('LR(0)');
     const gen0 = generateRecursiveAscent(g0, lr0);
-    expect(gen0.code.js).toContain('return ["S", 1]; // reduce 2: S -> b (whatever the input symbol)');
+    expect(gen0.code.js).toContain('return reduce(2, "S", ["b"]); // reduce 2: S -> b (whatever the input symbol)');
     const parse0 = jsParser(gen0.code.js);
     expect(parse0('a a b $').output).toBe('2 1 1 \nOK');
     expect(parse0('a b a $').output).toBe('2 1 \nERR a');
@@ -168,9 +185,10 @@ describe('recursive ascent: generated JavaScript and the step simulator', () => 
     expect(early.steps[early.steps.length - 1].text.en).toContain('accept, but the input has not been read');
   });
 
-  it('presets with a conflict-free table: generated, and the example word is accepted with the table-driven right parse', () => {
+  it('presets with a conflict-free table: generated, and the example word is accepted with the table-driven right parse', async () => {
     let n = 0;
     for (const p of PRESET_GRAMMARS) {
+      await yieldToRunner();
       const g = parseGrammar(p.grammarText).grammar!;
       const word = exampleWord(g);
       if (!word || g.terminals.size > 60) continue;
@@ -219,7 +237,7 @@ describe('recursive ascent in PL/0 on the P-code VM', () => {
         expect(normalize(vm.output), `${label} '${input}'`).toBe(normalize(parse(input).output));
         runs++;
       }
-      if (i % 20 === 0) await yieldToRunner();
+      await yieldToRunner();
     }
     expect(runs).toBeGreaterThan(10000);
   }, 300000);
@@ -283,4 +301,149 @@ describe.skipIf(!gcc || !python)('recursive ascent in C and Python: compiled and
       }
     }, 120000);
   }
+});
+
+/** The scopes of a symbol table as text: name[symbol kind type, …] */
+const scopesText = (scopes: Scope[]) => scopes.map(sc => `${sc.name}[${sc.symbols.map(x => `${x.name} ${x.kind}${x.type ? ` ${x.type}` : ''}`).join(', ')}]`).join(' ');
+
+describe('recursive ascent and recursive descent: the same input, the same symbol table', () => {
+  for (const sample of RD_SAMPLE_GRAMMARS) {
+    it(sample.id, () => {
+      const g = parseGrammar(sample.grammarText).grammar!;
+      const analysis = analyzeGrammar(g);
+      const actions = suggestSymbolActions(g, DEFAULT_KEYWORD_CONFIG);
+      const scanned = scanInput(sample.namedInput, g.terminals, tokenClasses(g.terminals));
+      expect(scanned.unknown).toEqual([]);
+      const rd = simulateRecursiveDescent(scanned.tokens, g, analysis, { ruleActions: actions, lexemes: scanned.lexemes });
+      const rdLast = rd.steps[rd.steps.length - 1];
+      let checked = 0;
+      for (const table of tables(g)) {
+        if (!canGenerateAscent(table)) continue;
+        const placements = placeEvents(g, table, ascentEvents(g, actions));
+        // every detected action of the samples is known at a transition: nothing is late
+        expect(placements.filter(p => p.late), `${sample.id} ${table.variant}`).toEqual([]);
+        const gen = generateRecursiveAscent(g, table, { placements });
+        const sim = simulateRecursiveAscent(scanned.tokens, gen, table, { lexemes: scanned.lexemes, placements });
+        const lr = simulateLRParse(scanned.tokens, g, table, 'dragon');
+        expect(sim.accepted, `${sample.id} ${table.variant}`).toBe(true);
+        expect(rd.accepted).toBe(true);
+        expect(sim.rightParse).toEqual(lr.steps[lr.steps.length - 1].rightParse);
+        expect(shape(sim.finalTree)).toEqual(shape(lr.finalTree));
+        // the derivation tree is the one of recursive descent (an LL(1) grammar has one tree per word)
+        expect(shape(sim.finalTree)).toEqual(shape(rd.finalTree));
+        const last = sim.steps[sim.steps.length - 1];
+        // without actions there is no symbol table (recursive descent keeps an empty global scope)
+        if (placements.length > 0) expect(scopesText(last.symbolTable?.allScopes ?? []), `${sample.id} ${table.variant} scopes`).toBe(scopesText(rdLast.symbolTableSnapshot.allScopes));
+        else expect(last.symbolTable).toBeUndefined();
+        const lookups = (xs: { lookup?: { name: string; scopeName?: string } }[]) => xs.filter(x => x.lookup).map(x => `${x.lookup!.name} -> ${x.lookup!.scopeName ?? '-'}`);
+        expect(lookups(sim.steps.filter(x => x.kind !== 'error')), `${sample.id} ${table.variant} lookups`).toEqual(lookups(rd.steps));
+        // the comments of the program say which actions run on entering which state
+        if (placements.length > 0) expect(gen.code.js).toContain('//   on entry: rule ');
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(0);
+    });
+  }
+
+  it('PL/0: an undeclared name stops recursive ascent at the same symbol as recursive descent', () => {
+    const sample = RD_SAMPLE_GRAMMARS.find(s => s.id === 'rd_sample_pl0')!;
+    const g = parseGrammar(sample.grammarText).grammar!;
+    const analysis = analyzeGrammar(g);
+    const actions = suggestSymbolActions(g, DEFAULT_KEYWORD_CONFIG);
+    // z is not declared anywhere; x of p is not visible in the main program
+    for (const program of [sample.namedInput.replace('! x end', '! z end'), 'var y ; procedure p ; var x ; x := 1 ; begin x := 2 end .']) {
+      const scanned = scanInput(program, g.terminals, tokenClasses(g.terminals));
+      expect(scanned.unknown).toEqual([]);
+      const rd = simulateRecursiveDescent(scanned.tokens, g, analysis, { ruleActions: actions, lexemes: scanned.lexemes });
+      expect(rd.semanticError, program).toBe(true);
+      const table = tables(g)[1];
+      expect(canGenerateAscent(table)).toBe(true);
+      const placements = placeEvents(g, table, ascentEvents(g, actions));
+      const gen = generateRecursiveAscent(g, table, { placements });
+      const sim = simulateRecursiveAscent(scanned.tokens, gen, table, { lexemes: scanned.lexemes, placements });
+      expect(sim.accepted).toBe(false);
+      expect(sim.semanticError).toBe(true);
+      const last = sim.steps[sim.steps.length - 1];
+      expect(last.kind).toBe('error');
+      expect(last.text.en).toMatch(/^Semantic error: the name '(z|x)' is not declared/);
+      // RD stops right after matching the name; RA right after shifting it
+      expect(last.position).toBe(rd.steps[rd.steps.length - 1].lookaheadIndex);
+      // switched off, the word is accepted and the name reported
+      const lenient = simulateRecursiveAscent(scanned.tokens, gen, table, { lexemes: scanned.lexemes, placements, stopOnSemanticErrors: false });
+      expect(lenient.accepted).toBe(true);
+      expect(lenient.undeclared.map(u => u.name)).toEqual(rd.undeclared.length ? [...new Set(simulateRecursiveDescent(scanned.tokens, g, analysis, { ruleActions: actions, lexemes: scanned.lexemes, stopOnSemanticErrors: false }).undeclared.map(u => u.name))] : []);
+    }
+  });
+
+  it('places actions on entering a state when the kernel fixes the rule, otherwise at the reduction (late, free position)', () => {
+    const g = parseGrammar('P -> begin L end\nL -> S L | ε\nS -> id ";" | id "=" id ";"').grammar!;
+    const [p1, , , s1, s2] = g.productions;
+    const actions: RuleActionDefinition[] = [
+      { ruleId: p1.id, actionType: 'enterScope', position: 1, closeAfter: 1, scopeName: 'block' },
+      { ruleId: s1.id, actionType: 'addSymbol', position: 0, symbolKind: 'var' },
+      { ruleId: p1.id, actionType: 'custom', jsCode: 'ctx.symTab.addSymbol("seen")' }
+    ];
+    const table = tables(g)[1];
+    expect(table.variant).toBe('SLR(1)');
+    expect(canGenerateAscent(table)).toBe(true);
+    const placements = placeEvents(g, table, ascentEvents(g, actions));
+    const where = placements.map(p => `${p.rule.id}:${p.op}@${p.dot}:${p.where}${p.late ? ':late' : ''}${p.freePosition !== undefined ? `:free=${p.freePosition}` : ''}`);
+    expect(where).toEqual([
+      `${p1.id}:open@1:transition`,
+      `${p1.id}:close@2:transition`,
+      // after id the kernel holds S -> id • ; and S -> id • = id ; – the rule is known only at the reduction
+      `${s1.id}:declare@1:reduction:late:free=true`,
+      // the start of a rule is never known
+      `${p1.id}:custom@0:reduction:late:free=true`
+    ]);
+    const scanned = scanInput('begin x ; x = x ; end', g.terminals, tokenClasses(g.terminals));
+    const gen = generateRecursiveAscent(g, table, { placements });
+    const sim = simulateRecursiveAscent(scanned.tokens, gen, table, { lexemes: scanned.lexemes, placements });
+    expect(sim.accepted).toBe(true);
+    const last = sim.steps[sim.steps.length - 1];
+    expect(scopesText(last.symbolTable!.allScopes)).toBe('global[seen var unknown] block[x var]');
+    // the uses of x in x = x: the first is undecided at its shift (decided at the reduction), the second is known at once
+    const uses = sim.steps.flatMap(st => st.actions.filter(a => !a.placement).map(a => a.text.en));
+    expect(uses.filter(t => t.includes('is a declaration in some items')).length).toBe(2);
+    expect(uses.filter(t => t.startsWith("the name 'x' is found")).map(t => t.endsWith('(decided at the reduction)'))).toEqual([false, true]);
+    // the declaration is late and says so
+    const decl = sim.steps.flatMap(st => st.actions).find(a => a.placement?.op === 'declare')!;
+    expect(decl.late).toBe(true);
+    expect(decl.text.en).toContain('later than in recursive descent');
+    expect(gen.code.js).toContain('actions here: rule');
+    // a marker where it would cause a conflict: S -> M a b | a c
+    const h = parseGrammar('S -> a b | a c').grammar!;
+    expect(isFreePosition(h, 'SLR(1)', h.productions[0], 0)).toBe(false);
+    expect(isFreePosition(h, 'SLR(1)', h.productions[0], 1)).toBe(true);
+  });
+
+  it('Oberon and the P-code are generated for the presets; the JavaScript hooks see every reduction', async () => {
+    let n = 0;
+    for (const p of PRESET_GRAMMARS) {
+      await yieldToRunner();
+      const g = parseGrammar(p.grammarText).grammar!;
+      const table = tables(g).find(canGenerateAscent);
+      if (!table) continue;
+      const gen = generateRecursiveAscent(g, table);
+      expect(gen.code.oberon.startsWith('MODULE Parser;'), p.id).toBe(true);
+      expect(gen.code.oberon.trimEnd().endsWith('END Parser.')).toBe(true);
+      expect(gen.code.oberon.match(/^ {6}\| \d+: \(\* state /gm)?.length ?? 0).toBe(gen.states.length - 1);
+      for (const st of gen.states) expect(gen.code.oberon).toContain(`${st.id}: (* state ${st.name.replace(/\*\)/g, '* )')} (${st.id}) *)`);
+      // every IF, WHILE, CASE, PROCEDURE and the MODULE has its END (comments and strings left out)
+      const code = gen.code.oberon.replace(/\(\*.*?\*\)/g, '').replace(/"[^"]*"/g, '');
+      const words = (w: string) => (code.match(new RegExp(`\\b${w}\\b`, 'g')) || []).length;
+      expect(words('END'), p.id).toBe(words('IF') + words('WHILE') + words('CASE') + words('PROCEDURE') + words('MODULE'));
+      expect(gen.code.pcode).toBe(formatPcode(compilePl0(gen.code.pl0)));
+      const word = exampleWord(g);
+      if (word) {
+        const rules: number[] = [];
+        const parse = new Function(gen.code.js.replace('export function parse', 'function parse') + '\nreturn parse;')();
+        const res = parse(inputOf(gen, word), { onRule: (r: number) => rules.push(r) });
+        expect(res.ok, p.id).toBe(true);
+        expect(rules).toEqual(res.rightParse);
+      }
+      n++;
+    }
+    expect(n).toBeGreaterThan(20);
+  });
 });
