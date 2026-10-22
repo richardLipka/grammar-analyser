@@ -1499,7 +1499,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           {/* BOTTOM CONTROLS: VCR Simulator Controls below the main workspace */}
           {simulation.steps.length > 0 && (
             <div className="rd-controls-footer">
-              <SimulatorControls
+              <SimulatorControls label={lang === 'cz' ? 'Rekurzivní sestup' : 'Recursive descent'}
                 stepIdx={currentStepIdx}
                 total={simulation.steps.length}
                 isPlaying={isPlaying}

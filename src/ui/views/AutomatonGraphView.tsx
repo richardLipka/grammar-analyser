@@ -356,7 +356,7 @@ export const AutomatonGraphView: React.FC<AutomatonGraphViewProps> = ({
                   : 'IELR(1) has the states of LALR(1), except that cores where merging the LR(1) states would change an action after conflict resolution are split into several states; the construction shows how they arise, the lookaheads are already the final ones (see IELR(1) Core Splitting).'}
               </p>
             )}
-            <SimulatorControls
+            <SimulatorControls label={lang === 'cz' ? 'Konstrukce automatu' : 'Automaton construction'}
               stepIdx={stepIdx}
               total={steps.length}
               isPlaying={playing}

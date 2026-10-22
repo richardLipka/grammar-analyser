@@ -190,7 +190,7 @@ export const GLLView: React.FC<GLLViewProps> = ({ grammar, defaultInput = '', la
       </div>
 
       <div className="sim-sticky">
-        <SimulatorControls stepIdx={stepIdx} total={total} isPlaying={isPlaying} speed={speed} lang={lang} onStep={setStepIdx} onTogglePlay={() => setIsPlaying(p => !p)} onSpeed={setSpeed} />
+        <SimulatorControls label={'GLL'} stepIdx={stepIdx} total={total} isPlaying={isPlaying} speed={speed} lang={lang} onStep={setStepIdx} onTogglePlay={() => setIsPlaying(p => !p)} onSpeed={setSpeed} />
         <div className="card" style={{ padding: '10px 14px', borderLeft: '4px solid var(--color-primary)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <div style={{ fontSize: '12.5px' }}>

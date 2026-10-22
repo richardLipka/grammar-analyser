@@ -75,6 +75,11 @@ export interface GLRSimulationResult {
   gssFinal: GSSSnapshot;
   conflictsEncountered: number;
   maxSimultaneousHeads: number;
+  /**
+   * The step limit stopped the run before the input was read and every reduction done:
+   * membership is undecided (not accepted does not mean rejected), the trees may be incomplete.
+   */
+  truncated?: boolean;
   errorMessage?: string;
   errorMessageCz?: string;
 }
@@ -311,7 +316,12 @@ export function simulateGLRParse(
     }
   }
 
-  while (inputPtr < input.length && stepCounter < maxSteps) {
+  let truncated = false;
+  while (inputPtr < input.length) {
+    if (stepCounter >= maxSteps) {
+      truncated = true;
+      break;
+    }
     const lookahead = input[inputPtr];
     const column = lecture && table.variant === 'LR(0)' ? LR0_ACTION_COLUMN : lookahead;
 
@@ -445,6 +455,12 @@ export function simulateGLRParse(
       }
     }
 
+    // The step limit ended the reductions before their fixpoint: shifting now would lose derivations
+    if (reductionOccurred) {
+      truncated = true;
+      break;
+    }
+
     // -------------------------------------------------------------
     // PHASE 2: SHIFTS (advance to inputPtr + 1)
     // -------------------------------------------------------------
@@ -541,8 +557,8 @@ export function simulateGLRParse(
     inputPtr++;
   }
 
-  // Final sweep for any uncollected accepted trees at root
-  for (const head of activeHeads) {
+  // Final sweep for any uncollected accepted trees at root (only heads after the whole input span the word)
+  for (const head of input[inputPtr] === END_MARKER ? activeHeads : []) {
     for (const edge of head.predecessors) {
       if (edge.symbol === g.startSymbol && edge.parent.id === rootNode.id) {
         for (const tree of edge.trees) {
@@ -564,7 +580,12 @@ export function simulateGLRParse(
     gssFinal: makeSnapshot(activeHeads),
     conflictsEncountered,
     maxSimultaneousHeads,
-    errorMessage: isAccepted ? undefined : 'Sentence rejected: no valid parse tree found.',
-    errorMessageCz: isAccepted ? undefined : 'Věta zamítnuta: nebyl nalezen žádný platný derivační strom.'
+    truncated,
+    errorMessage: truncated
+      ? `Parsing stopped after reaching the limit of ${maxSteps} steps: ${isAccepted ? 'more derivation trees may exist' : 'membership is undecided (the word is not rejected)'}.`
+      : isAccepted ? undefined : 'Sentence rejected: no valid parse tree found.',
+    errorMessageCz: truncated
+      ? `Analýza byla zastavena po dosažení limitu ${maxSteps} kroků: ${isAccepted ? 'může existovat více stromů' : 'o příslušnosti slova nerozhodnuto (slovo není zamítnuto)'}.`
+      : isAccepted ? undefined : 'Věta zamítnuta: nebyl nalezen žádný platný derivační strom.'
   };
 }

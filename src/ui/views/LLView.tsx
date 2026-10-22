@@ -437,7 +437,7 @@ export const LLView: React.FC<LLViewProps> = ({
           <div className="conflict-pick-note" style={{ marginBottom: '10px' }}>{t.simulatorConflictWarning}</div>
         )}
 
-        <SimulatorControls
+        <SimulatorControls label={`LL(${k})`}
           stepIdx={currentStepIdx}
           total={simulation.steps.length}
           isPlaying={isPlaying}

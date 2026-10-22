@@ -261,7 +261,7 @@ export const LRView: React.FC<LRViewProps> = ({
   );
 
   const glrSimulation: GLRSimulationResult = useMemo(
-    () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout, 300, 25, activeAutomaton),
+    () => simulateGLRParse(tokenized.tokens, grammar, activeTable, layout, 1200, 25, activeAutomaton),
     [tokenized, grammar, activeTable, layout, activeAutomaton]
   );
 
@@ -721,7 +721,7 @@ export const LRView: React.FC<LRViewProps> = ({
               </div>
             )}
 
-            <SimulatorControls
+            <SimulatorControls label={selectedVariant}
               stepIdx={currentStepIdx}
               total={simulation.steps.length}
               isPlaying={isPlaying}
@@ -932,7 +932,7 @@ export const LRView: React.FC<LRViewProps> = ({
               );
             })()}
 
-            <SimulatorControls
+            <SimulatorControls label={'GLR'}
               stepIdx={currentGLRStepIdx}
               total={glrSimulation.steps.length}
               isPlaying={isGLRPlaying}

@@ -1,410 +1,365 @@
-# Primary Literature & Academic References Directory
+# Literature
 
-> **Maintenance Policy:** This document serves as the single source of truth for all academic publications, primary papers, monographs, and research reports cited across the `GrammarAnalyser` application. Whenever a new parsing algorithm, automaton variant, grammar transformation, or theoretical technique is added to the codebase, its verified citation and persistent URL (DOI, DBLP, or Open Access digital repository) must be recorded here and linked in the corresponding UI view and core engine.
+This is the one list of the publications that the analyser cites: in the reference bars of the tabs, the ⓘ texts of the transformations, the transformation guide, the theory sections, and the comments of the core modules. The list is grouped by topic. The last section lists further reading that the application does not cite.
 
-All URLs listed below have been verified for accessibility, persistent resolution, and correct bibliographic attribution. Where publications reside behind publisher paywalls (ACM Digital Library, ScienceDirect/Elsevier, SpringerLink, IEEE Xplore, Oxford Academic), the links lead to the public landing page with abstract and complete metadata.
+**Entries.** Each entry gives the authors, title, venue and year, the link, and the files that cite the work (*Used in*, paths under `src/`, found with grep for the DOI, URL or author name). *Note* says what the application takes from the work and anything that could not be checked.
 
----
+**How the links were checked (2026-10-22).**
+- Every DOI was looked up in the Crossref metadata, or in DataCite for LIPIcs, and the title, authors, venue, volume, pages and year were compared with the citation. Every DOI was also resolved at doi.org, and all of them redirect to the publisher's page of that work.
+- Every other link was fetched, and the page title or the first page of the PDF was compared with the citation.
+- Some pages could not be fetched on that day. The Royal Holloway repository and the ACM Digital Library answer automated requests with 403 (bot check), the DTIC page was down for maintenance, and the server of the Silesian University refused the connection. These links are kept from the audit in `docs/REVIEW.md` §32, which checked them by hand or through the sites' APIs, and each entry says that it was not reachable this time.
+- `docs/REVIEW.md` §32 found eleven links that led to the wrong work. All of its corrections are kept here.
 
-## 1. Top-Down Parsing: LL(1), LL(k) & Lookahead Computation
-
-### Lewis & Stearns (1968)
-- **Authors:** Philip M. Lewis II, Richard E. Stearns
-- **Title:** *Syntax-Directed Transduction*
-- **Venue:** Journal of the ACM (JACM), Vol. 15, No. 3, pp. 465–488, July 1968.
-- **Identifier / Link:** [https://doi.org/10.1145/321466.321477](https://doi.org/10.1145/321466.321477)
-- **App Usage:** Foundation for deterministic LL(k) grammars and definitions of FIRST and FOLLOW lookahead sets.
-- **Referenced In:** `LLView.tsx`, `FirstFollowView.tsx`, `transformationInfo.ts`.
-
-### Knuth (1971)
-- **Author:** Donald E. Knuth
-- **Title:** *Top-Down Syntax Analysis*
-- **Venue:** Acta Informatica, Vol. 1, No. 2, pp. 79–110, 1971.
-- **Identifier / Link:** [https://doi.org/10.1007/BF00289517](https://doi.org/10.1007/BF00289517)
-- **App Usage:** Fixed-point computation of FIRST and FOLLOW lookahead sets, predictive top-down parsing tables, and LL(1) deterministic condition proofs.
-- **Referenced In:** `LLView.tsx`, `FirstFollowView.tsx`, `transformationInfo.ts`.
-
-### Rosenkrantz & Stearns (1970)
-- **Authors:** Daniel J. Rosenkrantz, Richard E. Stearns
-- **Title:** *Properties of Deterministic Top-Down Grammars*
-- **Venue:** Information and Control, Vol. 17, No. 3, pp. 226–256, October 1970.
-- **Identifier / Link:** [https://doi.org/10.1016/S0019-9958(70)90446-8](https://doi.org/10.1016/S0019-9958(70)90446-8)
-- **App Usage:** Structural properties of LL(k) languages, lookahead equivalence, and decision set disjointness tests.
-- **Referenced In:** `LLView.tsx`, `teachingGuideData.ts`, `transformationInfo.ts`.
+Section numbers are given only where they were checked against the work or are cited from the code as the authors' own. No page or section was added from memory.
 
 ---
 
-## 2. Adaptive Top-Down Parsing: ALL(*) & ANTLR
+## 1. Textbooks
 
-### Parr & Fisher (2011)
-- **Authors:** Terence Parr, Kathleen Fisher
-- **Title:** *LL(*): The Foundation of the ANTLR Parser Generator*
-- **Venue:** Proceedings of the 32nd ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '11), pp. 425–436, June 2011 (also ACM SIGPLAN Notices 46(6)).
-- **Identifier / Link:** [https://doi.org/10.1145/1993498.1993548](https://doi.org/10.1145/1993498.1993548)
-- **App Usage:** Regular lookahead DFA construction, cyclic lookahead prediction, and semantic predicates.
-- **Referenced In:** `ALLView.tsx`.
-
-### Parr, Harwell & Fisher (2014)
-- **Authors:** Terence Parr, Sam Harwell, Kathleen Fisher
-- **Title:** *Adaptive LL(*) Parsing: The Power of Dynamic Analysis*
-- **Venue:** Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA '14), pp. 579–598, October 2014 (also ACM SIGPLAN Notices 49(10)).
-- **Identifier / Link:** [https://doi.org/10.1145/2660193.2660202](https://doi.org/10.1145/2660193.2660202)
-- **App Usage:** Augmented Transition Network (ATN) simulation, dynamic Lookahead DFA materialization on demand, and top-down grammar requirements (identifying that left recursion must be eliminated prior to top-down closure analysis, §3).
-- **Referenced In:** `ALLView.tsx`, `allAtn.ts`, `allPredictor.ts`, `allParser.ts`.
-
----
-
-## 3. Bottom-Up Parsing: LR Automata, LALR, IELR & Ambiguity Resolution
-
-### Knuth (1965)
-- **Author:** Donald E. Knuth
-- **Title:** *On the Translation of Languages from Left to Right*
-- **Venue:** Information and Control, Vol. 8, No. 6, pp. 607–639, December 1965.
-- **Identifier / Link:** [https://doi.org/10.1016/S0019-9958(65)90426-2](https://doi.org/10.1016/S0019-9958(65)90426-2)
-- **App Usage:** Foundational paper defining LR(0) and canonical LR(1) automata, item sets, closure, and deterministic bottom-up syntax analysis.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### DeRemer (1969)
-- **Author:** Frank L. DeRemer
-- **Title:** *Practical Translators for LR(k) Languages*
-- **Venue:** Ph.D. Dissertation, Department of Electrical Engineering, Massachusetts Institute of Technology (MIT), Cambridge, MA, September 1969.
-- **Identifier / Link:** [https://hdl.handle.net/1721.1/13628](https://hdl.handle.net/1721.1/13628) (MIT DSpace)
-- **App Usage:** Invention of SLR(1) and LALR(1) parsers, compressing canonical LR(1) states by merging LR(0) cores.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `transformationInfo.ts`.
-
-### DeRemer (1971)
-- **Author:** Frank L. DeRemer
-- **Title:** *Simple LR(k) Grammars*
-- **Venue:** Communications of the ACM (CACM), Vol. 14, No. 7, pp. 453–460, July 1971.
-- **Identifier / Link:** [https://doi.org/10.1145/362619.362625](https://doi.org/10.1145/362619.362625)
-- **App Usage:** SLR(1) parsing table construction using $FOLLOW_1$ sets to restrict reductions.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `transformationInfo.ts`.
-
-### DeRemer & Pennello (1982)
-- **Authors:** Frank L. DeRemer, Thomas J. Pennello
-- **Title:** *Efficient Computation of LALR(1) Look-Ahead Sets*
-- **Venue:** ACM Transactions on Programming Languages and Systems (TOPLAS), Vol. 4, No. 4, pp. 615–649, October 1982.
-- **Identifier / Link:** [https://doi.org/10.1145/69622.357187](https://doi.org/10.1145/69622.357187)
-- **App Usage:** Spontaneous and propagated lookahead computation on the LR(0) state machine without building full LR(1) tables.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`.
-
-### Pager (1977)
-- **Author:** David Pager
-- **Title:** *A Practical General Method for Constructing LR(k) Parsers*
-- **Venue:** Acta Informatica, Vol. 7, No. 3, pp. 249–268, September 1977.
-- **Identifier / Link:** [https://doi.org/10.1007/BF00290336](https://doi.org/10.1007/BF00290336)
-- **App Usage:** Weak compatibility condition allowing minimal LR(1) state merging without introducing shift/reduce or reduce/reduce conflicts.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `transformationInfo.ts`.
-
-### Denny & Malloy (2008)
-- **Authors:** Joel E. Denny, Brian A. Malloy
-- **Title:** *IELR(1): Practical LR(1) Parser Tables for Non-LR(1) Grammars with Conflict Resolution*
-- **Venue:** Proceedings of the 2008 ACM Symposium on Applied Computing (SAC '08), Fortaleza, Brazil, pp. 240–245, March 2008.
-- **Identifier / Link:** [https://doi.org/10.1145/1363686.1363747](https://doi.org/10.1145/1363686.1363747)
-- **App Usage:** Original conference introduction of the Inadequacy Elimination LR(1) algorithm, state splitting to remove mysterious LALR(1) conflicts.
-- **Referenced In:** `transformationInfo.ts`.
-
-### Denny & Malloy (2010)
-- **Authors:** Joel E. Denny, Brian A. Malloy
-- **Title:** *The IELR(1) Algorithm for Generating Minimal LR(1) Parser Tables for Non-LR(1) Grammars with Conflict Resolution*
-- **Venue:** Science of Computer Programming, Vol. 75, No. 11, pp. 943–979, November 2010.
-- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2009.08.001](https://doi.org/10.1016/j.scico.2009.08.001)
-- **App Usage:** Journal specification of IELR(1), the algorithm GNU Bison has used since 2.5 (`%define lr.type ielr`). It starts from LALR(1), computes the inadequacies (conflicts) and the lookahead contributions that cause them, splits the states whose merge would change the parser's actions after conflict resolution, and recomputes the lookaheads, all without building canonical LR(1). Its parser behaves like canonical LR(1) after conflict resolution (precedence/associativity, otherwise shift before reduce and the earlier rule). The app gives the same kind of result by merging canonical LR(1) states with equal cores wherever no resolved action changes (see `buildIELR1Automaton`); it does not implement the annotation phases.
-- **Referenced In:** `LRView.tsx`, `AutomatonGraphView.tsx`, `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Aho, Johnson & Ullman (1975)
-- **Authors:** Alfred V. Aho, Stephen C. Johnson, Jeffrey D. Ullman
-- **Title:** *Deterministic Parsing of Ambiguous Grammars*
-- **Venue:** Communications of the ACM (CACM), Vol. 18, No. 8, pp. 441–452, August 1975.
-- **Identifier / Link:** [https://doi.org/10.1145/360933.360969](https://doi.org/10.1145/360933.360969)
-- **App Usage:** Conflict resolution in LR tables via operator precedence and left/right/nonassoc associativity declarations (as in Yacc/Bison).
-- **Referenced In:** `LRView.tsx`.
-
-### Aho & Johnson (1974)
-- **Authors:** Alfred V. Aho, Stephen C. Johnson
-- **Title:** *LR Parsing*
-- **Venue:** ACM Computing Surveys (CSUR), Vol. 6, No. 2, pp. 99–124, June 1974.
-- **Identifier / Link:** [https://doi.org/10.1145/356628.356629](https://doi.org/10.1145/356628.356629)
-- **App Usage:** Comprehensive tutorial and reference on table-driven shift-reduce LR parsing algorithms, dual state/symbol stacks, and error recovery.
-- **Referenced In:** `LRView.tsx`.
-
-### Tomita (1986)
-- **Author:** Masaru Tomita
-- **Title:** *Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems*
-- **Venue:** The Kluwer International Series in Engineering and Computer Science, Vol. 8, Kluwer Academic Publishers, Boston, 1986.
-- **Identifier / Link:** [https://doi.org/10.1007/978-1-4757-1885-0](https://doi.org/10.1007/978-1-4757-1885-0)
-- **App Usage:** Foundational algorithm for Generalized LR (GLR) parsing using the Graph-Structured Stack (GSS) to explore non-deterministic and ambiguous LR paths in parallel.
-- **Referenced In:** `glrParser.ts`, `GSSGraphVisualizer.tsx`, `LRView.tsx`.
-
-### Rekers (1992)
-- **Author:** Jan Rekers
-- **Title:** *Parser Generation for Interactive Environments*
-- **Venue:** Ph.D. thesis, University of Amsterdam, 1992.
-- **Identifier / Link:** [https://ir.cwi.nl/pub/29930](https://ir.cwi.nl/pub/29930)
-- **App Usage:** Subtree sharing and packing algorithms for GLR Shared Packed Parse Forests (SPPF) and interactive GSS manipulation.
-- **Referenced In:** `glrParser.ts`.
-
-### Scott & Johnstone (2006)
-- **Authors:** Elizabeth Scott, Adrian Johnstone
-- **Title:** *Right Nulled Generalized LR Parsers*
-- **Venue:** ACM Transactions on Programming Languages and Systems (TOPLAS), Vol. 28, No. 4, pp. 577–618, July 2006.
-- **Identifier / Link:** [https://doi.org/10.1145/1146809.1146810](https://doi.org/10.1145/1146809.1146810)
-- **App Usage:** General context-free parsing with RNGLR, guaranteeing polynomial-time parsing and correct GSS termination over arbitrary CFGs including cyclic and nullable rules.
-- **Referenced In:** `glrParser.ts`, `LRView.tsx`.
-
-### Isradisaikul & Myers (2015)
-- **Authors:** Chinawat Isradisaikul, Andrew C. Myers
-- **Title:** *Finding Counterexamples from Parsing Conflicts*
-- **Venue:** Proceedings of the 36th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '15), pp. 555–564, 2015.
-- **Identifier / Link:** [https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf](https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf)
-- **App Usage:** Unifying counterexamples (a string with two derivations) and non-unifying ones (two derivations sharing the prefix up to the conflict) from shortest lookahead-sensitive paths; the same feature in GNU Bison 3.7 (`-Wcounterexamples`, manual section "Generation of Counterexamples", https://www.gnu.org/software/bison/manual/html_node/Counterexamples.html).
-- **Referenced In:** `lrCounterexample.ts`, `ConflictCounterexample.tsx`.
-
----
-
-## 4. Recursive Descent Parsing & Architecture
-
-### Lucas (1961)
-- **Author:** Peter Lucas
-- **Title:** *Die Strukturanalyse von Formelübersetzern*
-- **Venue:** Elektronische Rechenanlagen, Vol. 3, No. 4, pp. 159–167, 1961.
-- **Identifier / Link:** [https://doi.org/10.1524/itit.1961.3.16.159](https://doi.org/10.1524/itit.1961.3.16.159) (De Gruyter; the journal is now *it – Information Technology*)
-- **App Usage:** Earliest formal description of recursive descent syntax analysis, mapping grammar non-terminals to mutually recursive procedures.
-- **Referenced In:** `RecursiveDescentView.tsx`, `transformationInfo.ts`.
-
-### Conway (1963)
-- **Author:** Melvin E. Conway
-- **Title:** *Design of a Separable Transition-Diagram Compiler*
-- **Venue:** Communications of the ACM (CACM), Vol. 6, No. 7, pp. 396–408, July 1963.
-- **Identifier / Link:** [https://doi.org/10.1145/366663.366704](https://doi.org/10.1145/366663.366704)
-- **App Usage:** Formulation of syntax diagrams and recursive procedure invocation across coroutine-style stages.
-- **Referenced In:** `RecursiveDescentView.tsx`.
-
-### Wirth (1976)
-- **Author:** Niklaus Wirth
-- **Title:** *Algorithms + Data Structures = Programs*
-- **Venue:** Prentice-Hall Series in Automatic Computation, Englewood Cliffs, NJ, 1976.
-- **Identifier / Link:** [https://en.wikipedia.org/wiki/Algorithms_%2B_Data_Structures_%3D_Programs](https://en.wikipedia.org/wiki/Algorithms_%2B_Data_Structures_%3D_Programs)
-- **App Usage:** Specification of the PL/0 educational language, recursive descent compiler architecture, P-code abstract stack machine, and interpreter.
-- **Referenced In:** `RecursiveDescentView.tsx`, `transformationInfo.ts`.
-
-### Recursive ascent (sub-tab of *Rekurzivní sestup*)
-All entries checked against Crossref (title, authors, venue, volume, pages, year). Only Horspool's report was read in full; what the app says about the other works follows its §5.2–5.3 (REVIEW.md §33).
-
-- **Horspool (1993):** R. Nigel Horspool, *Recursive ascent-descent parsing*, Computer Languages 18(1), 1–15, 1993, [https://doi.org/10.1016/0096-0551(93)90027-X](https://doi.org/10.1016/0096-0551(93)90027-X). Read as the report of 11 June 1991 on the author's page, [webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf](https://webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf). §5.2: one procedure per LR state, terminal actions then a `while (TRUE)` loop over the gotos, a reduction sets the global `lhs` and does a multi-level `return* |α|`; §5.3: the left-corner parser as a control component (table-driven or recursive ascent) plus one procedure per rule (recursive descent) — *recursive ascent-descent*. Related: Horspool, *Recursive ascent-descent parsers*, Compiler Compilers (CC '90), LNCS 477, 1–10, 1991, [https://doi.org/10.1007/3-540-53669-8_70](https://doi.org/10.1007/3-540-53669-8_70).
-- **Roberts (1988):** G. H. Roberts, *Recursive ascent: an LR analog to recursive descent*, ACM SIGPLAN Notices 23(8), 23–29, 1988, [https://doi.org/10.1145/47907.47909](https://doi.org/10.1145/47907.47909).
-- **Roberts (1989):** G. H. Roberts, *Another note on recursive ascent*, Information Processing Letters 32(5), 263–266, 1989 (Horspool's list gives 1990), [https://doi.org/10.1016/0020-0190(89)90054-9](https://doi.org/10.1016/0020-0190(89)90054-9).
-- **Kruseman Aretz (1988):** F. E. J. Kruseman Aretz, *On a recursive ascent parser*, Information Processing Letters 29(4), 201–206, 1988, [https://doi.org/10.1016/0020-0190(88)90061-0](https://doi.org/10.1016/0020-0190(88)90061-0).
-- **Barnard & Cordy (1988):** D. T. Barnard, J. R. Cordy, *SL parses the LR languages*, Computer Languages 13(2), 65–74, 1988, [https://doi.org/10.1016/0096-0551(88)90010-0](https://doi.org/10.1016/0096-0551(88)90010-0) — cited by Horspool among the sources of recursive ascent.
-- **Leermakers, Augusteijn & Kruseman Aretz (1992):** *A functional LR parser*, Theoretical Computer Science 104(2), 313–323, 1992, [https://doi.org/10.1016/0304-3975(92)90128-3](https://doi.org/10.1016/0304-3975(92)90128-3).
-- **Pennello (1986):** T. J. Pennello, *Very fast LR parsing*, SIGPLAN '86 Symposium on Compiler Construction, ACM SIGPLAN Notices 21(7), 145–151, 1986, [https://doi.org/10.1145/13310.13326](https://doi.org/10.1145/13310.13326) (proceedings DOI 10.1145/12276.13326). Horspool counts it among the *other* directly executed LR parsers, faster than recursive ascent and much smaller — not recursive ascent itself.
-- **Referenced In:** `RecursiveAscentView.tsx` (`RECURSIVE_ASCENT_REFERENCES`), `recursiveAscent.ts`.
-
----
-
-## 5. General Context-Free Parsing: CYK & Earley
-
-### Earley (1970)
-- **Author:** Jay Earley
-- **Title:** *An Efficient Context-Free Parsing Algorithm*
-- **Venue:** Communications of the ACM (CACM), Vol. 13, No. 2, pp. 94–102, February 1970.
-- **Identifier / Link:** [https://doi.org/10.1145/362007.362035](https://doi.org/10.1145/362007.362035)
-- **App Usage:** Dynamic programming parser handling arbitrary context-free grammars with dotted items, Predictor, Scanner, and Completer in $O(n^3)$ worst-case, $O(n^2)$ for unambiguous grammars and $O(n)$ on a large class of grammars (bounded-state, with look-ahead).
-- **Referenced In:** `MembershipView.tsx`, `earleyParser.ts`, `EarleyView.tsx`.
-
-### Leo (1991)
-- **Author:** Joop M. I. M. Leo
-- **Title:** *A General Context-Free Parsing Algorithm Running in Linear Time on Every LR(k) Grammar Without Using Lookahead*
-- **Venue:** Theoretical Computer Science, Vol. 82, No. 1, pp. 165–176, 1991.
-- **Identifier / Link:** [https://doi.org/10.1016/0304-3975(91)90180-A](https://doi.org/10.1016/0304-3975(91)90180-A)
-- **App Usage:** Transitive items on deterministic reduction paths: the completer adds only the topmost item, linear on LR(k) (even LR-regular) grammars; option of the classic Earley simulator.
-- **Referenced In:** `earleyParser.ts`, `earleyExplain.ts`, `EarleyView.tsx`.
-
-### Kegler (2019)
-- **Author:** Jeffrey Kegler
-- **Title:** *Marpa, A Practical General Parser: The Recognizer*
-- **Venue:** arXiv:1910.08129, 2019.
-- **Identifier / Link:** [https://arxiv.org/abs/1910.08129](https://arxiv.org/abs/1910.08129)
-- **App Usage:** Section 7: Leo items as triples (dotted rule, transition symbol, origin), Leo uniqueness, Leo reduction, and the Leo stack expansion used to reconstruct the skipped items for derivation trees.
-- **Referenced In:** `earleyParser.ts`, `earleyExplain.ts`.
-
-### Cocke & Schwartz (1970)
-- **Authors:** John Cocke, Jacob T. Schwartz
-- **Title:** *Programming Languages and Their Compilers: Preliminary Notes*
-- **Venue:** Courant Institute of Mathematical Sciences, New York University (NYU), 1970.
-- **Identifier / Link:** [https://softwarepreservation.computerhistory.org/SETL/precursors/Cocke_Schwartz-Programming_Languages_and_Their_Compilers-1970.pdf](https://softwarepreservation.computerhistory.org/SETL/precursors/Cocke_Schwartz-Programming_Languages_and_Their_Compilers-1970.pdf) (Software Preservation Group / Computer History Museum)
-- **App Usage:** Formulation of the tabular Cocke-Younger-Kasami (CYK) bottom-up parsing algorithm for grammars in Chomsky Normal Form.
-- **Referenced In:** `MembershipView.tsx`.
-
-### Younger (1967)
-- **Author:** Daniel H. Younger
-- **Title:** *Recognition and Parsing of Context-Free Languages in Time $n^3$*
-- **Venue:** Information and Control, Vol. 10, No. 2, pp. 189–208, February 1967.
-- **Identifier / Link:** [https://doi.org/10.1016/S0019-9958(67)80007-X](https://doi.org/10.1016/S0019-9958(67)80007-X)
-- **App Usage:** Independent discovery and complexity proof of the matrix-based $O(n^3)$ CYK recognition algorithm.
-- **Referenced In:** `MembershipView.tsx`.
-
-### Kasami (1965)
-- **Author:** Tadao Kasami
-- **Title:** *An Efficient Recognition and Syntax-Analysis Algorithm for Context-Free Languages*
-- **Venue:** Air Force Cambridge Research Laboratory, Scientific Report AFCRL-65-758, Bedford, MA, 1965.
-- **Identifier / Link:** [https://apps.dtic.mil/sti/citations/AD0631692](https://apps.dtic.mil/sti/citations/AD0631692) (DTIC record AD0631692)
-### Aycock & Horspool (2002)
-- **Authors:** John Aycock, R. Nigel Horspool
-- **Title:** *Practical Earley Parsing*
-- **Venue:** The Computer Journal, Vol. 45, No. 6, pp. 620–630, 2002.
-- **Identifier / Link:** [https://doi.org/10.1093/comjnl/45.6.620](https://doi.org/10.1093/comjnl/45.6.620)
-- **App Usage:** Elimination of cyclic chart looping for $\varepsilon$-productions by instantly advancing the dot past nullable symbols during Prediction and Completer phases.
-- **Referenced In:** `EarleyView.tsx`, `earleyParser.ts`, `earleyExplain.ts`.
-
-### Scott & Johnstone (2025/2026)
-- **Authors:** Elizabeth Scott, Adrian Johnstone
-- **Title:** *Earley Table Traversing Parsers*
-- **Venue:** Science of Computer Programming, Vol. 247, 103335, 2025/2026.
-- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2025.103335](https://doi.org/10.1016/j.scico.2025.103335)
-- **App Usage:** Precomputation of an Earley transition table eliminating all dynamic prediction operations at runtime (0 predictor steps), maintaining compact $(q, j)$ state-origin pairs and traversing transitions $\delta(q, X)$ across input sets $S_i$.
-- **Referenced In:** `EarleyView.tsx`, `ettpParser.ts`, `earleyExplain.ts`, `earleyCompatibility.ts`.
-
-### Scott & Johnstone (2010)
-- **Authors:** Elizabeth Scott, Adrian Johnstone
-- **Title:** *GLL Parsing*
-- **Venue:** Electronic Notes in Theoretical Computer Science, Vol. 253, No. 7, pp. 177–189, 2010 (Proceedings of LDTA 2009).
-- **Identifier / Link:** [https://doi.org/10.1016/j.entcs.2010.08.041](https://doi.org/10.1016/j.entcs.2010.08.041) (open access)
-- **App Usage:** The GLL algorithm: descriptors (L, u, i), the sets R, U and P, the GSS, the functions add, create, pop and test(x, A, α) with FIRST/FOLLOW; acceptance in the recogniser.
-- **Referenced In:** `gllParser.ts`, `gllExplain.ts`, `GLLView.tsx`.
-
-### Scott & Johnstone (2013)
-- **Authors:** Elizabeth Scott, Adrian Johnstone
-- **Title:** *GLL Parse-Tree Generation*
-- **Venue:** Science of Computer Programming, Vol. 78, No. 10, pp. 1828–1844, 2013.
-- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2012.03.005](https://doi.org/10.1016/j.scico.2012.03.005); submitted manuscript at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/25269152/GLLsubmit.pdf)
-- **App Usage:** GSS nodes (L, i) labelled with return slots and the base node u₀ = (L₀, 0); the binarised SPPF with symbol, intermediate and packed nodes (the "binarised" form of the forest view).
-- **Referenced In:** `gllParser.ts`, `sppf.ts`, `GLLView.tsx`.
-
-### Scott, Johnstone & van Binsbergen (2019)
-- **Authors:** Elizabeth Scott, Adrian Johnstone, L. Thomas van Binsbergen
-- **Title:** *Derivation Representation Using Binary Subtree Sets*
-- **Venue:** Science of Computer Programming, Vol. 175, pp. 63–84, 2019.
-- **Identifier / Link:** [https://doi.org/10.1016/j.scico.2019.01.008](https://doi.org/10.1016/j.scico.2019.01.008); accepted manuscript at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/33174042/Accepted_Manuscript.pdf)
-- **App Usage:** BSR elements (X ::= α, i, k, j) and (α, i, k, j), bsrAdd, the derivations embedded in a BSR set, the acceptance test (S ::= α, 0, k, n) ∈ Υ, SPPF extraction; §5.5: GLL with bsrAdd in place of getNodeT/getNodeP. The paper's own parser is the clustered (CNP) form with a call-return forest; the app keeps the GSS of 2010/2013.
-- **Referenced In:** `bsr.ts`, `gllParser.ts`, `sppf.ts`, `GLLView.tsx`.
-
-### Johnstone (2023)
-- **Author:** Adrian Johnstone
-- **Title:** *A Reference GLL Implementation*
-- **Venue:** Proceedings of the 16th ACM SIGPLAN International Conference on Software Language Engineering (SLE '23), pp. 43–55, 2023.
-- **Identifier / Link:** [https://doi.org/10.1145/3623476.3623521](https://doi.org/10.1145/3623476.3623521); author copy at [pure.royalholloway.ac.uk](https://pure.royalholloway.ac.uk/files/56267014/sle23RefGLL.pdf)
-- **App Usage:** A reference implementation of GLL (descriptors, the GSS, call and return, the pop set), cited as the practical counterpart of the papers; the app interprets grammar slots instead of generating code. (The earlier remark that it has no look-ahead test could not be re-checked against the paper in REVIEW §34 and was removed from the texts.)
-- **Referenced In:** `gllExplain.ts`.
-
-### Vo, Liyanage, Kang, Rubin & Gopinath (2026)
-- **Authors:** H. Vo, D. Liyanage, H. J. Kang, S. Rubin, R. Gopinath
-- **Title:** *An Empirical Comparison of General Context-Free Parsers*
-- **Venue:** arXiv:2606.08465, 2026.
-- **Identifier / Link:** [https://arxiv.org/abs/2606.08465](https://arxiv.org/abs/2606.08465)
-- **App Usage:** CYK, Valiant, Earley, GLL, RNGLR and BRNGLR measured on the same grammars (with LL(1) and LR(1) baselines); the reason GLL was added next to Earley and GLR.
-- **Referenced In:** `gllExplain.ts`.
-
-### Tomita (1986): shared packed forests
-- The shared-packed forest of all derivation trees (one node per symbol and part, packed alternatives) comes from Tomita's GLR work (see *Tomita (1986)* in section 3); the 2019 BSR paper credits the SPPF to him. The app's forest "by rules" is this form, the "binarised" one is Scott & Johnstone's (2013).
-- **Referenced In:** `sppf.ts`, `ForestVisualizer.tsx`, `gllExplain.ts`.
-
----
-
-## 6. Normal Forms & Equivalent Grammar Transformations
-
-### Chomsky (1959)
-- **Author:** Noam Chomsky
-- **Title:** *On Certain Formal Properties of Grammars*
-- **Venue:** Information and Control, Vol. 2, No. 2, pp. 137–167, June 1959.
-- **Identifier / Link:** [https://doi.org/10.1016/S0019-9958(59)90362-6](https://doi.org/10.1016/S0019-9958(59)90362-6)
-- **App Usage:** Definition of Chomsky Normal Form ($A \to BC \mid a$), elimination of unit rules ($A \to B$), and context-free derivation properties.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Greibach (1965)
-- **Author:** Sheila A. Greibach
-- **Title:** *A New Normal-Form Theorem for Context-Free Phrase Structure Grammars*
-- **Venue:** Journal of the ACM (JACM), Vol. 12, No. 1, pp. 42–52, January 1965.
-- **Identifier / Link:** [https://doi.org/10.1145/321250.321254](https://doi.org/10.1145/321250.321254)
-- **App Usage:** Definition and transformation pipeline for Greibach Normal Form ($A \to a \alpha$, with leading terminal and non-terminal tail).
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Bar-Hillel, Perles & Shamir (1961)
-- **Authors:** Yehoshua Bar-Hillel, Micha A. Perles, Eli Shamir
-- **Title:** *On Formal Properties of Simple Phrase Structure Grammars*
-- **Venue:** Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung, Vol. 14, pp. 143–172, 1961.
-- **Identifier / Link:** [https://doi.org/10.1524/stuf.1961.14.14.143](https://doi.org/10.1524/stuf.1961.14.14.143)
-- **App Usage:** Classical grammar reduction algorithm (removal of non-terminating and unreachable symbols), fixed-point terminating set $N_{term}$, and the Pumping Lemma for context-free languages.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Rosenkrantz & Lewis (1970)
-- **Authors:** Daniel J. Rosenkrantz, Philip M. Lewis II
-- **Title:** *Deterministic Left Corner Parsing*
-- **Venue:** 11th Annual Symposium on Switching and Automata Theory (SWAT '70), pp. 139–152, October 1970.
-- **Identifier / Link:** [https://doi.org/10.1109/SWAT.1970.5](https://doi.org/10.1109/SWAT.1970.5)
-- **App Usage:** Left-corner grammar transformation eliminating direct and mutual left recursion into LL(1) form without introducing $\varepsilon$-chains.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Floyd (1963)
-- **Author:** Robert W. Floyd
-- **Title:** *Syntactic Analysis and Operator Precedence*
-- **Venue:** Journal of the ACM (JACM), Vol. 10, No. 3, pp. 316–333, July 1963.
-- **Identifier / Link:** [https://doi.org/10.1145/321172.321179](https://doi.org/10.1145/321172.321179)
-- **App Usage:** Operator precedence grammars, operator precedence relation matrices ($< \cdot, = \cdot, \cdot >$), and operator stratification.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Mickunas, Lancaster & Schneider (1976)
-- **Authors:** M. Dennis Mickunas, Ronald L. Lancaster, Victor B. Schneider
-- **Title:** *Transforming LR(k) Grammars to LR(1), SLR(1) and (1,1) Bounded Right Context Grammars*
-- **Venue:** Journal of the ACM (JACM), Vol. 23, No. 3, pp. 511–533, July 1976.
-- **Identifier / Link:** [https://doi.org/10.1145/321958.321972](https://doi.org/10.1145/321958.321972)
-- **App Usage:** Splitting LR context to eliminate LR conflicts without altering language generation.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Chomsky & Miller (1958)
-- **Authors:** Noam Chomsky, George A. Miller
-- **Title:** *Finite State Languages*
-- **Venue:** Information and Control, Vol. 1, No. 2, pp. 91–112, May 1958.
-- **Identifier / Link:** [https://doi.org/10.1016/S0019-9958(58)90082-2](https://doi.org/10.1016/S0019-9958(58)90082-2)
-- **App Usage:** Dual NFA construction converting left-linear regular grammars ($A \to B a \mid a$) into right-linear form ($A \to a B \mid a$).
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`, `presetGrammars.ts`.
-
-### Foster (1968)
-- **Author:** J. M. Foster
-- **Title:** *A Syntax Improving Program*
-- **Venue:** The Computer Journal, Vol. 11, No. 1, pp. 31–34, May 1968.
-- **Identifier / Link:** [https://doi.org/10.1093/comjnl/11.1.31](https://doi.org/10.1093/comjnl/11.1.31)
-- **App Usage:** Left and right factorization (longest common prefix/suffix extraction) and automated grammar restructuring.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
-
-### Moore (2000)
-- **Author:** Robert C. Moore
-- **Title:** *Removing Left Recursion from Context-Free Grammars*
-- **Venue:** Proceedings of the 1st Meeting of the North American Chapter of the Association for Computational Linguistics (NAACL '00), pp. 249–255, 2000.
-- **Identifier / Link:** [https://aclanthology.org/A00-2033/](https://aclanthology.org/A00-2033/) (ACL Anthology Open Access)
-- **App Usage:** Paull's algorithm optimizations and direct elimination of left recursion avoiding production blow-up.
-- **Referenced In:** `transformationInfo.ts`.
-
-### Johnson & Roark (2000)
-- **Authors:** Mark Johnson, Brian Roark
-- **Title:** *Compact Non-Left-Recursive Grammars Using the Selective Left-Corner Transform and Factoring*
-- **Venue:** Proceedings of the 18th International Conference on Computational Linguistics (COLING '00), Saarbrücken, Germany, Vol. 1, pp. 355–361, July 2000.
-- **Identifier / Link:** [https://aclanthology.org/C00-1052/](https://aclanthology.org/C00-1052/) (ACL Anthology Open Access)
-- **App Usage:** Selective left-corner transform and factoring pipeline creating compact grammars for top-down parsers.
-- **Referenced In:** `transformationInfo.ts`.
-
-### Aho & Ullman (1972)
-- **Authors:** Alfred V. Aho, Jeffrey D. Ullman
-- **Title:** *The Theory of Parsing, Translation, and Compiling. Vol. I: Parsing*
-- **Venue:** Prentice-Hall Series in Automatic Computation, Englewood Cliffs, NJ, 1972.
-- **Identifier / Link:** [https://archive.org/details/theoryofparsingt00ahoa](https://archive.org/details/theoryofparsingt00ahoa) (Internet Archive)
-- **App Usage:** Canonical matched/open statement grammar stratification eliminating dangling-else ambiguity; comprehensive theory of parsing algorithms.
-- **Referenced In:** `teachingGuideData.ts`, `transformationInfo.ts`.
+### Aho, Lam, Sethi & Ullman (2006): the Dragon Book
+- A. V. Aho, M. S. Lam, R. Sethi, J. D. Ullman: *Compilers: Principles, Techniques, and Tools*, 2nd ed. Addison-Wesley, 2006. ISBN 978-0-321-48681-3. Record: [openlibrary.org/isbn/9780321486813](https://openlibrary.org/isbn/9780321486813) (checked via the Open Library API).
+- *Used in:* `core/processor/transformationInfo.ts` and `core/processor/ll1Transformer.ts` (§4.3, left recursion and left factoring); `core/lr/lrAutomaton.ts` and `ui/views/LRView.tsx` (LALR(1) by propagation, Alg. 4.62/4.63; the Dragon Book table layout, `ui/components/LRLayoutSwitch.tsx`); `core/analyser/errorRecovery.ts`, `core/lr/lrParser.ts`, `core/codegen/recursiveAscentSimulator.ts` and `ui/components/ErrorRecovery.tsx` (panic mode, §4.4.5 and §4.8.3, see section 8).
 
 ### Hopcroft, Motwani & Ullman (2006)
-- **Authors:** John E. Hopcroft, Rajeev Motwani, Jeffrey D. Ullman
-- **Title:** *Introduction to Automata Theory, Languages, and Computation (3rd Edition)*
-- **Venue:** Addison-Wesley / Pearson, Boston, MA, 2006.
-- **Identifier / Link:** [https://openlibrary.org/isbn/9780321455369](https://openlibrary.org/isbn/9780321455369)
-- **App Usage:** Standard reference for formal grammars, context-free languages, and Chomsky hierarchy.
-- **Referenced In:** `transformationInfo.ts`.
+- J. E. Hopcroft, R. Motwani, J. D. Ullman: *Introduction to Automata Theory, Languages, and Computation*, 3rd ed. Addison-Wesley, 2006. ISBN 978-0-321-45536-9. Record: [openlibrary.org/isbn/9780321455369](https://openlibrary.org/isbn/9780321455369). Open Library dates this printing 2007. The publisher's page cited earlier no longer exists (REVIEW §32).
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`. The CYK triangle of the CYK tab follows this book (`ui/views/MembershipView.tsx`).
+
+### Aho & Ullman (1972)
+- A. V. Aho, J. D. Ullman: *The Theory of Parsing, Translation, and Compiling. Vol. I: Parsing*. Prentice-Hall, 1972. [archive.org/details/theoryofparsingt00ahoa](https://archive.org/details/theoryofparsingt00ahoa) (Internet Archive).
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts` (dangling else, left recursion); `core/ll/llTable.ts`, `core/ll/llParser.ts`, `ui/views/LLView.tsx` (the exact LL(2) test with local follow sets and the tables T(A, L)).
+
+---
+
+## 2. Grammars, normal forms and transformations
+
+### Chomsky & Miller (1958)
+- N. Chomsky, G. A. Miller: *Finite state languages*. Information and Control 1(2), 91–112, 1958. [doi:10.1016/S0019-9958(58)90082-2](https://doi.org/10.1016/S0019-9958(58)90082-2)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts` (left-linear to right-linear grammars).
+
+### Chomsky (1959)
+- N. Chomsky: *On certain formal properties of grammars*. Information and Control 2(2), 137–167, 1959. [doi:10.1016/S0019-9958(59)90362-6](https://doi.org/10.1016/S0019-9958(59)90362-6)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `ui/views/TransformationsView.tsx` (Chomsky normal form, unit rules).
+
+### Bar-Hillel, Perles & Shamir (1961)
+- Y. Bar-Hillel, M. Perles, E. Shamir: *On formal properties of simple phrase structure grammars*. Zeitschrift für Phonetik, Sprachwissenschaft und Kommunikationsforschung 14, 143–172, 1961. [doi:10.1524/stuf.1961.14.14.143](https://doi.org/10.1524/stuf.1961.14.14.143)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `ui/views/TransformationsView.tsx` (reduction, ε-rules).
+- *Note:* the Crossref record (journal now *STUF – Language Typology and Universals*, 14(1–4)) has no page numbers. The pages are the usual citation.
+
+### Floyd (1963)
+- R. W. Floyd: *Syntactic analysis and operator precedence*. Journal of the ACM 10(3), 316–333, 1963. [doi:10.1145/321172.321179](https://doi.org/10.1145/321172.321179)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts` (stratification of operator precedence).
+
+### Greibach (1965)
+- S. A. Greibach: *A new normal-form theorem for context-free phrase structure grammars*. Journal of the ACM 12(1), 42–52, 1965. [doi:10.1145/321250.321254](https://doi.org/10.1145/321250.321254)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `ui/views/TransformationsView.tsx`.
+
+### Foster (1968)
+- J. M. Foster: *A syntax improving program*. The Computer Journal 11(1), 31–34, 1968. [doi:10.1093/comjnl/11.1.31](https://doi.org/10.1093/comjnl/11.1.31)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/processor/ll1Transformer.ts`, `core/teaching/teachingGuideData.ts` (left factoring; SID, an early automatic transformation to LL(1) that reported why it failed).
+
+### Rosenkrantz & Lewis (1970)
+- D. J. Rosenkrantz, P. M. Lewis II: *Deterministic left corner parsing*. 11th Annual Symposium on Switching and Automata Theory (SWAT 1970), 139–152, 1970. [doi:10.1109/SWAT.1970.5](https://doi.org/10.1109/SWAT.1970.5)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `core/processor/grammarProcessor.ts` (left-corner transformation).
+
+### Rosenkrantz & Stearns (1970)
+- D. J. Rosenkrantz, R. E. Stearns: *Properties of deterministic top-down grammars*. Information and Control 17(3), 226–256, 1970. [doi:10.1016/S0019-9958(70)90446-8](https://doi.org/10.1016/S0019-9958(70)90446-8)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `ui/views/LLView.tsx`, `ui/views/TransformationsView.tsx`.
+
+### Mickunas, Lancaster & Schneider (1976)
+- M. D. Mickunas, R. L. Lancaster, V. B. Schneider: *Transforming LR(k) grammars to LR(1), SLR(1), and (1,1) bounded right-context grammars*. Journal of the ACM 23(3), 511–533, 1976. [doi:10.1145/321958.321972](https://doi.org/10.1145/321958.321972)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, `core/processor/grammarProcessor.ts` (splitting a non-terminal by its LR context).
+
+### Moore (2000)
+- R. C. Moore: *Removing left recursion from context-free grammars*. 1st Meeting of the North American Chapter of the ACL (NAACL 2000), 2000. [aclanthology.org/A00-2033](https://aclanthology.org/A00-2033/)
+- *Used in:* `core/processor/transformationInfo.ts`, `core/processor/grammarProcessor.ts` (the selective left-corner transformation).
+
+### Johnson & Roark (2000)
+- M. Johnson, B. Roark: *Compact non-left-recursive grammars using the selective left-corner transform and factoring*. COLING 2000. [aclanthology.org/C00-1052](https://aclanthology.org/C00-1052/)
+- *Used in:* `core/processor/transformationInfo.ts`.
+
+---
+
+## 3. LL(k) parsing and recursive descent
+
+### Lucas (1961)
+- P. Lucas: *Die Strukturanalyse von Formelübersetzern*. Elektronische Rechenanlagen 3, 159–167, 1961 (the journal is now *it – Information Technology*). [doi:10.1524/itit.1961.3.16.159](https://doi.org/10.1524/itit.1961.3.16.159)
+- *Used in:* `core/processor/transformationInfo.ts`, `ui/views/RecursiveDescentView.tsx`.
+- *Note:* the code cites issue 4. Crossref lists the volume as issues 1–6 and does not give the issue.
+
+### Conway (1963)
+- M. E. Conway: *Design of a separable transition-diagram compiler*. Communications of the ACM 6(7), 396–408, 1963. [doi:10.1145/366663.366704](https://doi.org/10.1145/366663.366704)
+- *Used in:* `ui/views/RecursiveDescentView.tsx`.
+
+### Lewis & Stearns (1968)
+- P. M. Lewis II, R. E. Stearns: *Syntax-directed transduction*. Journal of the ACM 15(3), 465–488, 1968. [doi:10.1145/321466.321477](https://doi.org/10.1145/321466.321477)
+- *Used in:* `core/processor/transformationInfo.ts`, `ui/views/LLView.tsx`, `ui/views/FirstFollowView.tsx`.
+
+### Knuth (1971)
+- D. E. Knuth: *Top-down syntax analysis*. Acta Informatica 1(2), 79–110, 1971. [doi:10.1007/BF00289517](https://doi.org/10.1007/BF00289517)
+- *Used in:* `core/processor/transformationInfo.ts`, `ui/views/LLView.tsx`, `ui/views/FirstFollowView.tsx`.
+
+### Wirth (1976): PL/0
+- N. Wirth: *Algorithms + Data Structures = Programs*. Prentice-Hall, 1976. No DOI. The link is the description of the book: [en.wikipedia.org/wiki/Algorithms_+_Data_Structures_=_Programs](https://en.wikipedia.org/wiki/Algorithms_%2B_Data_Structures_%3D_Programs).
+- *Used in:* `core/processor/transformationInfo.ts`, `ui/views/RecursiveDescentView.tsx`, and in the comments of `core/codegen/recursiveDescent.ts`, `core/codegen/pl0Compiler.ts`, `core/codegen/pcodeVm.ts` and `core/presets/presetGrammars.ts` (preset `lang_pl0`).
+- *Note:* the book introduces PL/0 and its recursive-descent compiler for a stack machine. The procedures of the compiler nest along their calls, and its error recovery uses the follow symbols of each procedure. The built-in PL/0 compiler of the app follows that code generation with the mnemonics of the course (JMC, RET). `core/analyser/errorRecovery.ts` also names Wirth's *Compilerbau* (Teubner). The Crossref record of a 1986 edition is [doi:10.1007/978-3-322-89543-1](https://doi.org/10.1007/978-3-322-89543-1). The app does not link it.
+
+### The KIV/FJP PL/0 interpreter
+- R. Lipka: *Online PL/0 interpreter* (the P-machine of the course). [richardlipka.github.io/online-pl0-interpreter](https://richardlipka.github.io/online-pl0-interpreter/). On home.zcu.cz the copy `../pl0/` next to the analyser is used instead.
+- *Used in:* `ui/views/RecursiveDescentView.tsx` (`PL0_INTERPRETER_URL`, `pl0InterpreterUrl`). The P-code of recursive descent and recursive ascent opens there with its input (`#code_b64=…&input=…`).
+
+---
+
+## 4. The LR family
+
+### Knuth (1965)
+- D. E. Knuth: *On the translation of languages from left to right*. Information and Control 8(6), 607–639, 1965. [doi:10.1016/S0019-9958(65)90426-2](https://doi.org/10.1016/S0019-9958(65)90426-2)
+- *Used in:* `ui/views/LRView.tsx`, `ui/views/AutomatonGraphView.tsx`, `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts` (LR(0) and canonical LR(1)).
+
+### DeRemer (1969)
+- F. L. DeRemer: *Practical Translators for LR(k) Languages*. Ph.D. thesis, MIT, 1969. [hdl.handle.net/1721.1/13628](https://hdl.handle.net/1721.1/13628) (MIT DSpace)
+- *Used in:* `ui/views/LRView.tsx`, `ui/views/AutomatonGraphView.tsx`, `core/processor/transformationInfo.ts` (SLR and LALR).
+
+### DeRemer (1971)
+- F. L. DeRemer: *Simple LR(k) grammars*. Communications of the ACM 14(7), 453–460, 1971. [doi:10.1145/362619.362625](https://doi.org/10.1145/362619.362625)
+- *Used in:* `ui/views/LRView.tsx`, `core/processor/transformationInfo.ts`.
+
+### Aho & Johnson (1974)
+- A. V. Aho, S. C. Johnson: *LR parsing*. ACM Computing Surveys 6(2), 99–124, 1974. [doi:10.1145/356628.356629](https://doi.org/10.1145/356628.356629)
+- *Used in:* `ui/views/LRView.tsx`.
+
+### Aho, Johnson & Ullman (1975)
+- A. V. Aho, S. C. Johnson, J. D. Ullman: *Deterministic parsing of ambiguous grammars*. Communications of the ACM 18(8), 441–452, 1975. [doi:10.1145/360933.360969](https://doi.org/10.1145/360933.360969)
+- *Used in:* `ui/views/LRView.tsx` (precedence and associativity resolve shift/reduce conflicts, as in Yacc/Bison: `%left`, `%right`, `%nonassoc`, `%prec`; implemented in `core/lr/lrTable.ts`).
+
+### Pager (1977)
+- D. Pager: *A practical general method for constructing LR(k) parsers*. Acta Informatica 7(3), 249–268, 1977. [doi:10.1007/BF00290336](https://doi.org/10.1007/BF00290336)
+- *Used in:* `ui/views/LRView.tsx`, `ui/views/AutomatonGraphView.tsx`, `core/processor/transformationInfo.ts`.
+- *Note:* cited as background on merging LR(1) states. The app does not implement Pager's weak compatibility.
+
+### DeRemer & Pennello (1982)
+- F. DeRemer, T. Pennello: *Efficient computation of LALR(1) look-ahead sets*. ACM TOPLAS 4(4), 615–649, 1982. [doi:10.1145/69622.357187](https://doi.org/10.1145/69622.357187)
+- *Used in:* `ui/views/LRView.tsx`.
+- *Note:* the app computes LALR(1) by the propagation algorithm of the Dragon Book (Alg. 4.62/4.63), not by the relations of this paper.
+
+### Denny & Malloy (2008, 2010): IELR(1)
+- J. E. Denny, B. A. Malloy: *IELR(1): practical LR(1) parser tables for non-LR(1) grammars with conflict resolution*. Proc. 2008 ACM Symposium on Applied Computing (SAC '08), 240–245, 2008. [doi:10.1145/1363686.1363747](https://doi.org/10.1145/1363686.1363747)
+- J. E. Denny, B. A. Malloy: *The IELR(1) algorithm for generating minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution*. Science of Computer Programming 75(11), 943–979, 2010. [doi:10.1016/j.scico.2009.08.001](https://doi.org/10.1016/j.scico.2009.08.001)
+- *Used in:* 2008: `core/processor/transformationInfo.ts`. 2010: `ui/views/LRView.tsx`, `ui/views/AutomatonGraphView.tsx`, `core/processor/transformationInfo.ts`, `core/teaching/teachingGuideData.ts`, and the comments of `core/lr/lrAutomaton.ts` and `core/analysisJob.ts`.
+- *Note:* the app does **not** implement Denny & Malloy's algorithm, which starts from LALR(1), annotates the inadequacies and splits states without building canonical LR(1). `buildIELR1Automaton` builds canonical LR(1) and merges the states with equal cores wherever no action changes after conflict resolution. Conflicts are resolved by precedence and associativity, otherwise by Bison's defaults: shift before reduce, and the earlier rule in a reduce/reduce conflict. The parser then behaves like canonical LR(1) after conflict resolution, as the paper requires, but the split is greedy and not guaranteed to be minimal (REVIEW §28).
+
+### Isradisaikul & Myers (2015): counterexamples for conflicts
+- C. Isradisaikul, A. C. Myers: *Finding counterexamples from parsing conflicts*. Proc. 36th ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '15), 555–564, 2015. [doi:10.1145/2737924.2737961](https://doi.org/10.1145/2737924.2737961); author copy [cs.cornell.edu/andru/papers/cupex/cupex.pdf](https://www.cs.cornell.edu/andru/papers/cupex/cupex.pdf)
+- *Used in:* `core/lr/lrCounterexample.ts`, `ui/components/ConflictCounterexample.tsx`, `ui/views/LRView.tsx`, `ui/views/AutomatonGraphView.tsx` (the code links the author copy).
+- *Note:* the app has unifying counterexamples (one word with two trees that part at the conflict) and non-unifying ones (two derivations with a common prefix up to the conflict, on the lookahead-sensitive graph of §4 of the paper). The unifying search reuses the bounded ambiguity search instead of the paper's product parser (REVIEW §30, §34). The DOI landing page answered automated requests with 403. It was checked through Crossref.
+
+### GNU Bison manual
+- *GNU Bison – The Yacc-compatible Parser Generator* (manual of Bison 3.8.1): [gnu.org/software/bison/manual](https://www.gnu.org/software/bison/manual/). The relevant pages are [Counterexamples](https://www.gnu.org/software/bison/manual/html_node/Counterexamples.html) (`-Wcounterexamples`, citing Isradisaikul & Myers) and [LR Table Construction](https://www.gnu.org/software/bison/manual/html_node/LR-Table-Construction.html) (`%define lr.type ielr`).
+- *Used in:* the Yacc/Bison input format (`core/parser/grammarParser.ts`); conflict resolution by precedence and the default resolutions (`core/lr/lrTable.ts`, `core/lr/lrParser.ts`, `core/lr/lrAutomaton.ts`); counterexamples (`core/lr/lrCounterexample.ts`, `ui/components/ConflictCounterexample.tsx`); the presets in Bison style (`core/presets/presetGrammars.ts`).
+
+---
+
+## 5. General context-free parsing
+
+### Earley parsing
+
+#### Earley (1970)
+- J. Earley: *An efficient context-free parsing algorithm*. Communications of the ACM 13(2), 94–102, 1970. [doi:10.1145/362007.362035](https://doi.org/10.1145/362007.362035)
+- *Used in:* `core/earley/earleyParser.ts`, `core/earley/earleyExplain.ts`, `ui/views/MembershipView.tsx`, `ui/visualizer/ETTPGraphVisualizer.tsx`.
+- *Note:* the paper gives O(n³) in general, O(n²) for unambiguous grammars, and O(n) for a large class, his bounded-state grammars, with look-ahead. The simulated algorithm has no look-ahead (REVIEW §28–29).
+
+#### Leo (1991)
+- J. M. I. M. Leo: *A general context-free parsing algorithm running in linear time on every LR(k) grammar without using lookahead*. Theoretical Computer Science 82(1), 165–176, 1991. [doi:10.1016/0304-3975(91)90180-A](https://doi.org/10.1016/0304-3975(91)90180-A)
+- *Used in:* `core/earley/earleyParser.ts`, `core/earley/earleyExplain.ts`, `core/earley/earleyTrees.ts`, `ui/views/EarleyView.tsx` (the switch "Leo's transitive items").
+- *Note:* the paper is paywalled and was not read. The definitions follow Kegler's account (next entry), see REVIEW §29.
+
+#### Kegler (2019): Marpa
+- J. Kegler: *Marpa, a practical general parser: the recognizer*. arXiv:1910.08129, 2019. [arxiv.org/abs/1910.08129](https://arxiv.org/abs/1910.08129)
+- *Used in:* `core/earley/earleyParser.ts`, `core/earley/earleyExplain.ts` (Section 7: Leo items as triples, and the Leo stack expansion that rebuilds the skipped items for the trees).
+
+#### Aycock & Horspool (2002)
+- J. Aycock, R. N. Horspool: *Practical Earley parsing*. The Computer Journal 45(6), 620–630, 2002. [doi:10.1093/comjnl/45.6.620](https://doi.org/10.1093/comjnl/45.6.620)
+- *Used in:* `core/earley/earleyParser.ts`, `core/earley/earleyExplain.ts`, `core/earley/ettpParser.ts`, `ui/views/EarleyView.tsx`, `ui/visualizer/ETTPGraphVisualizer.tsx`.
+- *Note:* the fix for ε-rules (the predictor moves the dot over nullable non-terminals, so the completer misses no item), and the LR(0)ε automaton in its split form with kernel and predicted states. The ETTP simulator follows this split form. The Crossref record lists only the first author.
+
+#### Scott & Johnstone (2025/2026): ETTP
+- E. Scott, A. Johnstone: *Earley table traversing parsers*. Science of Computer Programming 247, 103335, 2026 (issue of January 2026, online 2025). [doi:10.1016/j.scico.2025.103335](https://doi.org/10.1016/j.scico.2025.103335)
+- *Used in:* `core/earley/ettpParser.ts`, `core/earley/earleyExplain.ts`, `ui/visualizer/ETTPGraphVisualizer.tsx`; named in `core/earley/earleyCompatibility.ts`, `ui/views/EarleyView.tsx` and the tab tooltip.
+- *Note:* only the abstract could be read (ScienceDirect and SSRN are behind bot checks, REVIEW §28). The implementation is therefore an Earley recogniser over a precomputed table with pairs (q, j), built on the split automaton of Aycock & Horspool. It has kernel states (the origin j of the pair) and predicted states (origin = the index of the current set), joined by a precomputed ε-link. Its correctness is checked against an independent Earley oracle. Claims about run-time savings are attributed to the authors' experiments. The app does not claim them.
+
+### GLL and binary subtree sets
+
+#### Scott & Johnstone (2010)
+- E. Scott, A. Johnstone: *GLL parsing*. Electronic Notes in Theoretical Computer Science 253(7), 177–189, 2010 (LDTA 2009). [doi:10.1016/j.entcs.2010.08.041](https://doi.org/10.1016/j.entcs.2010.08.041)
+- *Used in:* `core/gll/gllParser.ts`, `core/gll/gllExplain.ts`, `ui/views/GLLView.tsx`, `ui/visualizer/GLLGSSVisualizer.tsx`.
+
+#### Scott & Johnstone (2013)
+- E. Scott, A. Johnstone: *GLL parse-tree generation*. Science of Computer Programming 78(10), 1828–1844, 2013. [doi:10.1016/j.scico.2012.03.005](https://doi.org/10.1016/j.scico.2012.03.005). Submitted manuscript: [pure.royalholloway.ac.uk/files/25269152/GLLsubmit.pdf](https://pure.royalholloway.ac.uk/files/25269152/GLLsubmit.pdf). The repository answered 403 (bot check) on 2026-10-22 and was checked in REVIEW §31–32.
+- *Used in:* `core/gll/gllParser.ts`, `core/gll/gllExplain.ts`, `core/forest/sppf.ts` (GSS nodes (L, i), the binarised SPPF).
+
+#### Scott, Johnstone & van Binsbergen (2019)
+- E. Scott, A. Johnstone, L. T. van Binsbergen: *Derivation representation using binary subtree sets*. Science of Computer Programming 175, 63–84, 2019. [doi:10.1016/j.scico.2019.01.008](https://doi.org/10.1016/j.scico.2019.01.008). Accepted manuscript: [pure.royalholloway.ac.uk/files/33174042/Accepted_Manuscript.pdf](https://pure.royalholloway.ac.uk/files/33174042/Accepted_Manuscript.pdf) (403 on 2026-10-22, see above).
+- *Used in:* `core/gll/bsr.ts`, `core/gll/gllParser.ts`, `core/gll/gllExplain.ts`, `core/forest/sppf.ts`.
+- *Note:* the paper's own parser is the clustered form (CNP). The app keeps the GSS of 2010/2013 and calls `bsrAdd` in place of `getNodeT`/`getNodeP`, the correspondence drawn in §5.5 of the paper (REVIEW §31).
+
+#### Johnstone (2023)
+- A. Johnstone: *A reference GLL implementation*. Proc. 16th ACM SIGPLAN International Conference on Software Language Engineering (SLE '23), 43–55, 2023. [doi:10.1145/3623476.3623521](https://doi.org/10.1145/3623476.3623521). Author copy: [pure.royalholloway.ac.uk/files/56267014/sle23RefGLL.pdf](https://pure.royalholloway.ac.uk/files/56267014/sle23RefGLL.pdf) (403 on 2026-10-22).
+- *Used in:* `core/gll/gllExplain.ts`.
+- *Note:* the work is by Johnstone alone. The earlier remark that it has no look-ahead test could not be checked against the paper and was removed (REVIEW §34).
+
+### GLR and shared packed forests
+
+#### Tomita (1985, 1986)
+- M. Tomita: *An efficient context-free parsing algorithm for natural languages*. Proc. 9th International Joint Conference on Artificial Intelligence (IJCAI 1985), Vol. 2, 1985. [ijcai.org/Proceedings/85-2/Papers/014.pdf](https://www.ijcai.org/Proceedings/85-2/Papers/014.pdf). The PDF was checked: it introduces the graph-structured stack and the "shared-packed forest".
+- M. Tomita: *Efficient Parsing for Natural Language: A Fast Algorithm for Practical Systems*. Kluwer, Boston, 1986. [doi:10.1007/978-1-4757-1885-0](https://doi.org/10.1007/978-1-4757-1885-0)
+- *Used in:* the book: `ui/views/LRView.tsx`, `core/gll/gllExplain.ts`, `core/lr/glrParser.ts`, `core/forest/sppf.ts`, `ui/visualizer/GSSGraphVisualizer.tsx`, `ui/views/GLLView.tsx`. The IJCAI paper is not cited in the app.
+- *Note:* the GLR panel of the LR tab (`core/lr/glrParser.ts`) is Tomita-style GLR over the chosen LR table, with a graph-structured stack that forks on conflicts and merges equal states. The "by rules" form of the forest (`core/forest/sppf.ts`) is Tomita's shared-packed forest. Crossref dates the book 1986, and the app cites it as "Tomita (1986)" everywhere (REVIEW §32). 1985 is the year of the IJCAI paper.
+
+#### Rekers (1992)
+- J. Rekers: *Parser Generation for Interactive Environments*. Ph.D. thesis, University of Amsterdam, 1992. [ir.cwi.nl/pub/29930](https://ir.cwi.nl/pub/29930)
+- *Used in:* `core/lr/glrParser.ts`, `core/forest/sppf.ts` (the thesis speaks of a "parse forest").
+
+#### Scott & Johnstone (2006): RNGLR
+- E. Scott, A. Johnstone: *Right nulled GLR parsers*. ACM TOPLAS 28(4), 577–618, 2006. [doi:10.1145/1146809.1146810](https://doi.org/10.1145/1146809.1146810)
+- *Used in:* `ui/views/LRView.tsx`, `core/lr/glrParser.ts`, `ui/visualizer/GSSGraphVisualizer.tsx`; named in `core/gll/gllExplain.ts`.
+- *Note:* cited as the GLR algorithm for all context-free grammars. The app's GLR does not use right-nulled tables.
+
+#### Scott, Johnstone & Economopoulos (2007): BRNGLR
+- E. Scott, A. Johnstone, R. Economopoulos: *BRNGLR: a cubic Tomita-style GLR parsing algorithm*. Acta Informatica 44(6), 427–461, 2007. [doi:10.1007/s00236-007-0054-z](https://doi.org/10.1007/s00236-007-0054-z)
+- *Used in:* named only in `core/gll/gllExplain.ts`, as one of the parsers compared by Vo et al. It is not implemented.
+
+### CYK and the complexity of recognition
+
+#### Kasami (1965)
+- T. Kasami: *An efficient recognition and syntax-analysis algorithm for context-free languages*. Scientific Report AFCRL-65-758, Air Force Cambridge Research Laboratory, Bedford, MA, 1965. DTIC record [AD0631692](https://apps.dtic.mil/sti/citations/AD0631692). The site was under maintenance on 2026-10-22, and the link was checked in REVIEW §32.
+- *Used in:* `ui/views/MembershipView.tsx`, `core/parser/cyk.ts`.
+- *Note:* the "CSL Report R-257, University of Illinois" cited elsewhere could not be found (REVIEW §32).
+
+#### Younger (1967)
+- D. H. Younger: *Recognition and parsing of context-free languages in time n³*. Information and Control 10(2), 189–208, 1967. [doi:10.1016/S0019-9958(67)80007-X](https://doi.org/10.1016/S0019-9958(67)80007-X)
+- *Used in:* `ui/views/MembershipView.tsx`, `core/parser/cyk.ts`.
+
+#### Cocke & Schwartz (1970)
+- J. Cocke, J. T. Schwartz: *Programming Languages and Their Compilers: Preliminary Notes*. 2nd revised version, Courant Institute of Mathematical Sciences, New York University, April 1970. [PDF at the Software Preservation Group](https://softwarepreservation.computerhistory.org/SETL/precursors/Cocke_Schwartz-Programming_Languages_and_Their_Compilers-1970.pdf). The title page of the PDF was checked.
+- *Used in:* `ui/views/MembershipView.tsx`, `core/parser/cyk.ts`.
+
+#### Valiant (1975)
+- L. G. Valiant: *General context-free recognition in less than cubic time*. Journal of Computer and System Sciences 10(2), 308–315, 1975. [doi:10.1016/S0022-0000(75)80046-8](https://doi.org/10.1016/S0022-0000(75)80046-8)
+- *Used in:* named only in `core/gll/gllExplain.ts`, as one of the parsers compared by Vo et al. It is not implemented.
+
+#### Abboud, Backurs & Vassilevska Williams (2018)
+- A. Abboud, A. Backurs, V. Vassilevska Williams: *If the current clique algorithms are optimal, so is Valiant's parser*. SIAM Journal on Computing 47(6), 2527–2555, 2018. [doi:10.1137/16M1061771](https://doi.org/10.1137/16M1061771). Conference version: FOCS 2015, 98–117, [doi:10.1109/FOCS.2015.16](https://doi.org/10.1109/FOCS.2015.16).
+- *Used in:* not cited in the app. It is the conditional lower bound for Valiant's method: no general recogniser can be much faster unless the clique algorithms improve.
+
+### Empirical comparison
+
+#### Vo, Liyanage, Kang, Rubin & Gopinath (2026)
+- H. Vo, D. Liyanage, H. J. Kang, S. Rubin, R. Gopinath: *An empirical comparison of general context-free parsers*. arXiv:2606.08465, 2026. [arxiv.org/abs/2606.08465](https://arxiv.org/abs/2606.08465)
+- *Used in:* `core/gll/gllExplain.ts`.
+- *Note:* CYK, Valiant, Earley, GLL, RNGLR and BRNGLR measured on the same grammars, with LL(1) and LR(1) baselines. It was the reason for adding GLL next to Earley and GLR (REVIEW §31).
+
+---
+
+## 6. ALL(*)
+
+### Parr & Fisher (2011)
+- T. Parr, K. Fisher: *LL(\*): the foundation of the ANTLR parser generator*. Proc. 32nd ACM SIGPLAN Conference on Programming Language Design and Implementation (PLDI '11), 425–436, 2011. [doi:10.1145/1993498.1993548](https://doi.org/10.1145/1993498.1993548)
+- *Used in:* `ui/views/ALLView.tsx`.
+
+### Parr, Harwell & Fisher (2014)
+- T. Parr, S. Harwell, K. Fisher: *Adaptive LL(\*) parsing: the power of dynamic analysis*. Proc. 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA '14), 579–598, 2014. [doi:10.1145/2660193.2660202](https://doi.org/10.1145/2660193.2660202)
+- *Used in:* `ui/views/ALLView.tsx`, `core/all/allAtn.ts`, `core/all/allPredictor.ts`, `core/all/allParser.ts`, `ui/visualizer/LookaheadDFAGraphVisualizer.tsx`.
+- *Note:* the predictor follows Functions 2–9 of the paper. It does SLL prediction with the DFA cache, detects conflicts, falls back to full-LL prediction with the parser's real stack, and resolves an ambiguity by the minimal alternative only after an LL conflict. Left recursion of any kind gives "not applicable", and reaching a limit gives "undecided". The app has no graph-structured stack, so a closure is capped, and ANTLR's two-stage SLL-then-LL parse is not simulated (REVIEW §28). The section numbers in `ALLView.tsx` follow the paper.
+
+---
+
+## 7. Recursive ascent
+
+All DOIs were checked against Crossref. Only Horspool's report was read in full. What the app says about the other works follows Horspool's §5.2–5.3 (REVIEW §33).
+
+### Horspool (1991, 1993)
+- R. N. Horspool: *Recursive ascent-descent parsing*. Computer Languages 18(1), 1–15, 1993. [doi:10.1016/0096-0551(93)90027-X](https://doi.org/10.1016/0096-0551(93)90027-X). Read as the report of 11 June 1991 on the author's page: [webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf](https://webhome.cs.uvic.ca/~nigelh/Publications/rad.pdf). The journal version may differ in details.
+- Related: R. N. Horspool: *Recursive ascent-descent parsers*. Compiler Compilers (CC '90), LNCS 477, 1–10, 1991. [doi:10.1007/3-540-53669-8_70](https://doi.org/10.1007/3-540-53669-8_70). Not cited in the app.
+- *Used in:* `core/codegen/recursiveAscent.ts`, `core/codegen/recursiveAscentActions.ts`, `ui/views/RecursiveAscentView.tsx`.
+- *Note:* §5.2 is the scheme of the app. There is one procedure per LR state, a `while` loop over the gotos, and a reduction that sets the non-terminal and returns through |α| procedures (Horspool's `return* k`, simulated by a count). §5.3 describes recursive ascent-descent, which the tab explains in its notes.
+
+### Roberts (1988, 1989)
+- G. H. Roberts: *Recursive ascent: an LR analog to recursive descent*. ACM SIGPLAN Notices 23(8), 23–29, 1988. [doi:10.1145/47907.47909](https://doi.org/10.1145/47907.47909)
+- G. H. Roberts: *Another note on recursive ascent*. Information Processing Letters 32(5), 263–266, 1989. [doi:10.1016/0020-0190(89)90054-9](https://doi.org/10.1016/0020-0190(89)90054-9). Horspool's list gives 1990.
+- *Used in:* `core/codegen/recursiveAscent.ts`, `ui/views/RecursiveAscentView.tsx`.
+
+### Kruseman Aretz (1988)
+- F. E. J. Kruseman Aretz: *On a recursive ascent parser*. Information Processing Letters 29(4), 201–206, 1988. [doi:10.1016/0020-0190(88)90061-0](https://doi.org/10.1016/0020-0190(88)90061-0)
+- *Used in:* `core/codegen/recursiveAscent.ts`, `ui/views/RecursiveAscentView.tsx`.
+
+### Barnard & Cordy (1988)
+- D. T. Barnard, J. R. Cordy: *SL parses the LR languages*. Computer Languages 13(2), 65–74, 1988. [doi:10.1016/0096-0551(88)90010-0](https://doi.org/10.1016/0096-0551(88)90010-0)
+- *Used in:* named in `ui/views/RecursiveAscentView.tsx`. Horspool cites it among the sources of recursive ascent.
+
+### Leermakers, Augusteijn & Kruseman Aretz (1992)
+- R. Leermakers, L. Augusteijn, F. E. J. Kruseman Aretz: *A functional LR parser*. Theoretical Computer Science 104(2), 313–323, 1992. [doi:10.1016/0304-3975(92)90128-3](https://doi.org/10.1016/0304-3975(92)90128-3)
+- *Used in:* `core/codegen/recursiveAscent.ts`, `ui/views/RecursiveAscentView.tsx`.
+
+### Pennello (1986): a directly executed LR parser, not recursive ascent
+- T. J. Pennello: *Very fast LR parsing*. SIGPLAN '86 Symposium on Compiler Construction, ACM SIGPLAN Notices 21(7), 145–151, 1986. [doi:10.1145/13310.13326](https://doi.org/10.1145/13310.13326)
+- *Used in:* `ui/views/RecursiveAscentView.tsx`; named in `ui/views/LRView.tsx`.
+- *Note:* Horspool counts it among the *other* directly executed LR parsers, which are faster than recursive ascent and much smaller. It is cited that way and not as recursive ascent.
+
+### Demers (1977); Purdom & Brown (1980)
+- A. J. Demers: *Generalized left corner parsing*. POPL '77, 170–182, 1977. [doi:10.1145/512950.512966](https://doi.org/10.1145/512950.512966)
+- P. Purdom, C. A. Brown: *Semantic routines and LR(k) parsers*. Acta Informatica 14(4), 1980. [doi:10.1007/BF00286489](https://doi.org/10.1007/BF00286489). Crossref gives no pages.
+- *Used in:* named, without links, in `ui/views/RecursiveAscentView.tsx` (Demers: the basis of Horspool's ascent-descent) and in `core/codegen/recursiveAscentActions.ts` and `ui/views/RecursiveAscentView.tsx` (Purdom & Brown: free positions for semantic actions). Both are cited after Horspool and were not read.
+
+---
+
+## 8. Error recovery
+
+### Panic mode in the Dragon Book
+- Aho, Lam, Sethi & Ullman (2006), see section 1: §4.4.5 (error recovery in predictive parsing, synchronising sets from FIRST and FOLLOW) and §4.8.3 (error recovery in LR parsing: pop to a state with a goto on A, skip to a symbol of FOLLOW(A)).
+- *Used in:* `core/analyser/errorRecovery.ts` (`recoverySets`), `core/ll/llParser.ts` and `core/lr/lrParser.ts` (option `recovery`), `core/codegen/recursiveAscentSimulator.ts`, `ui/components/ErrorRecovery.tsx`.
+
+### Wirth's stop symbols
+- Wirth (1976), see section 3, and the KIV/FJP lecture 3 (section 9). Each procedure gets the set of symbols that may follow it. On an error, the input is skipped to a symbol of the start set or of the stop set (the procedure `test`).
+- *Used in:* `core/codegen/rdSimulator.ts` (panic mode of the recursive-descent simulator), `core/analyser/errorRecovery.ts`, `ui/components/ErrorRecovery.tsx`.
+
+### Diekmann & Tratt (2020): further work
+- L. Diekmann, L. Tratt: *Don't panic! Better, fewer, syntax errors for LR parsers*. 34th European Conference on Object-Oriented Programming (ECOOP 2020), LIPIcs 166, 6:1–6:32, 2020. [doi:10.4230/LIPIcs.ECOOP.2020.6](https://doi.org/10.4230/LIPIcs.ECOOP.2020.6) (metadata from DataCite).
+- *Used in:* not cited in the app. CPCT+, a repair-sequence recovery for LR parsers, is a candidate for further work next to the panic mode of the LR and recursive-ascent simulators.
+
+---
+
+## 9. Course materials
+
+### Ježek: lectures of KIV/FJP
+- K. Ježek: *Formální jazyky a překladače* (Formal Languages and Compilers), lectures. KIV FAV ZČU. Index: [kiv.zcu.cz/~jezek_ka/vyuka/FJP/](https://www.kiv.zcu.cz/~jezek_ka/vyuka/FJP/), lectures under [Přednášky](https://www.kiv.zcu.cz/~jezek_ka/vyuka/FJP/P%f8edn%e1%9aky/). The directory name is encoded in Windows-1250.
+  - Lecture 3, *Syntaktická analýza metodou rekurzivního sestupu* (recursive descent): [3 Syntak anal.pdf](https://www.kiv.zcu.cz/~jezek_ka/vyuka/FJP/P%f8edn%e1%9aky/3/3%20Syntak%20anal.pdf). It covers error handling in PL/0: panic mode, stop symbols and the procedure `Test`. Cited as "lecture 3" without a link in `core/analyser/errorRecovery.ts` and `core/codegen/rdSimulator.ts`.
+  - Lecture 8, *Bezkontextové gramatiky* (context-free grammars): [8 BKG.DOC.pdf](https://www.kiv.zcu.cz/~jezek_ka/vyuka/FJP/P%f8edn%e1%9aky/8/8%20BKG.DOC.pdf). Used in `core/processor/transformationInfo.ts` (`jezek8`).
+  - Lectures 9 and 10, *LL(k) gramatiky*: [9 a 10 LLk.pdf](https://www.kiv.zcu.cz/~jezek_ka/vyuka/FJP/P%f8edn%e1%9aky/9a10/9%20a%2010%20%20LLk.pdf). Used in `core/processor/transformationInfo.ts` (`jezek910`) and `core/processor/ll1Transformer.ts`.
+  - The LR lectures (*11 a 12 LR*) were the source of the lecture layout of the LR tables (REVIEW §6). The app does not link them.
+
+### Vavrečková: LL translation slides
+- Š. Vavrečková: *Překladače – LL překlady* (prezentace 5). Slezská univerzita v Opavě. [prekl_05_LL.pdf](https://vavreckova.zam.slu.cz/obsahy/prekl/prezentace/prekl_05_LL.pdf)
+- *Used in:* `core/processor/transformationInfo.ts`.
+- *Note:* the server refused the connection on 2026-10-22. The link is kept from REVIEW §7 and §32.
+
+### Cockett: Transformations to LL(1)
+- R. Cockett: *CPSC 411 Compiler Construction I – Transformations to LL(1)*. University of Calgary. [pages.cpsc.ucalgary.ca/~robin/class/411/LL1.3.html](http://pages.cpsc.ucalgary.ca/~robin/class/411/LL1.3.html). The page now redirects to https.
+- *Used in:* `core/processor/ll1Transformer.ts` (the order of the steps of the automatic LL(1) attempt), `core/processor/transformationInfo.ts`, `ui/views/TransformationsView.tsx`.
+
+---
+
+## 10. Further reading: semantic analysis and name binding
+
+The symbol table of the recursive-descent and recursive-ascent tabs is a demonstration with a stack of scopes and actions found by keywords (REVIEW §24–26, §33.1). The following works show how semantic analysis and name binding are specified in general. The application does not cite them.
+
+- D. E. Knuth: *Semantics of context-free languages*. Mathematical Systems Theory 2(2), 127–145, 1968. [doi:10.1007/BF01692511](https://doi.org/10.1007/BF01692511). Attribute grammars.
+- G. Hedin: *Reference attributed grammars*. Informatica (Slovenia) 24(3), 301–317, 2000. No DOI. Lund University record: [lup.lub.lu.se/record/107069](https://lup.lub.lu.se/record/107069). Attributes that refer to nodes of the tree, used for name and type analysis.
+- T. Ekman, G. Hedin: *The JastAdd system – modular extensible compiler construction*. Science of Computer Programming 69(1–3), 14–26, 2007. [doi:10.1016/j.scico.2007.02.003](https://doi.org/10.1016/j.scico.2007.02.003). See also T. Ekman, G. Hedin: *The JastAdd extensible Java compiler*, OOPSLA 2007, 1–18, [doi:10.1145/1297027.1297029](https://doi.org/10.1145/1297027.1297029).
+- G. Konat, L. Kats, G. Wachsmuth, E. Visser: *Declarative name binding and scope rules* (NaBL). Software Language Engineering (SLE 2012), LNCS 7745, 311–331, Springer, 2013. [doi:10.1007/978-3-642-36089-3_18](https://doi.org/10.1007/978-3-642-36089-3_18)
+- P. Neron, A. Tolmach, E. Visser, G. Wachsmuth: *A theory of name resolution* (scope graphs). Programming Languages and Systems (ESOP 2015), LNCS 9032, 205–231, 2015. [doi:10.1007/978-3-662-46669-8_9](https://doi.org/10.1007/978-3-662-46669-8_9)
+- H. van Antwerpen, C. Bach Poulsen, A. Rouvoet, E. Visser: *Scopes as types* (Statix). Proceedings of the ACM on Programming Languages 2(OOPSLA), 2018. [doi:10.1145/3276484](https://doi.org/10.1145/3276484). Crossref gives the pages as 1–30.
+
+---
+
+## Maintenance
+
+When a citation is added to the code, add it here with its link and the files that use it. Check a DOI against its Crossref record (`https://api.crossref.org/works/<doi>`) and not only by resolving it, because a wrong DOI also resolves, to the wrong work. For a page without a DOI, compare the page title with the citation.

@@ -1,167 +1,297 @@
-# GrammarAnalyser 📐
+# Analyzátor formálních gramatik / Formal Grammar Analyser
 
-> Interactive, client-side university laboratory for formal language theory, grammar transformations, LL/LR parsing tables, and automaton simulators.
+**Live:** <https://richardlipka.github.io/grammar-analyser/>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-6.0-646cff.svg)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/Vitest-Passing-brightgreen.svg)](https://vitest.dev/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff.svg)](https://vitejs.dev/)
+
+The Formal Grammar Analyser is an interactive teaching tool for context-free grammars and syntax analysis. It was written for the course **KIV/FJP (Formal Languages and Compilers)** at the Department of Computer Science and Engineering, University of West Bohemia (ZČU) in Pilsen. It is meant for students, who can check their exercises and step through the algorithms of the lectures, and for teachers, who can show the algorithms in a lecture or link a grammar from a course page. Anyone else learning parsing can use it too.
+
+The whole application runs in the browser and needs no server and no installation. The interface is in Czech (the default, with the terminology of the KIV/FJP lectures) or English, in a light, dark or projector theme.
+
+**What it does:**
+
+- **Reads grammars in many dialects.** The arrow notation of the lectures (`S → aSb | ab`, `E' --> +TE'`, `[Ba] --> a`), BNF, EBNF, Yacc/Bison files with `%token`, `%left` and `%prec`, and ANTLR 4 grammars. Rule numbers copied from slides, several rules on one line, and ε written as `ε`, `eps`, `λ`, `%empty`, `#` or `e` are accepted.
+- **Analyses the grammar.** It computes nullable, generating and reachable symbols, FIRST₁/₂, FOLLOW₁/₂ and director sets. It finds immediate, indirect and hidden left recursion, cycles, and useless symbols. It classifies the grammar as LL(1), strong LL(2), LL(2), LR(0), SLR(1), LALR(1), IELR(1) and LR(1). A bounded search looks for an ambiguous word and shows its two derivation trees.
+- **Transforms the grammar.** Reduction, ε-rules, unit rules, left recursion (Paull, or the left-corner transformation), left and right factoring, substitution, absorption of the following symbol, CNF, GNF, an automatic attempt at LL(1), and transformations against LR conflicts. Each transformation is explained step by step with the literature, and can be applied by clicking a symbol in the grammar.
+- **Simulates the parsers step by step:**
+  - LL(1) and LL(2);
+  - LR(0), SLR(1), LALR(1), IELR(1) and LR(1) in the layout of the lectures or of the Dragon Book;
+  - GLR, GLL with BSR sets and shared packed forests, ALL(\*), Earley (optionally with Leo's transitive items), ETTP and CYK;
+  - recursive descent and recursive ascent, with the generated parser in PL/0, Oberon-07, C, Python and JavaScript, the P-code of the PL/0 version, and a symbol-table demonstration.
+- **Explains LR conflicts.** Each conflict gets a counterexample: a word with two derivation trees, or two derivations that part at the conflict.
+- **Recovers from syntax errors.** Optional panic-mode recovery is available in the LL, LR, recursive-descent and recursive-ascent simulators.
+- **Compares two grammars.** It looks for a shortest word that one grammar generates and the other does not, and shows where the other grammar fails on it.
+- **Generates words** and their derivations.
+- **Exports** to LaTeX (grammar, sets, LL and LR tables, derivation trees) and to SVG/PNG (automata and trees).
+- **Opens a grammar from a link** (`?g=…&w=…&tab=…`).
+
+## Contents
+
+- [Tabs](#tabs)
+- [Grammar input](#grammar-input)
+- [Working with the interface](#working-with-the-interface)
+- [Grammar links (URL parameters)](#grammar-links-url-parameters)
+- [Development, testing and deployment](#development-testing-and-deployment)
+- [Project structure](#project-structure)
+- [Literature and further documentation](#literature-and-further-documentation)
+- [License](#license)
 
 ---
 
-## 🌟 Highlights & Capabilities
+## Tabs
 
-- **100% Client-Side**: Zero backend dependencies. Runs completely inside the browser with fast, reactive TypeScript computation. Easily publishable to **GitHub Pages**.
-- **Multi-Syntax Grammar Parser**:
-  - Arrows: `->`, `-->`, `=>`, `→`
-  - BNF & EBNF: `::=`, `:==`, `:=`
-  - Yacc / Bison / ANTLR: `:`; a trailing `;` or `.` (or a line holding only `;`) ends a rule
-  - Alternatives: Pipe `|` or clean indentation/newline alternatives
-  - Non-terminals: every symbol defined on a left-hand side, and every `<name>`; the bracketed names of the lectures (`[Ba] --> a | abCa` after absorption, `[A-X]` of the left-corner transformation) are non-terminals when they have rules, otherwise `a[i]` stays the terminals `[`, `i`, `]`
-  - An arrow inside a right-hand side is an error, not the terminals `-` and `>`: it means that the left-hand side of a rule was not recognised (`A B --> c`) or that two rules share a line; a terminal `->` has to be quoted
-  - Terminals: all other symbols; a quoted `"…"` or `'…'` symbol is always a terminal (never ε, never a non-terminal)
-  - Epsilon representations: `ε`, `ϵ`, `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative (`S -> a S | #`)
-  - A standalone `e` (KIV/FJP notation for ε): the editor asks whether it means ε or the terminal e; until answered it is read as ε
-  - Course notation, where every left-hand side is a capital letter with optional digits and primes (or a `[bracketed]` name):
-    - Compact words `S → aSb | ab`, `E' → +TE'`, `A → 0A1`, `A1 → A2A3` are split into the defined non-terminals (longest match) and single characters when some word glues a non-terminal to other symbols
-    - Otherwise a word such as `bxc` or `id` may mean one terminal or several symbols. If no right-hand side separates its symbols by spaces (`A --> bxc | yc | bxzd | yzd`), the editor asks, and until then each word is one terminal; with spaces (`F → ( E ) | id`) a word is one terminal and a line under the editor says so. Either answer can be changed there.
-    - A capital letter without rules (`D`, `A2`) is a non-terminal that generates no word, with a warning; outside the course notation an undefined `ID` is a terminal with a warning
-  - Rule numbers copied from slides are labels, not symbols: `S --> aAS    (1)`, `(1) S -> …`, `1. S -> …`; a warning appears when they differ from the analyser's numbering
-  - Several rules on one line, separated by `;` (`S -> aAS | b; A -> a | bSA`) or by a space before the next `A ->` (`S -> aAS | b A -> a | bSA`)
-  - Typographic primes and quotes pasted from lecture notes (`E’`, `“+”`) are accepted
-  - Comments: `// ...`, `# ...`, `/* ... */`
-  - Optional Yacc precedence, also in the arrow notation: lines `%left + -`, `%left * /`, `%right ^`, `%nonassoc <` (lowest precedence first) before the rules and `%prec UMINUS` at the end of an alternative; they resolve shift/reduce conflicts of the SLR(1), LALR(1) and LR(1) tables as Bison does (higher precedence wins, equal precedence by associativity), with every resolution listed and explained; a switch on the LR tab shows the table without them
-  - Unicode identifiers (`Výraz`, `Člen`)
-  - **Yacc / Bison files**: `%token`/`%left`/`%start` declarations, `%{ %}`, the `%%` sections, `{ actions }`, `%prec`, `%empty`, string aliases (`%token NUM "number"`), rules with or without `;` and with the left-hand side on its own line
-  - **ANTLR 4 grammars**: `grammar X;` header, `options`/`tokens`/`@header` blocks, labels (`x=`, `x+=`, `# Alt`), lexer rules taken as tokens (single-literal rules unified with the literal), `EOF`, EBNF `( )`, `*`, `+`, `?` expanded into auxiliary non-terminals
-  - A symbol palette under the editor inserts `→`, `|`, `ε`, primes, quotes and `<…>` without a keyboard
-  - Errors (`$` used as a terminal, a symbol used both quoted and as a non-terminal, an unparsable line) stop the analysis; warnings (a capitalised symbol without rules, duplicate rules, `<X>` without rules) do not
-- **Grammar Analyser**:
-  - Nullable symbols ($N_\varepsilon$)
-  - Endable / Terminating / Generating symbols ($N_{gen}$)
-  - Reachable symbols ($V_{reach}$)
-  - $\text{FIRST}_1$, $\text{FIRST}_2$, $\text{FOLLOW}_1$, $\text{FOLLOW}_2$
-  - Lookahead / Predict / Director sets ($k = 1, 2$)
-  - Immediate, indirect and hidden (nullable-prefix) left recursion, each non-terminal with all its kinds; cycles $A \Rightarrow^+ A$
-  - Ambiguity: a bounded search for a word with two derivation trees (both trees are shown); an LL(1) or LR(1) grammar is reported as unambiguous; for an ambiguous grammar without precedence declarations the overview suggests them
-  - The classification notes when the grammar has useless symbols and offers to reduce it
-- **Grammar Processor (Equivalent Transformations)**:
-  - Unreachable & unproductive symbol removal (Reduced Grammar)
-  - $\varepsilon$-production elimination with start symbol preservation (a fresh start symbol only when $S$ occurs on a right-hand side)
-  - Unit-production elimination ($A \to B$)
-  - **Transform by clicking**: in the editor's click mode, a click on a non-terminal applies a transformation directly to the grammar; undo/redo (also Ctrl+Z / Ctrl+Y) and a protocol of all steps with their explanations
-  - **History of the grammar**: selecting an example starts a new history (undo does not lead back to the previous grammar); next to undo/redo, one button clears the history and keeps the grammar, another clears the grammar together with its history (it asks for a second click, as this cannot be undone)
-    - left-hand side: left recursion (with ε, or without ε as in the KIV/FJP lectures), left factoring, elimination of rules with a leading non-terminal, ε-rule and unit-rule elimination, substitution and removal, merging non-terminals with the same rules, removal of useless symbols
-    - occurrence on a right-hand side: substitution of its right-hand sides, **absorption of the following symbol** `A → α B a β` ⇒ `A → α [Ba] β`, `[Ba] → αᵢ a` (turns a FIRST-FOLLOW conflict into a FIRST-FIRST one for left factoring), and a copy `B₂` for this occurrence (reduction of FOLLOW sets)
-    - LL(1) conflicts are marked (FF / FFL) and the actions that address them are tagged
-  - Immediate and indirect left-recursion elimination (Paull's algorithm, with logged preprocessing of ε-rules and cycles)
-  - **Automatic attempt to transform to LL(1)** (button on the LL(1) and Transformations tabs, and in the whole-grammar menu): the order of R. Cockett's CPSC 411 notes (left recursion, exposing FIRST clashes, left factoring, FIRST/FOLLOW clashes, repeat) with the methods of the KIV/FJP lectures; every operation is listed with its reason; on failure it keeps the best state and names the remaining conflicts
-  - **ⓘ references**: every transformation has a description (scheme, why it keeps the language, when to use it) and the publications that describe it, with links
-  - Left-corner transformation (Rosenkrantz & Lewis) as an alternative way of removing all left recursion: only the left-recursive non-terminals are rewritten (`A → X [A-X]`, `[A-X] → β [A-B]` for `B → X β`, `[A-A] → ε`), no order of the non-terminals is needed, and helpers with a single unit rule are merged afterwards
-  - Left factorization, and right factoring of common suffixes (`A → α₁ β | α₂ β` ⇒ `A → A' β`, `A' → α₁ | α₂`)
-  - Non-terminal substitution (inlining/expansion)
-  - Chomsky Normal Form (CNF)
-  - Greibach Normal Form (GNF): CNF, ordering $A_1 \dots A_n$, substitution, ε-free elimination of left recursion and back-substitution
-  - Step-by-step explanations for all transformations, with the added/removed rules and the grammar after each step
-  - Normal-form checklist of the result (reduced, ε-free, no unit rules, no left recursion, CNF, GNF)
-  - Every transformation is tested for language equivalence (Earley recognizer over all short words), including a seeded randomised test that applies every whole-grammar, per-symbol and per-occurrence transformation to random grammars and also checks the promised form (ε-free, no left recursion, CNF, GNF, …)
-- **Language comparison** (tab *Porovnání jazyků*, "Is my grammar the same?"):
-  - A student's grammar is compared with the grammar in the editor (the text as it is now, also before it is analysed) on all words up to a chosen length, shortest first, so the first difference found is a shortest counterexample
-  - For the counterexample, each grammar shows below it how it handles the word: the grammar that generates it its derivation tree and leftmost derivation; the other one the attempt of the general analyser (Earley) — a partial derivation tree with the beginning of the word it derives, the terminal it needs at the place where the word differs (red) and the symbols it did not derive any more (dashed), the leftmost derivation up to where it breaks off, and in words what may follow (e.g. "it derives `id`, then it needs `+`, `*` or the end of the word, while the word continues with `id`")
-  - Both grammars run as incremental Earley recognizers over a tree of prefixes; a prefix neither grammar can extend is not extended (25,000 words of the expression grammar up to length 12 in well under a second)
-  - The search runs in slices and asks after every 30 s whether to continue; stopped, it reports the lengths checked completely
-  - Agreement is reported as a hint only (equivalence of context-free grammars is undecidable)
-  - The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the violating rules
-- **Earley (1970) & ETTP (Scott & Johnstone 2025/2026) Chart Parsers** (tab *Earley / ETTP*):
-  - General context-free parsing for arbitrary CFGs (including left/right recursion, ambiguities, and cycles) in $\mathcal{O}(n^3)$ worst-case, $\mathcal{O}(n^2)$ for unambiguous and $\mathcal{O}(n)$ for bounded-state grammars
-  - **Classic Earley (1970)** with the Aycock & Horspool (2002) fix for $\varepsilon$-rules (the predictor moves the dot over nullable non-terminals, so the completer misses no item)
-  - **Leo's transitive items (1991)** as a switch: on a deterministic reduction path the completer adds only the topmost item, so right recursion (`S → a S | ε` on $a^n$) costs a linear number of items instead of a quadratic one; the item counts with and without Leo are shown, the steps explain every transitive item, and the skipped items are reconstructed for the derivation tree (as Marpa does)
-  - **Earley Table Traversing Parsers (ETTP 2025/2026)**: a precomputed table split into kernel and predicted states (as in Aycock & Horspool's split automaton); the sets hold pairs $(q, j)$ = all items of state $q$ with origin $j$, no rule is expanded at runtime; trees from the parser's own chart
-  - Interactive step simulator: each step marks the new item and the items it came from, explains acceptance or rejection, highlights the used transition in the automaton graph and the derived subtree in the derivation tree; ETTP transition table inspector
-- **GLL — generalised LL (Scott & Johnstone 2010, 2013) with BSR sets (Scott, Johnstone & van Binsbergen 2019)** (tab *GLL*):
-  - Recursive descent made general: descriptors (L, u, i) of grammar slots, the sets R and U, a graph-structured stack of nodes (L, i) with the pop set P, and the operations `add`, `create` and `pop` as in the papers; any CFG, including left recursion (immediate, indirect, hidden), ε-rules and cycles; the look-ahead `test` with FIRST/FOLLOW as a switch
-  - The derivations are recorded with `bsrAdd` as a BSR set (elements (X ::= α, i, k, j) and (α, i, k, j)); acceptance = (S ::= α, 0, k, n) ∈ Υ; all derivation trees are read from it (count, ∞ with a cycle, the first 50 listed)
-  - Step by step: the descriptor taken from R and every operation it causes, R and U, the BSR set with the new elements, the GSS (nodes with their returns in P), the subtree of the newest rule element and the trees of the whole word
-  - **Shared packed forest (SPPF)** of all trees in one picture, by rules (Tomita) or binarised (Scott & Johnstone 2013): shared symbol nodes, packed nodes per derivation, ambiguous nodes marked, the chosen tree highlighted; built from the GLL BSR set or from the Earley chart (the same forest); the GLR panel shows its trees as a forest too
-- **ALL(*) Adaptive Top-Down Parser & Automata (Parr, Harwell, & Fisher 2014)** (tab *ALL(*)*):
-  - Implements the adaptive LL(*) prediction of ANTLR 4: SLL prediction with a cached lookahead DFA, conflict detection and fallback to full-LL prediction with the parser's real stack; ambiguities resolved by the minimal alternative; left recursion refused as not applicable
-  - Augmented Transition Networks (ATN) with rule call and return transitions
-  - Dynamic Lookahead DFA synthesis: caching deterministic lookahead decisions computed via ATN subparser $\varepsilon$-closure simulations
-  - Interactive step simulator with Lookahead DFA Dagre SVG graph visualization, micro-step lookahead tracing, and derivation tree building
-- **Generalized LR (GLR) Parser (Tomita 1986, Scott & Johnstone 2006)**:
-  - General bottom-up parsing for non-LR and ambiguous grammars using Graph-Structured Stack (GSS)
-  - Forks on Shift/Reduce and Reduce/Reduce conflicts, merges on identical stack frontiers, and produces the complete parse forest
-  - Interactive SVG GSS graph visualizer powered by Dagre, with node inspection (origins, LR items, merge notices) and synchronized derivation tree highlighting
-  - The trees found can be shown merged into one shared packed forest
-- **Membership & CYK Step-by-Step** (tab *CYK*):
-  - Membership of a word for **any** context-free grammar (ambiguous, with ε-rules or cycles, neither LL nor LR): dynamic programming over the parts of the word and whole right-hand sides
-  - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
-  - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle
-  - **Step-by-step table filling simulator**: progressive cell calculation with visual operand cell highlighting (left operand, right operand, and target cell in the DP triangle), step explanation of matching rules $A \to B\,C$, and derivation tree extraction
-- **Recursive-descent parser generator & step simulator** (tab *Rekurzivní sestup*, LL(1) grammars; recursive ascent has its own tab *Rekurzivní vzestup* next to it, sharing the word, the samples and the symbol-table actions):
-  - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine), in **Oberon-07** (modules `In`, `Out`), in **C99** (stdio, a `switch` per non-terminal, exit status 0 for an accepted word), in **Python 3** and in **JavaScript** (`parse(input, hooks)` with optional hooks onEnter/onRule/onMatch/onExit, runnable in the browser and by `node parser.js < input`): one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side; all five print the same for the same input
-  - **Step simulator**: the input with the current symbol, the call stack (the rule of every procedure and the symbol it is at), the procedure being executed with its `if (sym ∈ {…})` branches, the parse tree with the path to the active node, and the symbol table; step back/forward, play, speed
-  - **Symbol table** (a stack of scopes, each with its names) – a **demonstration of how a parser builds and uses the table, not a compiler**; the tab has a help section on what it can and cannot do:
-    - Names in the input are read as the identifier terminal and numbers as the number terminal (`x := n - 1` is `ident := ident - number` with the names x, n), so the table holds real names; the sample grammars come with such programs
-    - The actions of a rule are tied to positions of its right-hand side: a name is declared when its identifier has been read, a scope opens before one symbol and closes after another, and every other identifier read is looked up from the innermost open scope outwards (the step says where it was found)
-    - **A name missing in the symbol table, and a name declared twice in one scope, are semantic errors that stop the recursive descent**, although the word is correct syntactically (a switch turns them into a mere report). Only real names are checked: the terminal `id` written instead of a name (a word of terminals) names nothing, and the tab suggests writing names
-    - The actions are detected from editable keywords: `procedure p` / `function f` declares p in the enclosing scope and gives it its own scope (not including a following procedure of the same list); `var x, y`, `const c = 5`, `let v` declare the names, also through list and definition non-terminals used only there (`VarRest`, `ConstDef`); `int x` / `Type x` declares x with the type read last; `{ … }` and `begin … end` are scopes only when declarations can occur inside them (a C block, not PL/0's compound statement); a grammar without declarations is simulated purely syntactically
-    - The table of actions can be edited (several actions per rule, positions chosen from the right-hand side, own JavaScript run with `ctx`); views: scope tree (closed scopes included), the stack of open scopes, all scopes in order of creation
-    - Sample grammars: arithmetic expressions (no declarations), C blocks with typed declarations and shadowing, a PL/0-like language with procedures, `let`/`const`/`function` with blocks, and the whole PL/0; loading one starts a new grammar like choosing a preset (the history starts again)
-    - **What it does not do:** it compiles nothing (no code for the analysed program, no addresses, levels or sizes of variables) and runs nothing; types, kinds of names (calling a variable, assigning to a constant) and parameters are not checked; a name must be declared before it is used in the text (no forward references, modules, record fields, overloading, labels); a type written after the name (`x : integer`) and types defined by the program are not recognised; the detection is a heuristic by keywords and terminal names; the scanner knows no comments or strings; the generated programs (PL/0, Oberon, C, Python, JavaScript) check the syntax only; LL(1) grammars only, at most 2,000 steps
-  - Comments give the rules of every procedure above it and the rule of every branch (`(* 2: E' -> + T E' *)`, `/* … */`, `# …`); Wirth's original PL/0 has no comments, so for a compiler without them they have to be deleted
-  - Without forward declarations a PL/0 or Oberon procedure can call only itself, enclosing procedures and earlier ones, so the procedures are nested along the calls as `expression ⊃ term ⊃ factor` in Wirth's compiler; when nesting cannot express the calls, PL/0 uses one dispatching procedure and Oberon procedure variables (as ORP.Mod). C (prototypes) and Python (names looked up at the call) need no nesting
-  - The **P-code** of the PL/0 program (a built-in PL/0 compiler with Wirth's code generation and the course mnemonics JMC/RET), runnable here, and a button that opens it with the input in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/) (`#code_b64=…&input=…`; on home.zcu.cz the copy `../pl0/` next to the analyser, the same version); its output equals the left parse of the LL(1) simulation
-- **Recursive ascent** (sub-tab *Rekurzivní vzestup (LR)* of the tab *Rekurzivní sestup*, any grammar with a conflict-free LR(0)/SLR(1)/LALR(1)/IELR(1)/LR(1) table; link `tab=ascent`):
-  - The LR parser as **one procedure per LR state**, named by the lecture states (`E1` for E₁, `start` for #) and commented with the state's items: called after the shift into its state, it reads a terminal and calls the procedure of g(state, a), or after a reduction by A → α returns (A, |α|); every caller decrements the count and returns until it is 0, and there calls g(state, A) in a loop (Horspool's multi-level `return* k`); an ε-rule does the goto inline; accept is the rule 0 S' → S returned to #. The output is the right parse, then OK or ERR and the symbol
-  - Generated in **JavaScript** (run in the browser; hooks onEnter/onMatch/onRule), **Python 3**, **C99** (the non-terminal in a global `lhs`, the count as the result), **Oberon-07** (one function `State(q)` with a CASE, one RETURN at the end) and **PL/0** (no function results and no forward declarations: one procedure `state` with the state number in its local `mine`, so its activation records are the state stack), with its **P-code** run here and linkable to the KIV/FJP interpreter
-  - **The same input as recursive descent** (names and numbers read as the identifier and number terminals, the RD sample grammars and programs) and **the same symbol-table actions**: an action runs when the parser enters a state whose kernel is just the action's item (the rule is known), otherwise at the reduction – later than in recursive descent, which the tab reports together with a free-position test for a Yacc-style marker M → ε; undeclared and redeclared names stop the parse
-  - The **derivation tree grows bottom up**: the forest of the stack, joined at every reduction
-  - **Step simulator**: the code with the executed lines and the active procedure, the automaton with the state on top and the transition used, the tree, and the call stack next to the LR state stack (they are the same) with the symbol table; a reduction shows as |α| returns and one goto call; a help section on what the demonstration can and cannot do and a comparison with recursive descent
-  - A table of the correspondence (state stack = call stack, the returned count = the |α| states popped), the literature (Roberts 1988, 1989; Kruseman Aretz 1988; Leermakers, Augusteijn & Kruseman Aretz 1992; Pennello 1986; Horspool 1993) and a note on Horspool's recursive ascent-descent
-- **Word Generator**:
-  - BFS enumeration of the words with the shortest derivations in $L(G)$
-  - Random derivation with guaranteed termination (minimal derivation heights)
-  - Leftmost sentential derivation sequences with the rewritten non-terminal highlighted
-  - Interactive Derivation Tree visualizer (children kept in order, optional leaf row showing the yield)
-- **LL(k) Analyser & Parser**:
-  - $\text{LL}(1)$ parse table construction $M[A, a]$ with First/First and First/Follow conflicts explained per rule
-  - Exact $\text{LL}(2)$ test (Aho–Ullman local follow sets) next to the strong $\text{LL}(2)$ test
-  - Strong $\text{LL}(2)$ parse table $M[A, xy]$ and, for grammars that are LL(2) but not strong LL(2), the Aho–Ullman tables $T(A, L)$
-  - LL(1) and LL(2) simulation (expansion / comparison / acceptance) with the left parse; the LR simulation shows the right parse
-  - Interactive top-down stack simulator with a clickable trace table, auto-play, keyboard stepping and live parse tree
-  - Optional **panic-mode error recovery** (switch, off by default): an empty M[A, a] throws input away until a symbol of FIRST(A) (A is resumed) or FOLLOW(A) ∪ {$} (A is given up); a mismatching terminal is taken as missing; every start, skipped symbol, pop and recovery is its own step with the stop symbols; the errors are listed at the end and the constructs given up are marked in the tree
-- **LR(k) Analyser & Parser**:
-  - $\text{LR}(0)$, $\text{SLR}(1)$, $\text{LALR}(1)$, and $\text{LR}(1)$ canonical collections
-  - Two table layouts, switched at the top of the LR screens (tables, automaton, LaTeX):
-    - **KIV/FJP lectures (default)**: states named by the symbol that leads into them ($E_1, E_2, \dots$; the initial state is $\#$), a table of actions $f$ (P = shift, R$i$ = reduce, A = accept; for LR(0) one action per state) and a table of transitions $g$ over all terminals and non-terminals
-    - **Dragon Book**: numbered states, $\text{ACTION}[s, a]$ with `s5` / `r2` / `acc` and $\text{GOTO}[s, A]$ for non-terminals
-  - Strict LR(0): $S' \to S\bullet$ is a complete item, so it conflicts with a shift or another reduction in the same state (an LR(0) language is prefix-free)
-  - Shift/Reduce and Reduce/Reduce conflict detection
-  - **Counterexamples for every conflict** (Isradisaikul & Myers 2015, as Bison's `-Wcounterexamples`): a *unifying* one — one word with two derivation trees that part exactly at the conflict, a proof of ambiguity — or a *non-unifying* one: two derivations sharing the prefix up to the conflict point (•), with the note when the prefixes must differ (states merged by LALR) or the lookahead follows only in FOLLOW (SLR/LR(0) approximation); in the table and in the automaton's state panel
-  - Interactive SVG State Machine Graph (powered by Dagre) with kernel/closure items, conflict states, pan, zoom, and state inspection
-  - The graph explains the construction: for the selected state it highlights the transition that created it, the other transitions into it, and in the predecessors the items whose dot moves over the entry symbol (they become its kernel); clicking an item goes to the state its transition leads to
-  - **Construction step by step** (LR(0), SLR(1), LALR(1) states, LR(1)): the initial state as CLOSURE of the initial item, then every GOTO in the order of the construction with the items whose dot moves, the kernel, what CLOSURE adds, and whether the state is new or exists already; the graph keeps its layout and shows the states and transitions created so far
-  - **Merging LR(1) → LALR(1)**: every merge of LR(1) states with the same core, with the lookaheads of each item in each LR(1) state and their union; a merge that creates a conflict none of the merged states had (the grammar is LR(1) but not LALR(1)) is marked with the colliding lookaheads
-  - Hovering a lookahead (LR(1), LALR(1)) explains why it is there: carried over by a transition, $a \in \text{FIRST}(\beta)$ in the closure, passed on through a nullable $\beta$, or the end marker of the initial item; for LALR(1) also which merged LR(1) states have it
-  - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
-  - Optional **panic-mode error recovery** (Aho et al. §4.8.3): the stack is popped to a state s with a transition g(s, A), input is thrown away until a symbol of FOLLOW(A) with which the parser really goes on (checked through its reductions), and A is pushed for the error part; explained step by step, the popped subtrees and the thrown-away symbols form the marked error subtree
-- **University Teaching & Classroom Features**:
-  - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework; symbol names compile with pdfLaTeX (subscripts of copied non-terminals `B₂` → `B_{2}`, accented names in text mode, arrows and Greek letters as commands)
-  - **Simulator input**: tokens separated by spaces, or a word without spaces (`aabb`, `id+id`) split into terminals by longest match; the split is shown
-  - **The example word is always a word of the grammar's language**: the LL and LR simulators, membership and recursive descent start with the word of the preset or the link only while it belongs to L(G) (also after editing or transforming the grammar); otherwise they get a word derived from the grammar itself, of a reasonable length (at least 8 symbols when the language has such words, at most 14 unless its shortest word is longer) and using as many different rules as possible
-  - **Long computations do not block the page**: the analysis and the automatic LL(1) attempt run in slices with their progress shown; after every 30 s of computation they pause and ask whether to continue. Stopped after the LALR(1) automaton, the results are shown with the missing parts (exact LL(2), LR(1), ambiguity) marked. LALR(1) is built from the LR(0) states by propagating lookaheads (Dragon Book, Alg. 4.62/4.63), so it does not need the canonical LR(1) collection; automata over 150 states are drawn only on request and tables over 300 rows show their first rows
-  - **SVG / PNG Export** of automata and trees with the colours of the active theme
-  - **Grammar links**: `?g=<grammar>` opens and analyses a grammar immediately (see below); the *Link* button below the editor copies such a link
-  - **Bilingual Interface**: Czech (default) and English; the Czech terms follow the KIV/FJP lectures (množina řídicích symbolů, rozkladová tabulka, kolize FIRST-FIRST, kolize přesun/redukce, levý/pravý rozklad, nenormované symboly, …)
-  - **Light (default), Dark and Projector Themes**: high-contrast outlines and text in the light and projector themes
-  - **Curated Textbook Presets**: Benchmark grammars from the Dragon Book, Aho–Ullman, dangling else, arithmetic precedence, and grammars separating LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2)
-  - **Constructs of real languages** (non-terminals named as in real grammars): if–else as matched/open statements (unambiguous, SLR(1), not LL(k)), Pascal's if–then–else resolved by `%nonassoc` as in Bison, Ada's `if … end if` (LL(1)), C `while`/`for` loops (LL(1) with ε), C variable declarations (left-recursive list: SLR(1), not LL(1)), a C function declaration (LL(2), not LL(1)), a JavaScript arrow function called at once (unambiguous but not LR(k): a cover grammar is needed), C's `a * b ;` (ambiguous without the symbol table, the "lexer hack"), assignment vs. procedure call (left factoring; PL/0's `call`), Lisp S-expressions (an LR(0) grammar), and the whole of Wirth's **PL/0** (EBNF repetitions as right-recursive lists: LL(1) and SLR(1), so the recursive-descent tab generates a PL/0 parser written in PL/0, nested like Wirth's compiler)
+The menu has two rows. The first row holds the analyses and parsers, the second the work with the grammar and the export.
 
-### Grammar links
+| Row | Czech | English | `tab=` |
+|---|---|---|---|
+| 1 | Přehled | Overview | `overview` |
+| 1 | Generátor slov | Word generator | `words` |
+| 1 | FIRST a FOLLOW | FIRST & FOLLOW | `first-follow` |
+| 1 | LL | LL | `ll` |
+| 1 | LR automat | LR automaton | `graph` |
+| 1 | LR analyzátory | LR parsers | `lr` |
+| 1 | CYK | CYK | `membership` (or `cyk`) |
+| 1 | ALL(\*) | ALL(\*) | `all` |
+| 1 | Earley & ETTP | Earley & ETTP | `earley` (or `ettp`) |
+| 1 | GLL | GLL | `gll` |
+| 2 | Úpravy gramatiky | Transformations | `transformations` |
+| 2 | Průvodce úpravami | Transformation Guide | `teaching` (or `guide`) |
+| 2 | Porovnání jazyků | Language comparison | `check` (or `comparison`) |
+| 2 | Rekurzivní sestup | Recursive descent | `rd` |
+| 2 | Rekurzivní vzestup | Recursive ascent | `ra` (or `ascent`) |
+| 2 | LaTeX a export | LaTeX & export | `latex` |
 
-A link can carry a grammar, so a course page or an e-mail can open it ready for analysis:
+### Přehled / Overview
+- The classification of the grammar: LL(1), LL(2) (exact, and whether it is also strong LL(2)), LR(0), SLR(1), LALR(1), IELR(1) and LR(1), with the number of conflicts and states. A table that is conflict-free only thanks to precedence declarations is marked separately.
+- Which general parsers apply: ALL(\*), Earley, ETTP and GLL.
+- Properties of the grammar: ε ∈ L(G), L(G) = ∅, immediate, indirect and hidden left recursion, cycles A ⇒⁺ A, and the nullable, generating and reachable symbols.
+- Ambiguity. A bounded search looks for a word with two derivation trees and shows both trees. An LL(1) or LR(1) grammar is reported as unambiguous. When the search finds nothing within its limits, the overview says that this is no proof. For an ambiguous grammar without precedence declarations it suggests them.
+- When the grammar has useless symbols, the overview says that the classification assumes a reduced grammar and offers to reduce it.
+
+### Generátor slov / Word generator
+- The words with the shortest derivations, found breadth-first.
+- Random derivations that always terminate, because they use rules of minimal derivation height.
+- Leftmost derivations, with the rewritten non-terminal highlighted.
+- Derivation trees, optionally with a row of leaves that shows the yield.
+
+### FIRST a FOLLOW / FIRST & FOLLOW
+- FIRST₁, FIRST₂, FOLLOW₁ and FOLLOW₂ of every non-terminal.
+- FIRST₁ of every right-hand side, and the director sets (LOOKAHEAD₁ and LOOKAHEAD₂) of every rule.
+
+### LL
+- The LL(1) parse table M[A, a]. Each conflict is classified per rule as FIRST-FIRST or FIRST-FOLLOW, with its reason.
+- The exact LL(2) test (Aho–Ullman, local follow sets) next to the strong LL(2) test. The tab shows the strong LL(2) table M[A, xy] and, for grammars that are LL(2) but not strong LL(2), the tables T(A, L).
+- A step simulator for LL(1) and LL(2) (expansion, comparison, acceptance). It shows the stack, the input, a clickable trace, the derivation tree and the left parse.
+- Optional **panic-mode error recovery** (a switch, off by default, Aho et al. §4.4.5):
+  - An empty cell M[A, a] throws input away until a symbol of FIRST(A), where A is analysed again, or of FOLLOW(A) ∪ {$}, where A is given up.
+  - A terminal on the stack that does not match is taken as missing.
+  - Each phase is a step of its own, with the stop symbols shown. The errors are listed at the end, and the constructs that were given up are marked in the tree.
+
+### LR automat / LR automaton
+- The LR(0), LR(1), LALR(1) and IELR(1) automata as graphs, with kernel and closure items, complete items and conflict states.
+- For a selected state, the graph shows how it was created: the transition that created it, the other transitions into it, and the items of the predecessors whose dot moves over the entry symbol. Clicking an item goes to the state its transition leads to.
+- Hovering a lookahead explains why it is there:
+  - it was carried over by a transition;
+  - a ∈ FIRST(β);
+  - it was passed on through a nullable β;
+  - it is the end marker of the initial item;
+  - for LALR(1), which of the merged LR(1) states have it.
+- **Construction step by step.** The construction starts with the CLOSURE of the initial item. Then each GOTO is shown with the items that move, the kernel, what CLOSURE adds, and whether the state is new or already exists.
+- **LR(1) → LALR(1) merges.** For every merged state the tab shows the lookaheads of each LR(1) state and their union. A conflict that the merge creates is marked.
+- Automata with more than 150 states are drawn only on request.
+
+### LR analyzátory / LR parsers
+- **Tables** for LR(0), SLR(1), LALR(1), IELR(1) and LR(1), in two layouts:
+  - the KIV/FJP lectures (the default): states named by their entry symbol (E₁, E₂, …, with # for the initial state), the action table f (P, R*i*, A) and the transition table g;
+  - the Dragon Book: ACTION/GOTO with numbered states, `s5`, `r2`, `acc`.
+- **Strict LR(0).** S' → S• is a complete item, so it conflicts with a shift or another reduction in its state.
+- **Precedence.** Yacc precedence (`%left`, `%right`, `%nonassoc`, `%prec`) resolves shift/reduce conflicts as Bison does. Every resolution is listed with its reason, and a switch shows the table without precedence.
+- **IELR(1).** The table is computed from canonical LR(1). LR(1) states with the same core are merged unless the merge would change an action after conflict resolution, so the parser behaves like canonical LR(1). It is not Denny & Malloy's annotation algorithm, and the split is greedy, so the result is not guaranteed to be minimal. Each split records its reason. An IELR(1) table is conflict-free exactly when the grammar is LR(1).
+- **Counterexamples for every conflict** (Isradisaikul & Myers 2015, as Bison's `-Wcounterexamples`), shown in the table and in the state panel of the automaton:
+  - **unifying:** one word with two derivation trees that part at the conflict, which proves the grammar ambiguous;
+  - **non-unifying:** two derivations with the same prefix up to the conflict point •, with a note when the prefixes must differ (states merged by LALR) or when the lookahead comes only from FOLLOW (the SLR or LR(0) approximation).
+
+  The search is bounded, and "not found" is stated as such.
+- **The shift-reduce simulator** shows a textbook trace (stack, input, action), the parse forest after every step, and the right parse.
+- **Optional panic-mode error recovery** (Aho et al. §4.8.3). The parser pops the stack to a state s with a transition g(s, A). It then throws input away until a symbol of FOLLOW(A) with which it can really go on, which is checked through its reductions, and pushes g(s, A). The popped subtrees and the thrown-away symbols become a marked error subtree.
+- **GLR** (Tomita) over the chosen table. A graph-structured stack forks on conflicts and merges equal states, and the GSS can be inspected node by node. All derivation trees are found, and they can be shown as one shared packed forest.
+
+### CYK
+- **Membership for any context-free grammar**, including ambiguous ones, grammars with ε-rules or cycles, and grammars that are neither LL nor LR.
+- **The number of derivation trees.** The count is finite, or infinite with a cycle. Up to 20 trees are listed with their left parses.
+- **A rejected word** is explained by the longest prefix of some word of the language.
+- **The CYK table V(i, j)** for a grammar in Chomsky normal form, in the triangle of Hopcroft, Motwani and Ullman. For another grammar the tab lists the rules that break CNF and can convert the grammar.
+- **Step by step:** each cell is computed with its left and right operand cells highlighted and the rules A → B C that apply. Cells not yet computed are dimmed. The tree pager gives the exact count.
+- The CYK view is the CYK card of `src/ui/views/MembershipView.tsx`.
+
+### ALL(\*)
+- ALL(\*) of ANTLR 4 (Parr, Harwell & Fisher 2014):
+  - an augmented transition network (ATN) with one state per item;
+  - SLL prediction with the cached lookahead DFA;
+  - conflict detection and a fallback to full-LL prediction with the parser's real stack;
+  - ambiguities resolved by the minimal alternative, after an LL conflict only.
+- Left recursion of any kind gives "not applicable", and reaching a limit gives "undecided", never a rejection.
+- The tab steps through the decisions and through the lookahead computation (closures, the call stack, the DFA states). The DFA graph shows the state of the cache at the shown step.
+- **Limits.** Without a graph-structured stack, a closure is capped at 200,000 configurations. ANTLR's two-stage SLL-then-LL parse is not simulated.
+
+### Earley & ETTP
+- **Earley (1970)** with the ε-rule fix of Aycock & Horspool (2002). Every step marks the new item and the items it came from (parent, scanned, completed, waiting). The last step explains acceptance or rejection: the accepting item, or the first empty set and the longest prefix that can still be completed.
+- **Leo's transitive items (1991)** are a switch. On a deterministic reduction path the completer adds only the topmost item, so right recursion such as `S → a S | ε` on aⁿ needs a linear number of items instead of a quadratic one. Both counts are shown. The skipped items are rebuilt for the derivation trees, as in Marpa (Kegler 2019).
+- **ETTP (Scott & Johnstone 2025/2026).** An Earley recogniser driven by a precomputed table, with sets of pairs (q, j). The table has kernel states, which take the origin j of the pair, and predicted states, which take the current set as their origin, joined by a precomputed ε-link. Prediction is therefore a table lookup instead of expanding rules at parse time.
+  - Only the abstract of the paper could be read, so the construction follows the split automaton of Aycock & Horspool, and its correctness is checked against an independent Earley oracle.
+  - The authors' measurements are reported as theirs.
+  - The pairs list the items of their states. `stats.representedItems` equals the number of items of classic Earley.
+- **Both parsers take their derivation trees from their own chart** (`src/core/earley/earleyTrees.ts`), and the trees can be stepped through.
+- The automaton graph has kernel and predicted items, transitions with their reasons, and a state inspector. It highlights the transition or ε-link used by the current ETTP step.
+
+### GLL
+- Generalised LL (Scott & Johnstone 2010, 2013):
+  - descriptors (L, u, i), the sets R and U;
+  - a graph-structured stack of nodes (L, i) with the pop set P;
+  - the operations `add`, `create` and `pop` as in the papers;
+  - the look-ahead `test` with FIRST/FOLLOW, as a switch.
+- It works for any context-free grammar, including all kinds of left recursion, ε-rules and cycles.
+- The derivations are recorded as a **BSR set** (Scott, Johnstone & van Binsbergen 2019), with acceptance (S ::= α, 0, k, n) ∈ Υ. All derivation trees are read from it: their count (∞ with a cycle) and the first 50.
+- **Step by step:**
+  - the descriptor taken from R and every operation it causes;
+  - R and U, and the BSR set with its new elements;
+  - the GSS with P on its nodes;
+  - the subtree of the newest rule element.
+- **The shared packed forest (SPPF)** of all trees in one picture, either by rules (Tomita) or binarised (Scott & Johnstone 2013). It is built from the GLL BSR set or from the Earley chart, which give the same forest. Ambiguous nodes are marked, and the chosen tree is highlighted.
+
+### Úpravy gramatiky / Transformations
+- **Transformations of the whole grammar:**
+  - reduction (unproductive and unreachable symbols), ε-rules (a new start symbol only when S occurs on a right-hand side), unit rules;
+  - left recursion (Paull's algorithm with logged preprocessing, or the left-corner transformation of Rosenkrantz & Lewis);
+  - left and right factoring, left-linear to right-linear;
+  - against LR conflicts: dangling else, precedence stratification, splitting a non-terminal by its LR context, and an automatic attempt;
+  - CNF and GNF.
+- **Explanations.** Each step shows the added and removed rules and the grammar after it. The tab ends with a normal-form checklist (reduced, ε-free, no unit rules, no left recursion, CNF, GNF).
+- **Transform by clicking.** In the editor's click mode, a click on a non-terminal offers transformations:
+  - on a left-hand side: left recursion with or without ε (as in the lectures), left factoring, elimination of a leading non-terminal, ε and unit rules, substitution, merging non-terminals with the same rules, useless symbols;
+  - on an occurrence in a right-hand side: substitution, **absorption of the following symbol** `A → α B a β` ⇒ `A → α [Ba] β`, `[Ba] → αᵢ a` (as in the lectures, it turns a FIRST-FOLLOW conflict into a FIRST-FIRST one), and a copy B₂ for this occurrence, which reduces FOLLOW sets.
+
+  LL(1) conflicts are marked FF and FFL, and the actions that address them are tagged.
+- **History.** Undo and redo (also Ctrl+Z and Ctrl+Y) cover transformations, loaded examples and typing. The tab keeps the protocol of all steps, and any earlier state can be restored from it. Choosing an example starts a new history.
+- **The automatic attempt at LL(1).** The order of steps follows R. Cockett's CPSC 411 notes, and the methods are those of the KIV/FJP lectures. Every operation is listed with its reason. When the attempt fails, it keeps the best state and names the remaining conflicts.
+- **References.** Every transformation has an ⓘ text: the scheme, why it keeps the language, when to use it, and the publications.
+- **Testing.** Every transformation is tested for language equivalence, also on seeded random grammars, together with the form it promises.
+
+### Průvodce úpravami / Transformation Guide
+- 19 techniques in four groups: cleaning and reduction, LL(1) transformations and left recursion, LR transformations and conflict elimination, and normal forms.
+- Each technique has its original publication, an example grammar with the defect (or the grammar from the editor), the affected symbols and rules, and the transformation step by step.
+- A language comparison on words up to a chosen length gives a word derived with the changed rules and its trees in both grammars. The result can be loaded into the editor.
+
+### Porovnání jazyků / Language comparison
+- A student's grammar is compared with the grammar in the editor (its current text) on all words up to a chosen length, shortest first. The first difference is therefore a shortest counterexample.
+- For the counterexample, the grammar that generates it shows its derivation tree and leftmost derivation. The other grammar shows the attempt of the general analyser: a partial tree, the terminal it needs where the word differs, and what may follow.
+- The search runs as incremental Earley recognisers over a tree of prefixes, in slices. It asks every 30 s whether to continue.
+- Agreement is only a hint, because equivalence of context-free grammars is undecidable.
+- The promised form is checked exactly: reduced, ε-free, no unit rules, no left recursion, left-factored, LL(1), CNF, GNF, with the rules that violate it.
+
+### Rekurzivní sestup / Recursive descent
+- Sub-tabs: simulator, generated code, and symbol-table actions. The tab is for LL(1) grammars.
+- **The generated parser** has one procedure per non-terminal. It chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side. Comments give the rules.
+  - **Languages:** **PL/0** (with `? x` / `! v` for the character I/O of the course VM), **Oberon-07**, **C99**, **Python 3** and **JavaScript** (`parse(input, hooks)`). All of them print the same for the same input.
+  - **Nesting.** PL/0 and Oberon have no forward declarations, so the procedures are nested along the calls as in Wirth's compiler. When nesting cannot express the calls, the code falls back to a dispatching procedure (PL/0) or to procedure variables (Oberon).
+- **The P-code** of the PL/0 program comes from a built-in PL/0 compiler with Wirth's code generation. It runs in the tab and opens in the [KIV/FJP PL/0 interpreter](https://richardlipka.github.io/online-pl0-interpreter/).
+- **The step simulator** shows the input, the call stack (with the stop sets when recovery is on), the procedure being executed with its branches, the parse tree and the symbol table.
+- **The symbol table** is a stack of scopes. It is a **demonstration of how a parser builds and uses the table, not a compiler**, and the tab says what it can and cannot do.
+  - Names and numbers in the input are read as the identifier and number terminals.
+  - Declarations, scopes and lookups are actions placed at positions of the right-hand sides. They are detected by keywords and can be edited.
+  - An undeclared name, or a name declared twice in one scope, is a semantic error that stops the descent. A switch turns it into a report.
+- **Optional panic-mode recovery** after Wirth's PL/0 compiler (lecture 3 of the course):
+  - every procedure gets the stop set FOLLOW(A) ∪ the stop set of its caller;
+  - `test(start set, stop set)` runs on entry and `test(stop set, ∅)` on exit;
+  - a missing terminal is taken as inserted.
+
+  The generated programs still stop at the first error.
+- Sample grammars come with programs: expressions, C blocks, a PL/0-like language, `let`/`const`/`function`, and the whole PL/0.
+
+### Rekurzivní vzestup / Recursive ascent
+- Sub-tabs: simulator (with the code and the automaton) and symbol-table actions. The tab works for any grammar with a conflict-free LR(0), SLR(1), LALR(1), IELR(1) or LR(1) table.
+- The tab shares the word, the sample grammars and the symbol-table actions with *Recursive descent*. Both tabs are one view.
+- **The LR parser as one procedure per LR state** (Horspool 1991/1993, §5.2). Procedures are named by the lecture states and commented with their items.
+  - A procedure is called after the shift into its state.
+  - It reads a terminal and calls the procedure of g(state, a).
+  - A reduction by A → α returns (A, |α|). Every caller decrements the count and returns while it is above 0, and the caller where it reaches 0 calls g(state, A) in a loop.
+  - An ε-rule does the goto in place.
+- **Languages:**
+  - **JavaScript** runs in the browser;
+  - **Python 3**;
+  - **C99**: the non-terminal goes in a global, the count is the result;
+  - **Oberon-07**: one function with a CASE;
+  - **PL/0**: one procedure `state`, whose activation records are the state stack;
+  - the P-code of the PL/0 program.
+
+  The output is the right parse, then OK, or ERR and the symbol.
+- **The step simulator** shows the code with the executed line, the automaton with the current state, the call stack next to the LR state stack (they are the same), the derivation tree growing bottom up, and the symbol table.
+- **Symbol-table actions** run when the parser enters a state whose kernel is just the action's item. Otherwise they wait for the reduction, which the tab reports together with a test whether a Yacc-style marker could go there.
+- **Optional panic-mode recovery**, the same as in the LR simulator, expressed in calls and returns.
+- A comparison table explains how the method relates to recursive descent. The literature: Roberts, Kruseman Aretz, Leermakers et al., Horspool, and Pennello (a directly executed LR parser, not recursive ascent).
+
+### LaTeX a export / LaTeX & export
+- Compile-ready LaTeX for the grammar, the FIRST/FOLLOW sets, and the LL and LR tables (either layout). The LaTeX buttons on the other tabs export their tables and derivation trees, the trees as `forest`. Symbols compile with pdfLaTeX: B₂ becomes `B_{2}`, accented names are set in text mode, arrows and Greek letters become commands.
+- SVG and PNG export of automata, trees and forests, in the colours of the active theme, from the toolbar of every graph.
+
+---
+
+## Grammar input
+
+- **Rule operators:** `->`, `-->`, `=>`, `→`, `::=`, `:==`, `:=`, and `:` (Yacc/ANTLR, where a trailing `;` or `.` or a line holding only `;` ends a rule).
+- **Alternatives:** `|`, or a line that starts with `|`.
+- **Several rules on one line:** separated by `;` (`S -> aAS | b; A -> a | bSA`) or by a space before the next `A ->`.
+- **Rule numbers copied from slides** are labels, not symbols: `S --> aAS    (1)`, `(1) S -> …`, `1. S -> …`. A warning appears when they differ from the analyser's numbering.
+- **Non-terminals** are every symbol defined on a left-hand side and every `<name>`. The bracketed names of the lectures (`[Ba]` after absorption, `[A-X]` of the left-corner transformation) are non-terminals when they have rules. Otherwise `a[i]` stays the terminals `[`, `i`, `]`.
+- **Terminals** are all other symbols. A quoted `"…"` or `'…'` symbol is always a terminal.
+- **ε:** `ε`, `ϵ`, `eps`, `epsilon`, `λ`, `lambda`, `%empty`, `""`, and `#` when it forms a whole alternative. A standalone `e` (the notation of the KIV/FJP lectures) makes the editor ask whether it means ε or the terminal e. Until it is answered, `e` is read as ε.
+- **Course notation**, where every left-hand side is a capital letter with optional digits and primes, or a bracketed name:
+  - Compact words such as `S → aSb | ab`, `E' → +TE'` and `A1 → A2A3` are split into the defined non-terminals (longest match) and single characters.
+  - A word such as `bxc` may mean one terminal or several symbols. If no right-hand side separates its symbols by spaces, the editor asks. Until then, and with spaces elsewhere (`F → ( E ) | id`), such a word is one terminal, and a line under the editor says so.
+  - A capital letter without rules is a non-terminal that generates no word, with a warning.
+- **Yacc/Bison files:** `%token`, `%left`/`%right`/`%nonassoc`/`%precedence`, `%start`, `%{ %}`, the `%%` sections, `{ actions }`, `%prec`, `%empty`, and string aliases.
+- **Precedence in the arrow notation:** lines `%left + -` (lowest precedence first) and `%prec X` at the end of an alternative.
+- **ANTLR 4 grammars:**
+  - the `grammar X;` header and the `options`/`tokens`/`@header` blocks;
+  - labels;
+  - lexer rules taken as tokens;
+  - `EOF`;
+  - EBNF `( )`, `*`, `+`, `?`, expanded into auxiliary non-terminals.
+- **Also accepted:**
+  - comments `// …`, `# …`, `/* … */`;
+  - Unicode identifiers (`Výraz`);
+  - typographic primes and quotes pasted from lecture notes.
+- **The symbol palette** under the editor inserts `→`, `|`, `ε`, primes, quotes and `<…>`.
+- **Errors and warnings.** Errors (`$` as a terminal, an arrow inside a right-hand side, an unparsable line) stop the analysis. Warnings (a capital without rules, duplicate rules) do not.
+
+## Working with the interface
+
+- **Layout.** The grammar panel on the left (editor, examples, history) and the analysis on the right are separated by a **draggable splitter**.
+  - Drag the splitter to make the grammar panel wider or narrower, from 240 px to 70 % of the window.
+  - A double-click, Enter or the button on the splitter collapses the panel and expands it again. Dragging it far to the left also collapses it, and the arrow keys move it.
+  - The browser remembers the width and whether the panel is collapsed.
+  - In the single-column layout of narrow screens there is no splitter, and the panel is always shown.
+- **Step controls.** The controls of every step simulator float in a bar at the bottom of the screen, so they stay at hand however far the step, the table or the tree is scrolled. The bar names the simulator and has back, forward, play/pause, speed, a slider that jumps to any step, and a button that scrolls back to the simulator. The ← / → keys step too.
+- **Simulator input.** Tokens are separated by spaces, or a word without spaces (`aabb`, `id+id`) is split into terminals by longest match, and the split is shown.
+  - The word of the preset or the link is used only while it belongs to L(G).
+  - Otherwise the app derives a word from the grammar: at least 8 symbols when the language has such words, at most 14 unless the shortest word is longer, and using as many rules as possible.
+- **Long computations do not block the page.** The analysis, the automatic LL(1) attempt and the language comparison run in slices with their progress shown, and they ask every 30 s whether to continue.
+  - Stopped after the LALR(1) automaton, the analysis shows its results and marks the missing parts (exact LL(2), LR(1), ambiguity).
+  - LALR(1) is built from the LR(0) states by lookahead propagation (Dragon Book, Alg. 4.62/4.63).
+  - Tables over 300 rows show their first rows.
+- **Examples.** The built-in examples are grouped by topic:
+  - the grammars of the lectures;
+  - textbook grammars that separate LR(0) / SLR(1) / LALR(1) / LR(1), LL(1) / SLR(1) and LL(2) / strong LL(2);
+  - ambiguous expressions with precedence, and dangling else;
+  - constructs of real languages: C, Pascal, Ada, JavaScript, Lisp, and the whole of Wirth's PL/0.
+- **Themes and language.** Light (the default), dark and projector themes. Czech or English. Both choices are remembered.
+
+## Grammar links (URL parameters)
+
+A link can carry a grammar, so a course page or an e-mail can open it ready for analysis. The *Odkaz* / *Link* button under the editor copies such a link.
 
 ```
 https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%20b%20a%20b&tab=ll
@@ -169,92 +299,81 @@ https://richardlipka.github.io/grammar-analyser/?g=S-->aAS|b;A-->a|bSA&w=a%20b%2
 
 | Parameter | Meaning |
 |---|---|
-| `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`); new lines as `%0A`, or rules separated by `;` or a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
-| `w` (or `word`) | The input word of the simulators, membership and recursive descent, symbols separated by spaces; used only when it belongs to the language of the grammar (otherwise a word of the grammar is derived) |
-| `tab` | `overview`, `first-follow`, `transformations`, `teaching`, `check` (or `comparison`), `ll`, `lr`, `graph`, `membership` (or `cyk`), `all`, `rd`, `ascent` (recursive ascent, a sub-tab of `rd`), `words`, `latex`, `earley` (or `ettp`), `gll` |
+| `g` (or `grammar`) | The grammar text, percent-encoded (`encodeURIComponent`). New lines are `%0A`, or rules are separated by `;` or by a space (`S->aAS|b A->a|bSA`). A `+` stays a plus sign. The editor then shows every rule on its own line. |
+| `w` (or `word`, `input`) | The input word of the simulators, symbols separated by spaces. It is used only when it belongs to the language of the grammar; otherwise a word of the grammar is derived. |
+| `tab` | `overview`, `words`, `first-follow`, `ll`, `graph`, `lr`, `membership` (`cyk`), `all`, `earley` (`ettp`), `gll` (`bsr`, `sppf`, `forest`), `transformations`, `teaching` (`guide`), `check` (`comparison`, `equivalence`), `rd` (`descent`), `ra` (`ascent`, `recursive-ascent`), `latex` |
 | `e` | `eps` or `term`: how a standalone `e` is read, so the question is not asked |
 | `split` | `1` or `0`: whether words such as `bxc` in the course notation are the symbols `b x c` or one terminal, so the question is not asked |
 | `preset` | The id of a built-in example (e.g. `strong_ll2`) instead of `g` |
-| `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector` for this visit only (not remembered) |
+| `lang`, `theme` | `cz`/`en` and `light`/`dark`/`projector`, for this visit only (not remembered) |
 
-The same parameters also work after `#` (`…/#g=…`).
+The same parameters also work after `#` (`…/#g=…`), and there they take precedence over the query.
 
----
+## Development, testing and deployment
 
-## 🚀 Quick Start
+You need Node.js (the CI uses version 22).
 
-### 1. Development Server
 ```bash
-npm install
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### 2. Run Tests
-```bash
-npm test
+npm install      # dependencies
+npm run dev      # development server at http://localhost:3000
+npm test         # the test suite (vitest run)
+npm run build    # type check (tsc -b) and production build into dist/
+npm run preview  # serve the built dist/ locally
 ```
 
-### 3. Production Build
-```bash
-npm run build
-```
-The compiled, optimized static bundle is generated in `dist/`.
+- **Tests.** There are 865 tests in 47 files under `src/test/` (October 2026). Most suites compare the implementation with independent code: an Earley recogniser, FIRST/FOLLOW computed on token arrays, a brute-force exact LL(2) test, the Dragon Book LALR propagation, and tree counts. They run on all presets and on seeded random grammars. The suites that compile the generated C parsers and run the Python ones need `gcc` and `python`; without them those parts are skipped.
+- **The build** uses relative paths (`base: './'`), so `dist/` can be served from any directory: GitHub Pages, or the course pages on home.zcu.cz.
+- **Deployment.** The workflow `.github/workflows/deploy.yml` runs `npm ci`, `npm test` and `npm run build` on every push to `master` and publishes `dist/` to GitHub Pages.
 
----
-
-## 📖 Architecture & Modules
+## Project structure
 
 ```
 src/
-├── core/
-│   ├── ast/                # Grammar data models, AST nodes, symbol types
-│   ├── parser/             # Multi-syntax grammar parser (arrow, BNF, Yacc, ANTLR)
-│   ├── analyser/           # Nullable, Endable, FIRST(k), FOLLOW(k), Lookaheads
-│   ├── processor/          # Equivalent grammar transformations & proof logs
-│   ├── generator/          # Word generation, derivation traces, example words of L(G)
-│   ├── ll/                 # LL(1) / LL(2) tables, conflict engine & top-down simulator
-│   ├── lr/                 # LR(0), SLR(1), LALR(1), LR(1), GLR parser & GSS engine
-│   ├── all/                # ALL(*) ATN networks, Lookahead DFA synthesis & simulator
-│   ├── earley/             # Classic Earley (1970) & ETTP (2025/2026) chart parsers
-│   ├── gll/                # GLL parser (descriptors, GSS, pop set) & BSR sets with tree extraction
-│   ├── forest/             # Shared packed parse forests from BSR sets, Earley charts and tree lists
-│   ├── codegen/            # Recursive descent (PL/0, Oberon, C, Python, JS) and recursive ascent (JS, Python, C, PL/0) generators, VM & symbol table
-│   ├── export/             # LaTeX exam/problem-set exporter
-│   └── presets/            # Curated university textbook grammars
-├── i18n/                   # English & Czech academic terminology
+├── App.tsx               application state, the tabs (TAB_ROWS), the grammar panel and the splitter
+├── main.tsx              entry point
+├── core/                 algorithms, no DOM access (tested headless)
+│   ├── ast/              grammar model, symbols, formatting for the editor
+│   ├── parser/           grammar parser (all dialects), input tokenizer, membership, CYK, derivation attempts
+│   ├── analyser/         sets and properties, ambiguity search, language comparison, error-recovery sets
+│   ├── processor/        transformations, automatic LL(1) attempt, ⓘ texts with references
+│   ├── generator/        word generator, example words of L(G), tree helpers
+│   ├── ll/               LL(1)/LL(2) tables and simulator
+│   ├── lr/               LR automata (LR(0), LALR(1), IELR(1), LR(1)), tables, simulator, GLR, construction steps, counterexamples
+│   ├── all/              ALL(*): ATN, adaptive prediction, parser
+│   ├── earley/           Earley (+ Leo), ETTP, trees from the chart, explanations
+│   ├── gll/              GLL parser, BSR sets, explanations
+│   ├── forest/           shared packed forests (from BSR sets, Earley charts, tree lists)
+│   ├── codegen/          recursive descent and ascent: generators, simulators, symbol table, PL/0 compiler, P-code VM
+│   ├── export/           LaTeX, SVG/PNG
+│   ├── teaching/         data and analysis of the Transformation Guide
+│   ├── presets/          built-in grammars and the RD sample grammars
+│   ├── jobs/             resumable jobs for long computations
+│   └── analysisJob.ts    the whole analysis as one job
 ├── ui/
-│   ├── visualizer/         # Dagre-powered SVG automaton, DFA, GSS & tree visualizers
-│   ├── views/              # Overview, FirstFollow, Transformations, LL, LR, Graph, ALL, Earley, GLL, CYK, RD, Words, LaTeX
-│   └── components/         # Reusable UI widgets & ReferenceBar
-├── styles/                 # Vanilla CSS design system (Dark, Light, Projector modes)
-└── App.tsx                 # Master application orchestrator
+│   ├── views/            one view per tab
+│   ├── components/       shared widgets (simulator controls, splitter, error recovery, references, …)
+│   ├── visualizer/       SVG graphs and trees (automata, DFA, GSS, forest, trees), pan/zoom, toolbar
+│   ├── urlState.ts       grammar links
+│   ├── useGrammarHistory.ts, useSteppedJob.ts
+│   └── wholeGrammarTransformations.ts
+├── i18n/translations.ts  Czech and English texts
+├── styles/               CSS (light, dark, projector)
+└── test/                 vitest suites and oracles
 ```
 
----
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map and the data flow.
 
-## 📚 Academic Literature & Bibliography
+## Literature and further documentation
 
-Every algorithm, automaton construction, conflict resolution technique, and grammar transformation in `GrammarAnalyser` is based on rigorous theoretical compiler and formal language literature.
+- [docs/REFERENCES.md](docs/REFERENCES.md) is the literature: every work cited in the application, grouped by topic, with checked DOIs and links and the files that cite it.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes the modules and the data flow.
+- [docs/REVIEW.md](docs/REVIEW.md) is the review log, which holds the decisions about the algorithms and their verification.
 
-See **[docs/REFERENCES.md](docs/REFERENCES.md)** for the complete, verified bibliographic directory covering:
-- **Top-Down Parsing (LL & ALL(\*))**: Lewis & Stearns (1968), Knuth (1971), Rosenkrantz & Stearns (1970), Parr & Fisher (2011), Parr, Harwell & Fisher (2014).
-- **Bottom-Up Parsing (LR, SLR, LALR, IELR)**: Knuth (1965), DeRemer (1969, 1971), DeRemer & Pennello (1982), Pager (1977), Denny & Malloy (2008, 2010), Aho, Johnson & Ullman (1975), Aho & Johnson (1974).
-- **Recursive Descent & P-code**: Lucas (1961), Conway (1963), Wirth (1976).
-- **Recursive Ascent**: Pennello (1986), Roberts (1988, 1989), Kruseman Aretz (1988), Barnard & Cordy (1988), Leermakers, Augusteijn & Kruseman Aretz (1992), Horspool (1993).
-- **General CFG Parsing**: Earley (1970), Leo (1991), Kegler (2019, Marpa), Cocke & Schwartz (1970), Younger (1967), Kasami (1965), Scott & Johnstone (2010, 2013: GLL), Scott, Johnstone & van Binsbergen (2019: BSR sets), Johnstone (2023: reference GLL), Vo et al. (2026: empirical comparison), Tomita (1986: shared packed forests).
-- **Conflict counterexamples**: Isradisaikul & Myers (2015), the Bison manual.
-- **Grammar Transformations & Normal Forms**: Chomsky (1959), Greibach (1965), Bar-Hillel et al. (1961), Rosenkrantz & Lewis (1970), Floyd (1963), Mickunas et al. (1976), Chomsky & Miller (1958), Foster (1968), Moore (2000), Johnson & Roark (2000), Aho & Ullman (1972).
+## License
 
----
-
-## 📄 License
-
-MIT — see [LICENSE](LICENSE). Free to use, adapt and share in schools.
+MIT, see [LICENSE](LICENSE). Free to use, adapt and share in schools.
 
 © 2026 [Richard Lipka](https://home.zcu.cz/~lipka/) &lt;lipka@fav.zcu.cz&gt;
-Department of Computer Science and Engineering, Faculty of Applied Sciences,
-University of West Bohemia.
+Department of Computer Science and Engineering, Faculty of Applied Sciences, University of West Bohemia.
 
 The faculty mark shown in the header belongs to the university and is not covered by the MIT licence.
-

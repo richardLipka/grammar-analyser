@@ -22,6 +22,8 @@ import { ALLView } from './ui/views/ALLView';
 import { EarleyView } from './ui/views/EarleyView';
 import { GLLView } from './ui/views/GLLView';
 import { RecursiveDescentView } from './ui/views/RecursiveDescentView';
+import { PaneSplitter, clampLeftPane } from './ui/components/PaneSplitter';
+import { SIM_DOCK_ID } from './ui/components/SimulatorControls';
 import { EquivalenceView } from './ui/views/EquivalenceView';
 import { TeachingGuideView } from './ui/views/TeachingGuideView';
 import { LatexExportView } from './ui/views/LatexExportView';
@@ -51,6 +53,9 @@ type EChoice = 'epsilon' | 'terminal';
 type WordsChoice = 'split' | 'whole';
 type Theme = 'dark' | 'light' | 'projector';
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
+
+const LEFT_WIDTH_KEY = 'grammar-analyser.leftPaneWidth';
+const LEFT_COLLAPSED_KEY = 'grammar-analyser.leftPaneCollapsed';
 
 /** Per-viewer conveniences only; the app works the same when storage is unavailable. */
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -133,6 +138,25 @@ export const App: React.FC = () => {
   // A theme or language given in the link applies to this visit only
   const [theme, setThemeState] = useState<Theme>(() => setup.url.theme ?? readStored(THEME_KEY, ['dark', 'light', 'projector'] as const, 'light'));
   const [lang, setLangState] = useState<Language>(() => setup.url.lang ?? readStored(LANG_KEY, ['en', 'cz'] as const, 'cz'));
+  // Grammar panel: width set by dragging the splitter, collapsible; remembered in this browser
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem(LEFT_WIDTH_KEY));
+      return Number.isFinite(v) && v > 0 ? clampLeftPane(v) : 420;
+    } catch {
+      return 420;
+    }
+  });
+  const [leftCollapsed, setLeftCollapsed] = useState<boolean>(() => readStored(LEFT_COLLAPSED_KEY, ['0', '1'] as const, '0') === '1');
+  const leftPaneState = useRef({ leftWidth, leftCollapsed });
+  leftPaneState.current = { leftWidth, leftCollapsed };
+  const rememberLeftPane = () => {
+    // after the state update of the same event
+    window.setTimeout(() => {
+      writeStored(LEFT_WIDTH_KEY, String(leftPaneState.current.leftWidth));
+      writeStored(LEFT_COLLAPSED_KEY, leftPaneState.current.leftCollapsed ? '1' : '0');
+    }, 0);
+  };
   // How a standalone e is read; null = not decided yet (read as ε and ask)
   const [eChoice, setEChoice] = useState<EChoice | null>(setup.url.e ?? null);
   const eIsEpsilon = eChoice !== 'terminal';
@@ -623,9 +647,12 @@ export const App: React.FC = () => {
       </header>
 
       {/* Main Split-Pane Layout */}
-      <div className="main-layout">
+      <div
+        className={`main-layout ${leftCollapsed ? 'left-collapsed' : ''}`}
+        style={{ '--left-pane-width': `${leftCollapsed ? 0 : leftWidth}px` } as React.CSSProperties}
+      >
         {/* Left Pane: Grammar Editor & Presets */}
-        <aside className="left-pane">
+        <aside className={`left-pane ${leftCollapsed ? 'collapsed' : ''}`} aria-hidden={leftCollapsed || undefined}>
           <div className="editor-section">
             {/* Presets Selector */}
             <div>
@@ -956,7 +983,17 @@ export const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Right Pane: Analysis Dashboard & Simulator */}
+        <PaneSplitter
+          width={leftWidth}
+          collapsed={leftCollapsed}
+          onWidth={setLeftWidth}
+          onCollapsedChange={setLeftCollapsed}
+          onCommit={rememberLeftPane}
+          lang={lang}
+        />
+
+        {/* Right Pane: Analysis Dashboard & Simulator; the step controls float in the bar below it */}
+        <div className="right-column">
         <main className="right-pane">
           {/* Navigation Tabs */}
           <nav className="tabs-header" role="tablist">
@@ -1218,6 +1255,8 @@ export const App: React.FC = () => {
             )}
           </div>
         </main>
+        <div id={SIM_DOCK_ID} className="sim-dock" />
+        </div>
       </div>
     </div>
   );

@@ -452,7 +452,7 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
           {simulation && step && (
             <>
               <div className="sim-sticky">
-                <SimulatorControls stepIdx={stepIdx} total={total} isPlaying={isPlaying} speed={speed} lang={lang} onStep={setStepIdx} onTogglePlay={() => setIsPlaying(p => !p)} onSpeed={setSpeed} />
+                <SimulatorControls label={lang === 'cz' ? 'Rekurzivní vzestup' : 'Recursive ascent'} stepIdx={stepIdx} total={total} isPlaying={isPlaying} speed={speed} lang={lang} onStep={setStepIdx} onTogglePlay={() => setIsPlaying(p => !p)} onSpeed={setSpeed} />
                 <div className="card ra-step" style={{ padding: '10px 14px', borderLeft: `4px solid ${step.kind === 'error' ? 'var(--color-danger)' : step.kind === 'recover' ? 'var(--color-warning)' : step.kind === 'accept' ? 'var(--color-success)' : 'var(--color-primary)'}` }}>
                   <div style={{ fontSize: '12.5px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--color-text-secondary)' }}>

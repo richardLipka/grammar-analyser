@@ -280,7 +280,7 @@ export const ALLView: React.FC<ALLViewProps> = ({
           </label>
         </div>
 
-        <SimulatorControls
+        <SimulatorControls label={'ALL(*)'}
           stepIdx={currentStepIdx}
           total={simulation.steps.length}
           isPlaying={isPlaying}

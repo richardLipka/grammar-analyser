@@ -345,8 +345,122 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 420px minmax(0, 1fr);
+  grid-template-columns: var(--left-pane-width, 420px) 10px minmax(0, 1fr);
   overflow: hidden;
+}
+
+/* The analysis column: the scrolling pane and, below it, the bar with the step controls */
+.right-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.right-column > .right-pane {
+  flex: 1 1 auto;
+}
+
+.sim-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px;
+  background-color: var(--color-bg-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -4px 10px -6px rgba(0, 0, 0, 0.25);
+  z-index: 30;
+}
+
+.sim-dock:empty {
+  display: none;
+}
+
+.simulator-controls.in-dock {
+  margin: 0;
+  padding: 6px 8px;
+}
+
+.sim-dock-locate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.sim-progress {
+  flex: 1 1 160px;
+  min-width: 100px;
+  max-width: 420px;
+}
+
+.sim-dock-anchor {
+  display: block;
+  height: 0;
+  scroll-margin-top: 8px;
+}
+
+/* Splitter between the grammar panel and the analysis */
+.pane-splitter {
+  position: relative;
+  cursor: col-resize;
+  background-color: var(--color-bg-elevated);
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  touch-action: none;
+  outline: none;
+}
+
+.pane-splitter:hover,
+.pane-splitter:focus-visible {
+  background-color: var(--color-primary-subtle);
+}
+
+.pane-splitter-btn {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.pane-splitter-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.pane-splitter-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  pointer-events: none;
+}
+
+.left-pane.collapsed {
+  visibility: hidden;
+  overflow: hidden;
+}
+
+body.pane-resizing,
+body.pane-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Left Pane (Editor & Tools) */
@@ -369,6 +483,20 @@ body {
   .main-layout {
     grid-template-columns: minmax(0, 1fr);
     overflow: visible;
+  }
+
+  /* One column: no splitter, the grammar panel always shown; the step bar sticks to the bottom of the window */
+  .pane-splitter {
+    display: none;
+  }
+
+  .left-pane.collapsed {
+    visibility: visible;
+  }
+
+  .sim-dock {
+    position: sticky;
+    bottom: 0;
   }
 
   /* pane overflow is reset at the end of teaching.css, after the .right-pane rule */

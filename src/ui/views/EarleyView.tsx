@@ -378,7 +378,7 @@ export const EarleyView: React.FC<EarleyViewProps> = ({
       {/* Playback controls and the step explanation stay in view while the chart is scrolled */}
       <div className="sim-sticky">
       {/* Simulator Playback Controls */}
-      <SimulatorControls
+      <SimulatorControls label={parserMode === 'classic' ? 'Earley' : 'ETTP'}
         stepIdx={currentStepIdx}
         total={totalSteps}
         isPlaying={isPlaying}

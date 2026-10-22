@@ -332,7 +332,7 @@ const CykCard: React.FC<{ grammar: Grammar; tokens: string[] | null; lang: Langu
             </div>
 
             {stepMode && sim && (
-              <SimulatorControls
+              <SimulatorControls label={'CYK'}
                 stepIdx={stepIdx}
                 total={sim.totalSteps}
                 isPlaying={isPlaying}
