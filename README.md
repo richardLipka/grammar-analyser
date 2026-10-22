@@ -99,7 +99,7 @@
   - The number of derivation trees (finite, or infinitely many with a cycle $A \Rightarrow^+ A$) and the trees themselves (up to 20, with their left parses); for a rejected word, where it goes wrong (the longest prefix of some word of the language)
   - The CYK table $V(i, j)$ for a grammar in Chomsky normal form, in the textbook triangle
   - **Step-by-step table filling simulator**: progressive cell calculation with visual operand cell highlighting (left operand, right operand, and target cell in the DP triangle), step explanation of matching rules $A \to B\,C$, and derivation tree extraction
-- **Recursive-descent parser generator & step simulator** (tab *Rekurzivní sestup*, LL(1) grammars):
+- **Recursive-descent parser generator & step simulator** (tab *Rekurzivní sestup*, LL(1) grammars; recursive ascent has its own tab *Rekurzivní vzestup* next to it, sharing the word, the samples and the symbol-table actions):
   - The parser in **PL/0** (Wirth's language of the KIV/FJP compiler, with `? x` / `! v` as the character input/output REA/WRI of the course virtual machine), in **Oberon-07** (modules `In`, `Out`), in **C99** (stdio, a `switch` per non-terminal, exit status 0 for an accepted word), in **Python 3** and in **JavaScript** (`parse(input, hooks)` with optional hooks onEnter/onRule/onMatch/onExit, runnable in the browser and by `node parser.js < input`): one procedure per non-terminal that chooses the rule by the director sets, prints the rule number (the left parse) and calls the procedures of the right-hand side; all five print the same for the same input
   - **Step simulator**: the input with the current symbol, the call stack (the rule of every procedure and the symbol it is at), the procedure being executed with its `if (sym ∈ {…})` branches, the parse tree with the path to the active node, and the symbol table; step back/forward, play, speed
   - **Symbol table** (a stack of scopes, each with its names) – a **demonstration of how a parser builds and uses the table, not a compiler**; the tab has a help section on what it can and cannot do:
@@ -131,6 +131,7 @@
   - Strong $\text{LL}(2)$ parse table $M[A, xy]$ and, for grammars that are LL(2) but not strong LL(2), the Aho–Ullman tables $T(A, L)$
   - LL(1) and LL(2) simulation (expansion / comparison / acceptance) with the left parse; the LR simulation shows the right parse
   - Interactive top-down stack simulator with a clickable trace table, auto-play, keyboard stepping and live parse tree
+  - Optional **panic-mode error recovery** (switch, off by default): an empty M[A, a] throws input away until a symbol of FIRST(A) (A is resumed) or FOLLOW(A) ∪ {$} (A is given up); a mismatching terminal is taken as missing; every start, skipped symbol, pop and recovery is its own step with the stop symbols; the errors are listed at the end and the constructs given up are marked in the tree
 - **LR(k) Analyser & Parser**:
   - $\text{LR}(0)$, $\text{SLR}(1)$, $\text{LALR}(1)$, and $\text{LR}(1)$ canonical collections
   - Two table layouts, switched at the top of the LR screens (tables, automaton, LaTeX):
@@ -145,6 +146,7 @@
   - **Merging LR(1) → LALR(1)**: every merge of LR(1) states with the same core, with the lookaheads of each item in each LR(1) state and their union; a merge that creates a conflict none of the merged states had (the grammar is LR(1) but not LALR(1)) is marked with the colliding lookaheads
   - Hovering a lookahead (LR(1), LALR(1)) explains why it is there: carried over by a transition, $a \in \text{FIRST}(\beta)$ in the closure, passed on through a nullable $\beta$, or the end marker of the initial item; for LALR(1) also which merged LR(1) states have it
   - Bottom-up shift-reduce simulator: textbook trace (stack, input, action), dual stack tracking and the parse forest after every step
+  - Optional **panic-mode error recovery** (Aho et al. §4.8.3): the stack is popped to a state s with a transition g(s, A), input is thrown away until a symbol of FOLLOW(A) with which the parser really goes on (checked through its reductions), and A is pushed for the error part; explained step by step, the popped subtrees and the thrown-away symbols form the marked error subtree
 - **University Teaching & Classroom Features**:
   - **One-Click LaTeX Export**: Compile-ready LaTeX tables (`align*`, `tabular`, and `forest` trees) for university exams and homework; symbol names compile with pdfLaTeX (subscripts of copied non-terminals `B₂` → `B_{2}`, accented names in text mode, arrows and Greek letters as commands)
   - **Simulator input**: tokens separated by spaces, or a word without spaces (`aabb`, `id+id`) split into terminals by longest match; the split is shown
