@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Grammar, formatProduction } from '../../core/ast/grammar';
 import { LRTable, LRAction, LRLayout, LR0_ACTION_COLUMN, formatLayoutAction, stateLabel } from '../../core/lr/lrTable';
 import { simulateLRParse, LRParseStep, LRSimulationResult } from '../../core/lr/lrParser';
+import { recoverySets } from '../../core/analyser/errorRecovery';
+import { GrammarAnalysis, analyzeGrammar } from '../../core/analyser/grammarAnalyser';
+import { RecoveryToggle, RecoveryStepBox, RecoveryErrorsList } from '../components/ErrorRecovery';
 import { simulateGLRParse, GLRSimulationResult, GLRParseStep } from '../../core/lr/glrParser';
 import { treesToForest, treeInForest } from '../../core/forest/sppf';
 import { ForestVisualizer } from '../visualizer/ForestVisualizer';
@@ -133,6 +136,8 @@ const TABLE_ROW_LIMIT = 300;
 
 interface LRViewProps {
   grammar: Grammar;
+  /** For the stop symbols of error recovery (FOLLOW sets) */
+  analysis?: GrammarAnalysis;
   lr0Table: LRTable;
   slr1Table: LRTable;
   lalr1Table: LRTable;
@@ -158,6 +163,7 @@ interface LRViewProps {
 
 export const LRView: React.FC<LRViewProps> = ({
   grammar,
+  analysis,
   lr0Table,
   slr1Table,
   lalr1Table,
@@ -209,9 +215,12 @@ export const LRView: React.FC<LRViewProps> = ({
 
   // Words written without spaces (aabb, id+id) are split into terminals
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
+  // Optional panic-mode error recovery with stop symbols from FOLLOW
+  const [recoveryOn, setRecoveryOn] = useState(false);
+  const sets = useMemo(() => recoverySets(grammar, analysis ?? analyzeGrammar(grammar, { k2: false })), [grammar, analysis]);
   const simulation: LRSimulationResult = useMemo(
-    () => simulateLRParse(tokenized.tokens, grammar, activeTable, layout),
-    [tokenized, grammar, activeTable, layout]
+    () => simulateLRParse(tokenized.tokens, grammar, activeTable, layout, undefined, recoveryOn ? { recovery: { sets } } : {}),
+    [tokenized, grammar, activeTable, layout, recoveryOn, sets]
   );
 
   useEffect(() => {
@@ -683,13 +692,15 @@ export const LRView: React.FC<LRViewProps> = ({
 
         {parserMode === 'standard' ? (
           <>
+            <RecoveryToggle enabled={recoveryOn} onChange={setRecoveryOn} method="lr" lang={lang} />
             {simulation.steps.length > 0 && (
-              <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div className={`report-box ${simulation.accepted ? 'success' : simulation.completedWithErrors ? 'warning' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {simulation.accepted ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
                 <span>
                   {simulation.accepted
                     ? t.wordAccepted.replace('{n}', simulation.steps.length.toString())
                     : `${t.wordRejected}: ${lang === 'cz' ? simulation.errorMessageCz || simulation.errorMessage : simulation.errorMessage}`}
+                  {simulation.errors && simulation.errors.length > 0 && <RecoveryErrorsList errors={simulation.errors} tokens={tokenized.tokens} lang={lang} />}
                 </span>
               </div>
             )}
@@ -779,6 +790,7 @@ export const LRView: React.FC<LRViewProps> = ({
                     color: currentStep.isAccepted ? 'var(--color-success)' : currentStep.isError ? 'var(--color-danger)' : 'var(--color-primary)'
                   }}>
                     {actionText(currentStep)}
+                    {currentStep.recovery && <RecoveryStepBox info={currentStep.recovery} method="lr" lang={lang} />}
                   </div>
                 </div>
               </div>
@@ -805,7 +817,7 @@ export const LRView: React.FC<LRViewProps> = ({
                           className={[
                             i === currentStepIdx ? 'trace-row-active' : '',
                             i > currentStepIdx ? 'trace-row-future' : '',
-                            s.isError ? 'trace-row-error' : '',
+                            s.isError ? 'trace-row-error' : s.recovery ? 'trace-row-recovery' : '',
                             s.isAccepted ? 'trace-row-accept' : ''
                           ].join(' ')}
                         >

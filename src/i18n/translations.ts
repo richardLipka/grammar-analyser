@@ -187,7 +187,9 @@ export const TRANSLATIONS = {
     tabGll: 'GLL',
     tabGllTitle: 'GLL (Scott & Johnstone 2010): generalised LL parsing with descriptors, a GSS and BSR sets; the shared packed forest of all trees',
     tabRd: 'Recursive descent',
-    tabRdTitle: 'Recursive descent from the LL(1) table (step simulator, symbol table, code in six languages) and recursive ascent from a conflict-free LR table',
+    tabRdTitle: 'Recursive descent from the LL(1) table (step simulator, symbol table, code in six languages)',
+    tabRa: 'Recursive ascent',
+    tabRaTitle: 'Recursive ascent: the LR parser as a procedure per state, from a conflict-free LR table (step simulator, symbol table, code in six languages)',
     tabWords: 'Word generator',
     tabLatex: 'LaTeX & export',
 
@@ -688,7 +690,9 @@ export const TRANSLATIONS = {
     tabGll: 'GLL',
     tabGllTitle: 'GLL (Scott & Johnstone 2010): zobecněná analýza LL s deskriptory, grafem GSS a množinami BSR; sdílený zabalený les všech stromů',
     tabRd: 'Rekurzivní sestup',
-    tabRdTitle: 'Rekurzivní sestup z tabulky LL(1) (krokování, tabulka symbolů, kód v šesti jazycích) a rekurzivní vzestup z tabulky LR bez kolizí',
+    tabRdTitle: 'Rekurzivní sestup z tabulky LL(1) (krokování, tabulka symbolů, kód v šesti jazycích)',
+    tabRa: 'Rekurzivní vzestup',
+    tabRaTitle: 'Rekurzivní vzestup: analyzátor LR jako procedura pro každý stav, z tabulky LR bez kolizí (krokování, tabulka symbolů, kód v šesti jazycích)',
     tabWords: 'Generátor slov',
     tabLatex: 'LaTeX a export',
 

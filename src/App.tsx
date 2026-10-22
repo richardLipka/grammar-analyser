@@ -39,6 +39,7 @@ import { demonstrationWord } from './core/generator/exampleWord';
 
 // Icons
 import {
+  ArrowUpFromLine,
   BookOpen, Eye, GitCommit, Layers, Cpu, Network, Link2, Check, HelpCircle, Undo2, Redo2, MousePointerClick, Type,
   Sparkles, FileText, Sun, Moon, Monitor, AlertCircle, RefreshCw, Clock, AlertTriangle, Info, SearchCheck, Code2, ClipboardCheck,
   ListX, Trash2, GraduationCap
@@ -506,13 +507,14 @@ export const App: React.FC = () => {
     { id: 'earley', icon: <Layers size={15} />, label: t.tabEarley, title: t.tabEarleyTitle },
     { id: 'gll', icon: <Network size={15} />, label: t.tabGll, title: t.tabGllTitle },
     { id: 'rd', icon: <Code2 size={15} />, label: t.tabRd, title: t.tabRdTitle },
+    { id: 'ra', icon: <ArrowUpFromLine size={15} />, label: t.tabRa, title: t.tabRaTitle },
     { id: 'words', icon: <BookOpen size={15} />, label: t.tabWords },
     { id: 'latex', icon: <FileText size={15} />, label: t.tabLatex }
   ];
   // Two rows: the analyses, then working with the grammar and the export (at the end of its row)
   const TAB_ROWS: TabId[][] = [
     ['overview', 'words', 'firstFollow', 'll', 'graph', 'lr', 'membership', 'all', 'earley', 'gll'],
-    ['transformations', 'teaching', 'check', 'rd', 'latex']
+    ['transformations', 'teaching', 'check', 'rd', 'ra', 'latex']
   ];
 
   return (
@@ -1091,6 +1093,7 @@ export const App: React.FC = () => {
                 {activeTab === 'lr' && (
                   <LRView
                     grammar={analyzedGrammar}
+                    analysis={analysisData.analysis}
                     lr0Table={analysisData.lr0Table}
                     slr1Table={analysisData.slr1Table}
                     lalr1Table={analysisData.lalr1Table}
@@ -1168,8 +1171,11 @@ export const App: React.FC = () => {
                   <GLLView grammar={analyzedGrammar} defaultInput={demoWord} lang={lang} />
                 )}
 
-                {activeTab === 'rd' && (
+                {/* One instance for both tabs: the word, the sample and the symbol-table actions stay when switching */}
+                {(activeTab === 'rd' || activeTab === 'ra') && (
                   <RecursiveDescentView
+                    method={activeTab === 'ra' ? 'ascent' : 'descent'}
+                    onOpenMethod={m => setActiveTab(m === 'ascent' ? 'ra' : 'rd')}
                     grammar={analyzedGrammar}
                     analysis={analysisData.analysis}
                     llTable={analysisData.llTable}
@@ -1186,7 +1192,6 @@ export const App: React.FC = () => {
                     }}
                     lrVariant={lrVariant}
                     onSelectLrVariant={setLrVariant}
-                    initialSubTab={setup.url.rdPart}
                   />
                 )}
 

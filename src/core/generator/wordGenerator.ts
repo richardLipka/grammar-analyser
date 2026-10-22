@@ -17,9 +17,10 @@ export interface DerivationNode {
   /**
    * In a failed derivation attempt: the terminal the derivation needs where
    * the word has another symbol or ends ('mismatch'), or a symbol after it
-   * that was not derived any more ('pending').
+   * that was not derived any more ('pending'). After panic-mode error recovery:
+   * a construct given up or a missing terminal ('error'), an input symbol thrown away ('skipped').
    */
-  mark?: 'mismatch' | 'pending' | 'current';
+  mark?: 'mismatch' | 'pending' | 'current' | 'error' | 'skipped';
   children?: DerivationNode[];
 }
 

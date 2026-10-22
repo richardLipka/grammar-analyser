@@ -9,7 +9,7 @@
  * - Rules can be separated by encoded new lines (%0A) or by ';' (S->aAS|b;A->a|bSA).
  */
 
-export type UrlTab = 'overview' | 'firstFollow' | 'transformations' | 'teaching' | 'check' | 'll' | 'lr' | 'graph' | 'membership' | 'all' | 'rd' | 'words' | 'latex' | 'earley' | 'gll';
+export type UrlTab = 'overview' | 'firstFollow' | 'transformations' | 'teaching' | 'check' | 'll' | 'lr' | 'graph' | 'membership' | 'all' | 'rd' | 'ra' | 'words' | 'latex' | 'earley' | 'gll';
 
 export interface UrlState {
   grammar?: string;
@@ -22,8 +22,6 @@ export interface UrlState {
   words?: 'split' | 'whole';
   lang?: 'en' | 'cz';
   theme?: 'light' | 'dark' | 'projector';
-  /** tab=ascent opens the sub-tab recursive ascent of the tab recursive descent */
-  rdPart?: 'ascent';
 }
 
 const TAB_ALIASES: Record<string, UrlTab> = {
@@ -37,7 +35,7 @@ const TAB_ALIASES: Record<string, UrlTab> = {
   membership: 'membership', cyk: 'membership', word: 'membership', parse: 'membership',
   all: 'all', antlr: 'all', 'all-star': 'all', allstar: 'all',
   rd: 'rd', descent: 'rd', 'recursive-descent': 'rd', pl0: 'rd', oberon: 'rd',
-  ascent: 'rd', 'recursive-ascent': 'rd',
+  ra: 'ra', ascent: 'ra', 'recursive-ascent': 'ra',
   words: 'words', derivations: 'words',
   latex: 'latex',
   earley: 'earley', ettp: 'earley', chart: 'earley',
@@ -88,7 +86,6 @@ export function readUrlState(search: string, hash: string): UrlState {
   if (word !== undefined) state.word = word;
   const tab = TAB_ALIASES[(get('tab', 't') ?? '').toLowerCase()];
   if (tab) state.tab = tab;
-  if (['ascent', 'recursive-ascent'].includes((get('tab', 't') ?? '').toLowerCase())) state.rdPart = 'ascent';
   const e = E_ALIASES[(get('e') ?? '').toLowerCase()];
   if (e) state.e = e;
   const words = SPLIT_ALIASES[(get('split') ?? '').toLowerCase()];

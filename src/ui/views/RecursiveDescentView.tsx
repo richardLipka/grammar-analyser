@@ -153,8 +153,10 @@ interface RecursiveDescentViewProps {
   lrTables?: Record<LRVariantName, LRTable | undefined>;
   lrVariant?: LRVariantName;
   onSelectLrVariant?: (v: LRVariantName) => void;
-  /** The sub-tab to open first (a link with tab=ascent opens recursive ascent) */
-  initialSubTab?: SubTab;
+  /** Which tab shows the view: recursive descent (LL) or recursive ascent (LR); they share the word, samples and actions */
+  method?: 'descent' | 'ascent';
+  /** Switches to the tab of the other method */
+  onOpenMethod?: (method: 'descent' | 'ascent') => void;
 }
 
 /**
@@ -174,10 +176,16 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   lrTables,
   lrVariant = 'SLR(1)',
   onSelectLrVariant,
-  initialSubTab
+  method = 'descent',
+  onOpenMethod
 }) => {
   const cz = lang === 'cz';
-  const [subTab, setSubTab] = useState<SubTab>(initialSubTab ?? 'sim');
+  const [subTab, setSubTab] = useState<SubTab>(method === 'ascent' ? 'ascent' : 'sim');
+  // Each tab has its own sub-tabs; the actions sub-tab is shared
+  useEffect(() => {
+    if (method === 'ascent' && (subTab === 'sim' || subTab === 'code')) setSubTab('ascent');
+    if (method === 'descent' && subTab === 'ascent') setSubTab('sim');
+  }, [method, subTab]);
   const [ownLrVariant, setOwnLrVariant] = useState<LRVariantName>(lrVariant);
   const activeLrVariant = onSelectLrVariant ? lrVariant : ownLrVariant;
   const [codeLang, setCodeLang] = useState<CodeLang>('pl0');
@@ -440,12 +448,16 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
 
   const subTabBar = (
     <div className="rd-subtabs" style={{ marginTop: '12px' }}>
-      {([
-        ['sim', <Play size={15} key="i" />, cz ? 'Krokování a tabulka symbolů' : 'Step simulator & symbol table'],
-        ['code', <Code2 size={15} key="i" />, cz ? 'Generovaný kód (PL/0, C, Python, JS…)' : 'Generated code (PL/0, C, Python, JS…)'],
-        ['symtab', <Database size={15} key="i" />, cz ? 'Akce tabulky symbolů' : 'Symbol table actions'],
-        ['ascent', <Layers size={15} key="i" />, cz ? 'Rekurzivní vzestup (LR)' : 'Recursive ascent (LR)']
-      ] as [SubTab, React.ReactNode, string][]).map(([id, icon, label]) => (
+      {((method === 'ascent'
+        ? [
+            ['ascent', <Play size={15} key="i" />, cz ? 'Krokování, kód a automat' : 'Step simulator, code and automaton'],
+            ['symtab', <Database size={15} key="i" />, cz ? 'Akce tabulky symbolů' : 'Symbol table actions']
+          ]
+        : [
+            ['sim', <Play size={15} key="i" />, cz ? 'Krokování a tabulka symbolů' : 'Step simulator & symbol table'],
+            ['code', <Code2 size={15} key="i" />, cz ? 'Generovaný kód (PL/0, C, Python, JS…)' : 'Generated code (PL/0, C, Python, JS…)'],
+            ['symtab', <Database size={15} key="i" />, cz ? 'Akce tabulky symbolů' : 'Symbol table actions']
+          ]) as [SubTab, React.ReactNode, string][]).map(([id, icon, label]) => (
         <button
           key={id}
           type="button"
@@ -924,8 +936,13 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           <div className="card-title">
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Cpu size={18} color="var(--color-primary)" />
-              {cz ? 'Rekurzivní sestup a vzestup' : 'Recursive descent and ascent'}
+              {cz ? 'Rekurzivní vzestup' : 'Recursive ascent'}
             </span>
+            {onOpenMethod && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenMethod('descent')}>
+                {cz ? 'Rekurzivní sestup (LL) →' : 'Recursive descent (LL) →'}
+              </button>
+            )}
           </div>
           {subTabBar}
           {sampleRow}
@@ -990,7 +1007,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               </button>
             )}
             {lrTables && (
-              <button type="button" className="btn btn-secondary" onClick={() => setSubTab('ascent')}>
+              <button type="button" className="btn btn-secondary" onClick={() => (onOpenMethod ? onOpenMethod('ascent') : setSubTab('ascent'))}>
                 {cz ? 'Rekurzivní vzestup (stačí tabulka LR bez kolizí)' : 'Recursive ascent (a conflict-free LR table is enough)'}
               </button>
             )}

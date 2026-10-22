@@ -730,6 +730,48 @@
   stroke: var(--color-danger);
 }
 
+/* Panic-mode error recovery: a construct given up or a missing terminal, and input thrown away */
+.t-node-t.mark-error,
+.t-node-nt.mark-error {
+  fill: var(--color-danger-subtle);
+  stroke: var(--color-danger);
+  stroke-width: 2px;
+}
+
+.t-text-t.mark-error,
+.t-text-nt.mark-error {
+  fill: var(--color-danger);
+  font-weight: 700;
+}
+
+.t-edge.mark-error {
+  stroke: var(--color-danger);
+  stroke-dasharray: 5 3;
+}
+
+.t-node-t.mark-skipped,
+.t-node-nt.mark-skipped {
+  fill: var(--color-warning-subtle);
+  stroke: var(--color-warning);
+  stroke-dasharray: 3 2;
+}
+
+.t-text-t.mark-skipped,
+.t-text-nt.mark-skipped {
+  fill: var(--color-warning);
+  text-decoration: line-through;
+}
+
+.t-edge.mark-skipped {
+  stroke: var(--color-warning);
+  stroke-dasharray: 3 3;
+}
+
+.trace-table tr.trace-row-recovery td.trace-action {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
 .t-node-t.mark-pending,
 .t-node-nt.mark-pending {
   stroke-dasharray: 4 2;
@@ -3120,4 +3162,85 @@
 .ra-placements td {
   font-size: 12px;
   vertical-align: top;
+}
+
+/* Optional panic-mode error recovery (LL and LR simulators) */
+.recovery-toggle {
+  margin: 4px 0 10px;
+}
+
+.recovery-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.recovery-help {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.recovery-help summary {
+  cursor: pointer;
+  color: var(--color-primary);
+}
+
+.recovery-help p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.recovery-step {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-warning);
+  background-color: var(--color-warning-subtle);
+  font-size: 12px;
+}
+
+.recovery-step.recovery-ok {
+  border-color: var(--color-success);
+  background-color: var(--color-success-subtle);
+}
+
+.recovery-step.recovery-bad {
+  border-color: var(--color-danger);
+  background-color: var(--color-danger-subtle);
+}
+
+.recovery-step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.recovery-sets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.recovery-set-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+}
+
+.token-chip.recovery-hit {
+  outline: 2px solid var(--color-primary);
+  font-weight: 700;
+}
+
+.recovery-errors {
+  margin: 6px 0 0 18px;
+  padding: 0;
+  font-size: 12.5px;
 }

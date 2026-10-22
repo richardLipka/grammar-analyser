@@ -3,6 +3,8 @@ import { Grammar, Production, formatProduction, formatRhs, EPSILON } from '../..
 import { GrammarAnalysis } from '../../core/analyser/grammarAnalyser';
 import { LLTable } from '../../core/ll/llTable';
 import { simulateLLParse, LLParseStep, LLSimulationResult, LLParseMode } from '../../core/ll/llParser';
+import { recoverySets } from '../../core/analyser/errorRecovery';
+import { RecoveryToggle, RecoveryStepBox, RecoveryErrorsList } from '../components/ErrorRecovery';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { Language, TRANSLATIONS } from '../../i18n/translations';
 import { CheckCircle2, AlertTriangle, Layers, XCircle, Sparkles, ExternalLink } from 'lucide-react';
@@ -57,7 +59,7 @@ export const LL_PRIMARY_REFERENCES = [
 export const LLView: React.FC<LLViewProps> = ({
   grammar,
   llTable,
-  analysis: _analysis,
+  analysis,
   defaultInput = '',
   lang,
   onAttemptLL1,
@@ -83,9 +85,12 @@ export const LLView: React.FC<LLViewProps> = ({
 
   // Words written without spaces (aabb, id+id) are split into terminals
   const tokenized = useMemo(() => tokenizeInput(inputText, grammar.terminals), [inputText, grammar]);
+  // Optional panic-mode error recovery with stop symbols from FIRST and FOLLOW
+  const [recoveryOn, setRecoveryOn] = useState(false);
+  const sets = useMemo(() => recoverySets(grammar, analysis), [grammar, analysis]);
   const simulation: LLSimulationResult = useMemo(
-    () => simulateLLParse(tokenized.tokens, grammar, llTable, undefined, mode),
-    [tokenized, grammar, llTable, k, useContexts]
+    () => simulateLLParse(tokenized.tokens, grammar, llTable, undefined, mode, recoveryOn ? { recovery: { sets } } : {}),
+    [tokenized, grammar, llTable, k, useContexts, recoveryOn, sets]
   );
 
   useEffect(() => {
@@ -415,14 +420,16 @@ export const LLView: React.FC<LLViewProps> = ({
           />
         </div>
         <TokenizedInputNote tokenized={tokenized} lang={lang} />
+        <RecoveryToggle enabled={recoveryOn} onChange={setRecoveryOn} method="ll" lang={lang} />
 
         {simulation.steps.length > 0 && (
-          <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className={`report-box ${simulation.accepted ? 'success' : simulation.completedWithErrors ? 'warning' : 'danger'}`} style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             {simulation.accepted ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
             <span>
               {simulation.accepted
                 ? t.wordAccepted.replace('{n}', simulation.steps.length.toString())
                 : `${t.wordRejected}: ${lang === 'cz' ? simulation.errorMessageCz || simulation.errorMessage : simulation.errorMessage}`}
+              {simulation.errors && simulation.errors.length > 0 && <RecoveryErrorsList errors={simulation.errors} tokens={tokenized.tokens} lang={lang} />}
             </span>
           </div>
         )}
@@ -492,6 +499,7 @@ export const LLView: React.FC<LLViewProps> = ({
               }}>
                 {actionText(currentStep)}
               </div>
+              {currentStep.recovery && <RecoveryStepBox info={currentStep.recovery} method="ll" lang={lang} />}
             </div>
           </div>
         )}
@@ -518,7 +526,7 @@ export const LLView: React.FC<LLViewProps> = ({
                       className={[
                         i === currentStepIdx ? 'trace-row-active' : '',
                         i > currentStepIdx ? 'trace-row-future' : '',
-                        s.isError ? 'trace-row-error' : '',
+                        s.isError ? 'trace-row-error' : s.recovery ? 'trace-row-recovery' : '',
                         s.isAccepted ? 'trace-row-accept' : ''
                       ].join(' ')}
                     >

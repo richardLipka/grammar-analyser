@@ -31,8 +31,8 @@ describe('Grammar links', () => {
     expect(readUrlState('?tab=first-follow&e=terminal&lang=EN', '')).toEqual({ tab: 'firstFollow', e: 'terminal', lang: 'en' });
     expect(readUrlState('?tab=nonsense&e=maybe&theme=pink&g=%20', '')).toEqual({});
     // recursive ascent is a sub-tab of recursive descent
-    expect(readUrlState('?tab=ascent', '')).toEqual({ tab: 'rd', rdPart: 'ascent' });
-    expect(readUrlState('', '#tab=Recursive-Ascent')).toEqual({ tab: 'rd', rdPart: 'ascent' });
+    expect(readUrlState('?tab=ascent', '')).toEqual({ tab: 'ra' });
+    expect(readUrlState('', '#tab=Recursive-Ascent')).toEqual({ tab: 'ra' });
     expect(readUrlState('?tab=descent', '')).toEqual({ tab: 'rd' });
   });
 
