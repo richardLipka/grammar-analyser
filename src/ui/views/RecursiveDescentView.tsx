@@ -11,6 +11,8 @@ import { TokenizedInputNote } from '../components/TokenizedInputNote';
 import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls';
 import { DerivationTreeVisualizer } from '../visualizer/DerivationTreeVisualizer';
 import { simulateRecursiveDescent, RDSimulationResult } from '../../core/codegen/rdSimulator';
+import { recoverySets, setText } from '../../core/analyser/errorRecovery';
+import { RecoveryToggle, RecoveryStepBox, RecoveryErrorsList } from '../components/ErrorRecovery';
 import {
   RuleActionDefinition,
   suggestSymbolActions,
@@ -208,6 +210,9 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
   const [showPureSymTab, setShowPureSymTab] = useState(false);
   // A name missing in the symbol table or declared twice in one scope stops the descent (semantic error), or is only reported
   const [stopOnSemanticErrors, setStopOnSemanticErrors] = useState(true);
+  // Optional panic-mode error recovery (off by default), shared by recursive descent and ascent
+  const [recoveryOn, setRecoveryOn] = useState(false);
+  const stopSymbols = useMemo(() => recoverySets(grammar, analysis), [grammar, analysis]);
 
   // Rule actions: detected from the keywords, switched off, or edited by hand
   const [actionMode, setActionMode] = useState<'none' | 'auto' | 'custom'>('auto');
@@ -309,9 +314,10 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       ruleActions,
       keywords: keywordConfig,
       lexemes: tokenized.lexemes,
-      stopOnSemanticErrors
+      stopOnSemanticErrors,
+      recovery: recoveryOn ? { sets: stopSymbols } : undefined
     });
-  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig, stopOnSemanticErrors]);
+  }, [tokenized, grammar, analysis, llTable, ruleActions, keywordConfig, stopOnSemanticErrors, recoveryOn, stopSymbols]);
 
   // Reset simulation step on new input
   useEffect(() => {
@@ -687,7 +693,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       'Typ zapsaný za jménem (x : integer v Pascalu) ani typy definované programem (typedef, type T = …) nerozpozná.',
       'Rozpoznání akcí je heuristika: identifikátor je terminál s názvem jako id, ident, name, deklarace se poznají jen podle klíčových slov. U jiné gramatiky může být potřeba akce upravit ručně; ručně upravené akce platí jen pro tuto gramatiku.',
       'Lexikální analýza nezná komentáře, řetězce ani znakové konstanty; víceznakový operátor je jedním symbolem, jen je-li terminálem gramatiky.',
-      'Programy v záložce Generovaný kód (PL/0, Oberon, C, Python, JavaScript) kontrolují jen syntaxi: čtou jeden znak za terminál a tabulku symbolů nemají.',
+      'Programy v záložce Generovaný kód (PL/0, Oberon, C, Python, JavaScript) kontrolují jen syntaxi: čtou jeden znak za terminál a tabulku symbolů nemají. Končí u první chyby; zotavení z chyb (panický režim se zastavovacími symboly podle Wirtha) umí jen krokování, a to jen ze syntaktických chyb – sémantická chyba analýzu zastaví i se zotavením.',
       'Jen gramatiky LL(1); krokování má nejvýše 2 000 kroků. Vlastní kód v JavaScriptu běží v prohlížeči bez omezení – jen pro vlastní pokusy.'
     ]
     : [
@@ -697,7 +703,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
       'A type written after the name (x : integer in Pascal) and types defined by the program (typedef, type T = …) are not recognised.',
       'The detection of actions is a heuristic: an identifier is a terminal named like id, ident, name, and declarations are recognised only by keywords. Another grammar may need its actions edited by hand; edited actions belong to that grammar only.',
       'The lexical analysis knows no comments, strings or character constants; a multi-character operator is one symbol only when it is a terminal of the grammar.',
-      'The programs on the tab Generated code (PL/0, Oberon, C, Python, JavaScript) check the syntax only: they read one character per terminal and have no symbol table.',
+      'The programs on the tab Generated code (PL/0, Oberon, C, Python, JavaScript) check the syntax only: they read one character per terminal and have no symbol table. They stop at the first error; error recovery (panic mode with Wirth\'s stop symbols) is done by the step simulator only, and only from syntax errors – a semantic error stops the analysis even with recovery.',
       'LL(1) grammars only; the step simulator stops after 2,000 steps. Own JavaScript code runs in the browser without restrictions – for one\'s own experiments only.'
     ];
   const symbolTableHelp = (
@@ -961,6 +967,9 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           stopOnSemanticErrors={stopOnSemanticErrors}
           onStopOnSemanticErrorsChange={setStopOnSemanticErrors}
           onEditActions={() => setSubTab('symtab')}
+          recoveryOn={recoveryOn}
+          onRecoveryChange={setRecoveryOn}
+          recoverySets={stopSymbols}
         />
       </div>
     );
@@ -1105,11 +1114,16 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           {/* Verdict Banner */}
           {verdict && (
             <div
-              className={`report-box ${simulation.accepted ? 'success' : 'danger'}`}
-              style={{ margin: '10px 0', display: 'flex', alignItems: 'center', gap: '8px' }}
+              className={`report-box ${simulation.accepted ? 'success' : simulation.completedWithErrors ? 'warning' : 'danger'}`}
+              style={{ margin: '10px 0', display: 'flex', alignItems: 'flex-start', gap: '8px' }}
             >
               {simulation.accepted ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-              <span style={{ fontWeight: 600 }}>{verdict}</span>
+              <span>
+                <span style={{ fontWeight: 600 }}>{verdict}</span>
+                {simulation.errors && simulation.errors.length > 0 && (
+                  <RecoveryErrorsList errors={simulation.errors} tokens={tokenized.tokens} lang={lang} method="rd" />
+                )}
+              </span>
             </div>
           )}
           {simulation.semanticError && (
@@ -1183,6 +1197,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
             </div>
           )}
 
+          <RecoveryToggle enabled={recoveryOn} onChange={setRecoveryOn} method="rd" lang={lang} className="rd-recovery-toggle" />
+
           {/* TOP SECTION: Input Streamer, Position in Input, and Action Note */}
           {currentStep && (
             <>
@@ -1218,6 +1234,7 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
               <div className="rd-step-note">
                 <strong>{cz ? 'Krok' : 'Step'} {currentStep.step + 1}: </strong>
                 <span>{cz ? currentStep.actionDescriptionCz : currentStep.actionDescription}</span>
+                {currentStep.recovery && <RecoveryStepBox info={currentStep.recovery} method="rd" lang={lang} />}
               </div>
             </>
           )}
@@ -1266,6 +1283,14 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                                 <span>{frame.rule.lhs} → {frame.rule.rhs.join(' ') || 'ε'}</span>
                               </div>
                             )}
+                            {frame.stopSet && (
+                              <div
+                                className="rd-frame-stop"
+                                title={cz ? 'Zastavovací symboly volání: FOLLOW neterminálu ∪ {$} ∪ zastavovací symboly volajícího' : 'Stop symbols of the call: FOLLOW of the non-terminal ∪ {$} ∪ the stop symbols of the caller'}
+                              >
+                                <span className="rd-frame-stop-label">{cz ? 'zastavovací:' : 'stop:'}</span> <code>{setText(frame.stopSet)}</code>
+                              </div>
+                            )}
                             {frame.rule && frame.rule.rhs.length > 0 && (
                               <div className="rd-frame-rhs">
                                 {frame.rule.rhs.map((sym, sIdx) => (
@@ -1306,7 +1331,17 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                       </>
                     ) : (
                       <>
-                        <div><code>{currentStep.activeFunction}() &#123;</code></div>
+                        <div><code>{currentStep.activeFunction}({recoveryOn ? 'stop' : ''}) &#123;</code></div>
+                        {recoveryOn && (() => {
+                          const activeFrame = currentStep.callStack[currentStep.callStack.length - 1];
+                          const at = currentStep.recoveryTest === 'entry' && activeFrame?.functionName === currentStep.activeFunction;
+                          return (
+                            <div className={`rd-branch-line ${at ? 'rd-branch-recovery' : ''}`} style={{ paddingLeft: '16px', margin: '2px 0' }}>
+                              test({setText(activeFrame?.startSet ?? [])}, stop); // {cz ? 'začátky, zastavovací symboly' : 'start set, stop symbols'}
+                              {activeFrame?.stopSet && <span className="hint-text"> stop = {setText(activeFrame.stopSet)}</span>}
+                            </div>
+                          );
+                        })()}
                         {grammar.productions
                           .filter(p => p.lhs === currentStep.activeFunction)
                           .map(p => {
@@ -1321,6 +1356,11 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
                             );
                           })}
                         <div style={{ paddingLeft: '16px', color: 'var(--color-text-muted)' }}>else error();</div>
+                        {recoveryOn && (
+                          <div className={`rd-branch-line ${currentStep.recoveryTest === 'exit' ? 'rd-branch-recovery' : ''}`} style={{ paddingLeft: '16px', margin: '2px 0' }}>
+                            test(stop, &#123;&#125;); // {cz ? 'za procedurou smí být jen zastavovací symbol' : 'only a stop symbol may follow the procedure'}
+                          </div>
+                        )}
                         <div><code>&#125;</code></div>
                       </>
                     )}
@@ -1486,8 +1526,8 @@ export const RecursiveDescentView: React.FC<RecursiveDescentViewProps> = ({
           <div className="card">
             <p className="hint-text">
               {cz
-                ? 'Výstupem programu je levý rozklad a OK, nebo ERR a symbol, u kterého analyzátor chybu zjistil. Komentáře uvádějí nad každou procedurou její pravidla a u každé větve pravidlo, které provádí. Všechny jazyky vypisují pro stejný vstup totéž.'
-                : 'The program prints the left parse and OK, or ERR and the symbol where the parser found the error. Comments give the rules above every procedure and the rule of every branch. All languages print the same for the same input.'}
+                ? 'Výstupem programu je levý rozklad a OK, nebo ERR a symbol, u kterého analyzátor chybu zjistil. Komentáře uvádějí nad každou procedurou její pravidla a u každé větve pravidlo, které provádí. Všechny jazyky vypisují pro stejný vstup totéž. Programy končí u první chyby: zotavení v panickém režimu (zastavovací symboly) ukazuje jen krokování.'
+                : 'The program prints the left parse and OK, or ERR and the symbol where the parser found the error. Comments give the rules above every procedure and the rule of every branch. All languages print the same for the same input. The programs stop at the first error: panic-mode recovery (stop symbols) is shown by the step simulator only.'}
             </p>
             <p className="hint-text" style={{ marginTop: '4px' }}>
               {gen.nested

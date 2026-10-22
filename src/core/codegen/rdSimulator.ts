@@ -21,10 +21,22 @@
  *
  * It is a demonstration of how a parser builds a symbol table, not a compiler:
  * no types, kinds or numbers of parameters are checked, and no code is made.
+ *
+ * With `recovery` a syntax error does not stop the descent: panic mode as in
+ * Wirth's PL/0 compiler (lecture 3 of KIV/FJP). Every procedure A gets a set of
+ * stop symbols, the stop set of its call = FOLLOW(A) ∪ {$} ∪ the stop set of the
+ * caller, and it begins with test(start set of A, stop set) and ends with
+ * test(stop set, ∅): when the current symbol is not in the first set, input is
+ * thrown away until a symbol of the union. At the start, a symbol of the start
+ * set (the predict sets of A's rules) resumes A, a stop symbol makes A give up
+ * and return; a terminal that does not match is taken as missing (Wirth:
+ * if sym = x then getsym else error). An error found before any terminal was
+ * read after a recovery belongs to the previous one. Semantic errors still stop.
  */
 
 import { Grammar, Production, END_MARKER } from '../ast/grammar';
 import { GrammarAnalysis } from '../analyser/grammarAnalyser';
+import { RecoveredError, RecoveryInfo, RecoveryOptions, setText, sortedSymbols } from '../analyser/errorRecovery';
 import { DerivationNode } from '../generator/wordGenerator';
 import {
   SymbolTable,
@@ -46,6 +58,10 @@ export interface RDCallFrame {
   nodeId: string;
   depth: number;
   openedScopeId?: string;
+  /** With recovery: the stop symbols of this call (FOLLOW of the non-terminal ∪ {$} ∪ the caller's), sorted */
+  stopSet?: string[];
+  /** With recovery: the start set of the procedure (the predict sets of its rules), sorted */
+  startSet?: string[];
 }
 
 /** The scope where a name read in the input was found; no scope = not declared. */
@@ -96,6 +112,10 @@ export interface RDSimulationStep {
   isAccepted?: boolean;
   errorMessage?: string;
   errorMessageCz?: string;
+  /** A step of error recovery (panic mode) */
+  recovery?: RecoveryInfo;
+  /** Which test of the procedure found the error: at its start, at its end, a terminal, or the main program */
+  recoveryTest?: 'entry' | 'exit' | 'terminal' | 'main';
 }
 
 export interface RDSimulationResult {
@@ -117,6 +137,10 @@ export interface RDSimulationResult {
   truncated?: boolean;
   /** The word is rejected because of the symbol table (a name missing or declared twice), not because of its syntax */
   semanticError?: boolean;
+  /** With recovery: the syntax errors found (the word is then not accepted) */
+  errors?: RecoveredError[];
+  /** With recovery: the whole input was read despite the errors */
+  completedWithErrors?: boolean;
 }
 
 export interface RDContext {
@@ -141,6 +165,8 @@ export interface CustomActionConfig {
    * true); false only reports them
    */
   stopOnSemanticErrors?: boolean;
+  /** Panic-mode error recovery (Wirth's stop symbols); without it the descent stops at the first syntax error */
+  recovery?: RecoveryOptions;
   /** Custom JavaScript callback hooks */
   hooks?: {
     onEnter?: (nt: string, ctx: RDContext) => void;
@@ -158,7 +184,8 @@ const KIND_CZ: Record<SymbolKind, string> = {
 function cloneTreeWithActive(node: DerivationNode, activePathSet: Set<string>, activeNodeId: string): DerivationNode {
   const isTarget = node.id === activeNodeId;
   const inPath = activePathSet.has(node.id);
-  const mark = node.mark === 'mismatch' ? 'mismatch' : isTarget || inPath ? 'current' : node.mark;
+  const kept = node.mark === 'mismatch' || node.mark === 'error' || node.mark === 'skipped';
+  const mark = kept ? node.mark : isTarget || inPath ? 'current' : node.mark;
 
   return {
     ...node,
@@ -251,6 +278,23 @@ export function simulateRecursiveDescent(
   let semanticError = false;
   const stopOnSemanticErrors = actionConfig?.stopOnSemanticErrors ?? true;
 
+  // Error recovery (panic mode with Wirth's stop symbols)
+  const recovery = actionConfig?.recovery;
+  const maxErrors = recovery?.maxErrors ?? 20;
+  // Recovery steps are bounded by the input (every skip reads a symbol) and the calls; leave room for them
+  if (recovery) maxSteps += 10 * input.length + 100;
+  const errors: RecoveredError[] = [];
+  /** A terminal has been read since the last recovery (else a new error is the same one) */
+  let readSinceRecovery = true;
+  /** The start set of every procedure: the predict sets of its rules */
+  const startSets = new Map<string, Set<string>>();
+  for (const p of g.productions) {
+    const set = startSets.get(p.lhs) ?? new Set<string>();
+    for (const a of predictMap.get(p.id) ?? []) set.add(a);
+    startSets.set(p.lhs, set);
+  }
+  const followOf = (nt: string) => recovery?.sets.follow.get(nt) ?? new Set<string>([END_MARKER]);
+
   const getConsumed = () => input.slice(0, tokenPos);
   const getRemaining = () => input.slice(tokenPos);
   // The current symbol with its text: id (x)
@@ -331,18 +375,66 @@ export function simulateRecursiveDescent(
     `Zahájení rekurzivního sestupu v '${g.startSymbol}' s aktuálním symbolem '${shown(0)}'`
   );
 
-  function parseNonTerminal(nt: string, parentNode: DerivationNode): boolean {
+  /** Registers a syntax error; one found before any terminal was read after a recovery belongs to the previous one */
+  const newError = (messageEn: string, messageCz: string): { number: number; isNew: boolean; head: [string, string] } => {
+    if (!readSinceRecovery && errors.length > 0) {
+      const n = errors[errors.length - 1].number;
+      return { number: n, isNew: false, head: [`Error ${n} goes on`, `Pokračuje chyba ${n}`] };
+    }
+    errors.push({ number: errors.length + 1, position: tokenPos, token: sym, messageEn, messageCz, skipped: 0, popped: 0 });
+    readSinceRecovery = false;
+    const n = errors.length;
+    return { number: n, isNew: true, head: [`Error ${n}`, `Chyba ${n}`] };
+  };
+  const currentError = () => errors[errors.length - 1];
+  /** Too many errors: the descent stops (true when it does) */
+  const tooManyErrors = (e: { isNew: boolean; number: number }, frames: RDCallFrame[], fn: string, frameId: string, nodeId: string): boolean => {
+    if (!e.isNew || errors.length <= maxErrors) return false;
+    isError = true;
+    errorMsg = `Too many errors (${maxErrors}): the analysis stops.`;
+    errorMsgCz = `Příliš mnoho chyb (${maxErrors}): analýza končí.`;
+    recordStep(frames, fn, frameId, nodeId, errorMsg, errorMsgCz, {
+      isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz, recovery: { kind: 'giveUp', errorNumber: e.number }
+    });
+    return true;
+  };
+  /** Panic mode: input is thrown away (getsym) until a symbol of `until` */
+  const skipUntil = (until: (a: string) => boolean, frames: RDCallFrame[], fn: string, frameId: string, nodeId: string, info: Omit<RecoveryInfo, 'kind' | 'errorNumber'>, why: [string, string]) => {
+    while (!until(sym)) {
+      const tok = sym;
+      const text = shown(tokenPos);
+      tokenPos++;
+      sym = input[tokenPos] ?? END_MARKER;
+      currentError().skipped++;
+      recordStep(frames, fn, frameId, nodeId,
+        `Panic mode: '${text}' is ${why[0]} — thrown away (getsym), the current symbol is now '${shown(tokenPos)}'`,
+        `Panický režim: '${text}' ${why[1]} — zahodí se (getsym), aktuální symbol je teď '${shown(tokenPos)}'`,
+        { recovery: { kind: 'skip', errorNumber: currentError().number, ...info, token: tok } });
+    }
+  };
+  /** The nearest procedure on the call stack whose FOLLOW holds the symbol: where the parser can go on */
+  const followOwner = (a: string): string | undefined => {
+    for (let i = callStack.length - 1; i >= 0; i--) if (followOf(callStack[i].functionName).has(a)) return callStack[i].functionName;
+    return undefined;
+  };
+
+  function parseNonTerminal(nt: string, parentNode: DerivationNode, callerStop: Set<string> = new Set([END_MARKER])): boolean {
     if (isError || steps.length >= maxSteps) return false;
 
     const frameId = `frame_${frameCounter++}`;
+    // Wirth: the stop symbols of this call = FOLLOW(nt) ∪ {$} ∪ the stop symbols of the caller
+    const stop = new Set<string>([...followOf(nt), END_MARKER, ...callerStop]);
+    const start = startSets.get(nt) ?? new Set<string>();
     const frame: RDCallFrame = {
       id: frameId,
       functionName: nt,
       rhsIndex: 0,
       nodeId: parentNode.id,
-      depth: callStack.length
+      depth: callStack.length,
+      ...(recovery ? { stopSet: sortedSymbols(stop), startSet: sortedSymbols(start) } : {})
     };
     callStack.push(frame);
+    const caller = () => (callStack.length > 0 ? callStack[callStack.length - 1] : undefined);
 
     // Hook: onEnter
     actionConfig?.hooks?.onEnter?.(nt, getContext());
@@ -352,13 +444,71 @@ export function simulateRecursiveDescent(
       nt,
       frameId,
       parentNode.id,
-      `Call function ${nt}() [lookahead: '${shown(tokenPos)}']`,
-      `Volání funkce ${nt}() [aktuální symbol: '${shown(tokenPos)}']`
+      `Call function ${nt}() [lookahead: '${shown(tokenPos)}']${recovery ? `; stop symbols of this call: FOLLOW(${nt}) ∪ {$} ∪ those of the caller = ${setText(stop)}` : ''}`,
+      `Volání funkce ${nt}() [aktuální symbol: '${shown(tokenPos)}']${recovery ? `; zastavovací symboly tohoto volání: FOLLOW(${nt}) ∪ {$} ∪ symboly volajícího = ${setText(stop)}` : ''}`
     );
 
     // Select rule by lookahead
     const ntRules = g.productions.filter(p => p.lhs === nt);
-    const matchingRule = ntRules.find(p => predictMap.get(p.id)?.has(sym));
+    const findRule = () => ntRules.find(p => predictMap.get(p.id)?.has(sym));
+    let matchingRule = findRule();
+
+    if (!matchingRule && recovery) {
+      // test(start set, stop set): panic mode at the start of the procedure
+      const info = { nonTerminal: nt, syncSet: sortedSymbols(stop), resumeSet: sortedSymbols(start) };
+      const e = newError(`${nt}() cannot start with '${shown(tokenPos)}'`, `${nt}() nemůže začínat symbolem '${shown(tokenPos)}'`);
+      if (tooManyErrors(e, callStack, nt, frameId, parentNode.id)) {
+        callStack.pop();
+        return false;
+      }
+      recordStep(
+        callStack,
+        nt,
+        frameId,
+        parentNode.id,
+        `${e.head[0]}: ${nt}() cannot start with '${shown(tokenPos)}' — it expects a symbol of its start set ${setText(start)} (the predict sets of its rules). Panic mode — test(start set, stop symbols): input is thrown away until a symbol of the start set (${nt}() goes on) or a stop symbol ${setText(stop)} (${nt}() gives up and returns)`,
+        `${e.head[1]}: ${nt}() nemůže začínat symbolem '${shown(tokenPos)}' — očekává symbol ze své množiny začátků ${setText(start)} (množiny řídicích symbolů jejích pravidel). Panický režim — test(začátky, zastavovací symboly): vstup se zahazuje až po symbol z množiny začátků (${nt}() pokračuje) nebo zastavovací symbol ${setText(stop)} (${nt}() se vzdá a vrátí)`,
+        { isError: true, recovery: { kind: 'start', errorNumber: e.number, ...info }, recoveryTest: 'entry' }
+      );
+      skipUntil(a => start.has(a) || stop.has(a), callStack, nt, frameId, parentNode.id, info, [
+        `neither in the start set of ${nt} nor a stop symbol`,
+        `není v množině začátků ${nt} ani zastavovacím symbolem`
+      ]);
+      matchingRule = findRule();
+      if (matchingRule) {
+        recordStep(
+          callStack,
+          nt,
+          frameId,
+          parentNode.id,
+          `Recovered: '${shown(tokenPos)}' is in the start set of ${nt}: panic mode ends, ${nt}() goes on and chooses its rule`,
+          `Zotaveno: '${shown(tokenPos)}' je v množině začátků ${nt}: panický režim končí, ${nt}() pokračuje a vybere pravidlo`,
+          { recovery: { kind: 'recovered', errorNumber: currentError().number, ...info, token: sym }, recoveryTest: 'entry' }
+        );
+      } else {
+        // A stop symbol: the procedure gives up and returns, the caller goes on with it
+        parentNode.mark = 'error';
+        parentNode.children = [{ id: `rd_node_${nodeIdCounter++}`, symbol: '⚠', isTerminal: true, mark: 'error' }];
+        currentError().popped++;
+        const owner = followOwner(sym);
+        callStack.pop();
+        const up = caller();
+        const where: [string, string] = owner === nt || owner === undefined
+          ? [`'${shown(tokenPos)}' ∈ FOLLOW(${nt}) ∪ {$}`, `'${shown(tokenPos)}' ∈ FOLLOW(${nt}) ∪ {$}`]
+          : [`'${shown(tokenPos)}' is a stop symbol from the caller ${owner}() ('${shown(tokenPos)}' ∈ FOLLOW(${owner})), so the procedures up to ${owner}() will return as well`,
+            `'${shown(tokenPos)}' je zastavovací symbol od volajícího ${owner}() ('${shown(tokenPos)}' ∈ FOLLOW(${owner})), vrátí se tedy i procedury až po ${owner}()`];
+        recordStep(
+          callStack,
+          up?.functionName ?? 'main',
+          up?.id ?? 'frame_0',
+          parentNode.id,
+          `Recovered: ${where[0]} — ${nt}() gives up (its subtree is marked as an error) and returns; ${up ? `${up.functionName}()` : 'the main program'} goes on with '${shown(tokenPos)}'`,
+          `Zotaveno: ${where[1]} — ${nt}() se vzdá (její podstrom je označen jako chybný) a vrátí se; ${up ? `${up.functionName}()` : 'hlavní program'} pokračuje symbolem '${shown(tokenPos)}'`,
+          { recovery: { kind: 'pop', errorNumber: currentError().number, ...info, token: sym }, recoveryTest: 'entry' }
+        );
+        return true;
+      }
+    }
 
     if (!matchingRule) {
       isError = true;
@@ -488,7 +638,7 @@ export function simulateRecursiveDescent(
 
       if (g.nonTerminals.has(X)) {
         // Non-terminal: recursive call
-        const success = parseNonTerminal(X, childNode);
+        const success = parseNonTerminal(X, childNode, stop);
         if (!success) {
           callStack.pop();
           return false;
@@ -510,6 +660,7 @@ export function simulateRecursiveDescent(
           actionConfig?.hooks?.onMatch?.(X, lexeme, getContext());
           tokenPos++;
           sym = input[tokenPos] ?? END_MARKER;
+          readSinceRecovery = true;
 
           // Semantic actions at this symbol: declare the name, or look it up
           let noteEn = '';
@@ -590,6 +741,24 @@ export function simulateRecursiveDescent(
             callStack.pop();
             return false;
           }
+        } else if (recovery) {
+          // Wirth: if sym = X then getsym else error — X is taken as missing, the input stays
+          const e = newError(`Expected '${X}', found '${shown(tokenPos)}'`, `Očekáván terminál '${X}', nalezeno '${shown(tokenPos)}'`);
+          if (tooManyErrors(e, callStack, nt, frameId, childNode.id)) {
+            callStack.pop();
+            return false;
+          }
+          childNode.mark = 'error';
+          currentError().popped++;
+          recordStep(
+            callStack,
+            nt,
+            frameId,
+            childNode.id,
+            `${e.head[0]}: expected terminal '${X}', found '${shown(tokenPos)}'. Recovery: '${X}' is taken as missing (Wirth: if sym = ${X} then getsym else error) — ${nt}() goes on after it as if it had been read; the input stays at '${shown(tokenPos)}' (recovered)`,
+            `${e.head[1]}: očekáván terminál '${X}', nalezeno '${shown(tokenPos)}'. Zotavení: '${X}' se považuje za chybějící (Wirth: if sym = ${X} then getsym else error) — ${nt}() pokračuje za ním, jako by byl přečten; vstup zůstává na '${shown(tokenPos)}' (zotaveno)`,
+            { isError: true, recovery: { kind: 'insert', errorNumber: e.number, token: X }, recoveryTest: 'terminal' }
+          );
         } else {
           isError = true;
           errorMsg = `Syntax error: expected terminal '${X}', but found '${shown(tokenPos)}'.`;
@@ -627,16 +796,44 @@ export function simulateRecursiveDescent(
       return false;
     }
 
+    // test(stop set, ∅) at the end of the procedure: only a stop symbol may follow it
+    let recovered: RecoveryInfo | undefined;
+    if (recovery && !stop.has(sym)) {
+      const info = { nonTerminal: nt, syncSet: sortedSymbols(stop) };
+      const e = newError(`'${shown(tokenPos)}' cannot follow ${nt}`, `'${shown(tokenPos)}' nemůže následovat za ${nt}`);
+      if (tooManyErrors(e, callStack, nt, frameId, parentNode.id)) {
+        callStack.pop();
+        return false;
+      }
+      recordStep(
+        callStack,
+        nt,
+        frameId,
+        parentNode.id,
+        `${e.head[0]}: ${nt}() has read its rule, but '${shown(tokenPos)}' cannot follow it — it is not a stop symbol ${setText(stop)} (FOLLOW(${nt}) ∪ {$} ∪ those of the callers). Panic mode — test(stop symbols, ∅) at the end of the procedure: input is thrown away up to a stop symbol`,
+        `${e.head[1]}: ${nt}() přečetla své pravidlo, ale '${shown(tokenPos)}' za ní následovat nemůže — není zastavovacím symbolem ${setText(stop)} (FOLLOW(${nt}) ∪ {$} ∪ symboly volajících). Panický režim — test(zastavovací symboly, ∅) na konci procedury: vstup se zahazuje až po zastavovací symbol`,
+        { isError: true, recovery: { kind: 'start', errorNumber: e.number, ...info }, recoveryTest: 'exit' }
+      );
+      skipUntil(a => stop.has(a), callStack, nt, frameId, parentNode.id, info, [`not a stop symbol of ${nt}()`, `není zastavovacím symbolem ${nt}()`]);
+      recovered = { kind: 'recovered', errorNumber: currentError().number, ...info, token: sym };
+    }
+
+    const owner = recovered ? followOwner(sym) : undefined;
     actionConfig?.hooks?.onExit?.(nt, getContext());
     callStack.pop();
 
+    const goesOn: [string, string] = !recovered ? ['', ''] : owner === undefined || owner === nt
+      ? [`Recovered: '${shown(tokenPos)}' ∈ FOLLOW(${nt}) ∪ {$}, panic mode ends. `, `Zotaveno: '${shown(tokenPos)}' ∈ FOLLOW(${nt}) ∪ {$}, panický režim končí. `]
+      : [`Recovered: '${shown(tokenPos)}' is a stop symbol from the caller ${owner}() (∈ FOLLOW(${owner})), the procedures up to ${owner}() return. `,
+        `Zotaveno: '${shown(tokenPos)}' je zastavovací symbol od volajícího ${owner}() (∈ FOLLOW(${owner})), procedury až po ${owner}() se vrátí. `];
     recordStep(
       callStack,
       callStack.length > 0 ? callStack[callStack.length - 1].functionName : 'main',
       callStack.length > 0 ? callStack[callStack.length - 1].id : 'frame_0',
       parentNode.id,
-      `Return from ${nt}()`,
-      `Návrat z funkce ${nt}()`
+      `${goesOn[0]}Return from ${nt}()`,
+      `${goesOn[1]}Návrat z funkce ${nt}()`,
+      recovered ? { recovery: recovered, recoveryTest: 'exit' } : {}
     );
 
     return true;
@@ -646,7 +843,38 @@ export function simulateRecursiveDescent(
   const parseSuccess = parseNonTerminal(g.startSymbol, rootNode);
   const truncated = steps.length >= maxSteps;
 
-  if (parseSuccess && !isError) {
+  if (parseSuccess && !isError && recovery && sym !== END_MARKER) {
+    // main: if sym <> $ then error — the rest of the input is thrown away
+    const e = newError(`Expected the end of input, found '${shown(tokenPos)}'`, `Očekáván konec vstupu, nalezeno '${shown(tokenPos)}'`);
+    if (!tooManyErrors(e, [], 'main', 'frame_0', rootNode.id)) {
+      const info = { syncSet: [END_MARKER] };
+      recordStep(
+        [],
+        'main',
+        'frame_0',
+        rootNode.id,
+        `${e.head[0]}: ${g.startSymbol}() has returned, but the input goes on with '${shown(tokenPos)}' — the main program expects $. Panic mode: the rest of the input is thrown away up to $`,
+        `${e.head[1]}: ${g.startSymbol}() se vrátila, ale vstup pokračuje symbolem '${shown(tokenPos)}' — hlavní program očekává $. Panický režim: zbytek vstupu se zahodí až po $`,
+        { isError: true, recovery: { kind: 'start', errorNumber: e.number, ...info }, recoveryTest: 'main' }
+      );
+      skipUntil(a => a === END_MARKER, [], 'main', 'frame_0', rootNode.id, info, ['after the complete word', 'za celým slovem']);
+    }
+  }
+
+  if (parseSuccess && !isError && errors.length > 0 && sym === END_MARKER) {
+    const n = errors.length;
+    errorMsg = `${n} syntax error(s); the analysis went on after panic-mode recovery`;
+    errorMsgCz = `Syntaktických chyb: ${n}; analýza po zotavení v panickém režimu pokračovala`;
+    recordStep(
+      [],
+      'main',
+      'frame_0',
+      rootNode.id,
+      `End: the input has been read with ${n} error(s); the word is not in L(G)`,
+      `Konec: vstup přečten, nalezeno chyb: ${n}; slovo nepatří do L(G)`,
+      { isError: true, errorMessage: errorMsg, errorMessageCz: errorMsgCz, recovery: { kind: 'end', errorNumber: n } }
+    );
+  } else if (parseSuccess && !isError) {
     if (sym === END_MARKER) {
       isAccepted = true;
       const names = undeclared.length > 0
@@ -680,11 +908,12 @@ export function simulateRecursiveDescent(
     errorMsgCz = `Simulace se zastavila po ${maxSteps} krocích; zkraťte vstup.`;
   }
 
+  const completedWithErrors = parseSuccess && !isError && errors.length > 0 && sym === END_MARKER;
   return {
     accepted: isAccepted,
     steps,
-    errorMessage: isError || (truncated && !isAccepted) ? errorMsg : undefined,
-    errorMessageCz: isError || (truncated && !isAccepted) ? errorMsgCz : undefined,
+    errorMessage: isError || completedWithErrors || (truncated && !isAccepted) ? errorMsg : undefined,
+    errorMessageCz: isError || completedWithErrors || (truncated && !isAccepted) ? errorMsgCz : undefined,
     finalTree: cloneTreeWithActive(rootNode, new Set(), ''),
     leftParse,
     lexemes,
@@ -692,6 +921,7 @@ export function simulateRecursiveDescent(
     redeclared,
     unnamedIdentifiers,
     truncated: truncated && !isAccepted ? true : undefined,
-    semanticError: semanticError || undefined
+    semanticError: semanticError || undefined,
+    ...(recovery ? { errors, completedWithErrors: completedWithErrors || undefined } : {})
   };
 }

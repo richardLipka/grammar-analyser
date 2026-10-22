@@ -17,6 +17,14 @@
  * Identifiers read are declarations or uses (lookups) as in recursive descent;
  * an undeclared name and a name declared twice in one scope stop the parse
  * when stopOnSemanticErrors is on.
+ *
+ * With `recovery` a syntax error does not leave all procedures (ERR): panic mode
+ * as in the table-driven LR simulator (lrParser.ts, Aho et al. §4.8.3). The
+ * procedures above the nearest procedure s with a goto g(s, A) return without a
+ * result (their states leave the stack), input is thrown away until a symbol
+ * a ∈ FOLLOW(A) with which the parser really goes on, and s calls g(s, A) as if a
+ * reduction to A had returned to it; the popped trees and the thrown-away symbols
+ * form the error subtree of A. The generated programs do not recover.
  */
 
 import { Production, END_MARKER } from '../ast/grammar';
@@ -35,8 +43,10 @@ import {
   normalizeKeywordConfig
 } from './symbolTable';
 import { RDLookup } from './rdSimulator';
+import { RecoveredError, RecoveryInfo, RecoveryOptions, setText, sortedSymbols } from '../analyser/errorRecovery';
 
-export type AscentStepKind = 'call' | 'shift' | 'reduce' | 'epsilon' | 'return' | 'goto' | 'accept' | 'error';
+/** 'recover': a step of panic mode (a procedure returns without a result, input thrown away, the goto on the error part) */
+export type AscentStepKind = 'call' | 'shift' | 'reduce' | 'epsilon' | 'return' | 'goto' | 'accept' | 'error' | 'recover';
 
 /** An action run in a step, with where it was placed */
 export interface AscentActionNote {
@@ -83,6 +93,8 @@ export interface AscentStep {
   lookup?: RDLookup;
   /** The step ends the parse with a semantic error */
   semanticError?: boolean;
+  /** A step of error recovery (panic mode) */
+  recovery?: RecoveryInfo;
   text: { en: string; cz: string };
 }
 
@@ -100,6 +112,10 @@ export interface AscentSimulation {
   unnamedIdentifiers: number;
   /** Rejected because of the symbol table, not the syntax */
   semanticError?: boolean;
+  /** With recovery: the syntax errors found (the word is then not accepted) */
+  errors?: RecoveredError[];
+  /** With recovery: the whole input was read despite the errors */
+  completedWithErrors?: boolean;
 }
 
 export interface AscentOptions {
@@ -111,6 +127,8 @@ export interface AscentOptions {
   /** An undeclared name or a name declared twice stops the parse (default true) */
   stopOnSemanticErrors?: boolean;
   maxSteps?: number;
+  /** Panic-mode error recovery (stop symbols from FOLLOW); without it the parse stops at the first error */
+  recovery?: RecoveryOptions;
 }
 
 const KIND_CZ: Record<SymbolKind, string> = {
@@ -127,8 +145,10 @@ interface Frame {
 }
 
 export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, table: LRTable, options: AscentOptions = {}): AscentSimulation {
-  const maxSteps = options.maxSteps ?? 2000 + 100 * tokens.length;
+  const recovery = options.recovery;
   const input = [...tokens, END_MARKER];
+  // Recovery steps are bounded by the input and the stack; leave room for them
+  const maxSteps = (options.maxSteps ?? 2000 + 100 * tokens.length) + (recovery ? 20 * input.length + 100 : 0);
   const lexemes = input.map((t, i) => (i < tokens.length ? options.lexemes?.[i] ?? t : t));
   const states = gen.states;
   const automaton = table.automaton!;
@@ -376,11 +396,21 @@ export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, 
       });
     }
   };
+  // Error recovery state
+  const maxErrors = recovery?.maxErrors ?? 20;
+  const errors: RecoveredError[] = [];
+  /** A symbol has been shifted since the last recovery (else a new error is the same one) */
+  let shiftedSinceRecovery = true;
+  /** Input position of the last recovery: an error there again must throw away at least one symbol */
+  let lastRecoveryAt = -1;
+  let completedWithErrors = false;
+
   const done = (accepted: boolean): AscentSimulation => ({
     accepted, steps, rightParse,
-    finalTree: accepted ? forestTree() : undefined,
+    finalTree: accepted || completedWithErrors ? forestTree() : undefined,
     undeclared, redeclared, unnamedIdentifiers,
-    semanticError: semanticStop || undefined
+    semanticError: semanticStop || undefined,
+    ...(recovery ? { errors, completedWithErrors: completedWithErrors || undefined } : {})
   });
 
   push({
@@ -407,6 +437,19 @@ export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, 
         });
         count = left;
         continue;
+      }
+      if (nt === S1 && errors.length > 0) {
+        completedWithErrors = true;
+        const n = errors.length;
+        push({
+          kind: 'error', state: q, lookahead: input[pos], nt, count: 0, lineKeys: [lineKey.goto(q, S1)],
+          recovery: { kind: 'end', errorNumber: n },
+          text: {
+            en: `The initial state # gets (${S1}, 1), the count drops to 0, and there is no goto over ${S1}: the parse ends. The input has been read with ${n} error(s): the word is not in L(G).`,
+            cz: `Počáteční stav # dostane (${S1}, 1), počet klesne na 0 a přechod podle ${S1} neexistuje: analýza končí. Vstup je přečten, nalezeno chyb: ${n}; slovo nepatří do L(G).`
+          }
+        });
+        return false;
       }
       if (nt === S1) {
         push({
@@ -450,6 +493,183 @@ export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, 
     return { id: `ra_node_${nodeCounter++}`, symbol: p.lhs, isTerminal: false, children };
   };
 
+  // ---- Panic-mode error recovery (the same as the table-driven LR simulator) ----
+
+  const actionOf = (q: number, la: string) => {
+    const s = states[q];
+    return s.actions.find(a =>
+      a.kind === 'shift' ? a.terminal === la : a.kind === 'accept' ? la === END_MARKER : s.unconditional || a.columns.includes(la)
+    );
+  };
+  /** Whether the procedures with these states really go on with a: their reductions end with reading a (or accepting $) */
+  const canContinueFrom = (stack: number[], a: string): boolean => {
+    const st = [...stack];
+    for (let guard = 0; guard < 4 * states.length + 50; guard++) {
+      const act = actionOf(st[st.length - 1], a);
+      if (!act) return false;
+      if (act.kind === 'accept') return a === END_MARKER;
+      if (act.kind === 'shift') return true;
+      st.splice(st.length - act.production.rhs.length);
+      if (st.length === 0) return false;
+      const next = table.gotoTable.get(st[st.length - 1])?.get(act.production.lhs);
+      if (next === undefined) return false;
+      st.push(next);
+    }
+    return false;
+  };
+  const nonTerminals = recovery ? [...recovery.sets.follow.keys()] : [];
+  const follow = (A: string) => recovery?.sets.follow.get(A) ?? new Set<string>([END_MARKER]);
+
+  /** Registers an error; one found before any symbol was read after a recovery belongs to the previous one */
+  const newError = (la: string, en: string, cz: string) => {
+    const isNew = shiftedSinceRecovery || errors.length === 0;
+    if (isNew) {
+      errors.push({ number: errors.length + 1, position: pos, token: la, messageEn: en, messageCz: cz, skipped: 0, popped: 0 });
+      shiftedSinceRecovery = false;
+    }
+    const err = errors[errors.length - 1];
+    return { err, isNew, head: isNew ? [`Error ${err.number}`, `Chyba ${err.number}`] : [`Error ${err.number} goes on`, `Pokračuje chyba ${err.number}`] };
+  };
+
+  /** The accepting state before the end of the input: the rest is thrown away (only $ can follow S) */
+  const acceptTooEarly = (q: number, la: string, cell: string) => {
+    const { err, head } = newError(la, 'Input after the end of the word', 'Vstup za koncem slova');
+    const rest = input.slice(pos, -1);
+    push({
+      kind: 'error', state: q, lookahead: la, lineKeys: [lineKey.err(q)],
+      recovery: { kind: 'start', errorNumber: err.number, syncSet: [END_MARKER] },
+      text: {
+        en: `${head[0]}: ${cell} = accept, but the input goes on with '${la}'. Panic mode instead of ERR: the only stop symbol is $ — the rest ${rest.join(' ')} is thrown away, then the procedures accept.`,
+        cz: `${head[1]}: ${cell} = přijetí, ale vstup pokračuje symbolem '${la}'. Panický režim místo ERR: jediný zastavovací symbol je $ — zbytek ${rest.join(' ')} se zahodí, pak procedury přijmou.`
+      }
+    });
+    for (const tok of rest) {
+      pos++;
+      err.skipped++;
+      push({
+        kind: 'recover', state: q, lookahead: tok, lineKeys: [],
+        recovery: { kind: 'skip', errorNumber: err.number, token: tok, syncSet: [END_MARKER] },
+        text: { en: `Panic mode: '${tok}' is thrown away.`, cz: `Panický režim: '${tok}' se zahodí.` }
+      });
+    }
+  };
+
+  /**
+   * An empty entry f(q, a): the procedures above the nearest s with a goto g(s, A) return
+   * without a result, input is thrown away up to a ∈ FOLLOW(A) with which g(s, A) really
+   * goes on, and s calls g(s, A). False when the parse ends (too many errors, no way on).
+   */
+  const recover = (q: number, la: string, cell: string): boolean => {
+    const { err, isNew, head } = newError(la,
+      `Syntax error at token '${la}': no valid action in state ${name(q)}.`,
+      `Syntaktická chyba na symbolu '${la}': ve stavu ${name(q)} neexistuje platná akce.`);
+    if (isNew && errors.length > maxErrors) {
+      push({
+        kind: 'error', state: q, lookahead: la, lineKeys: [lineKey.err(q)], recovery: { kind: 'giveUp', errorNumber: err.number },
+        text: { en: `${head[0]}: ${cell} is empty. Too many errors (${maxErrors}): the analysis stops.`, cz: `${head[1]}: ${cell} je prázdné. Příliš mnoho chyb (${maxErrors}): analýza končí.` }
+      });
+      return false;
+    }
+
+    // The nearest way on: fewest input symbols thrown away, then fewest procedures returning
+    const minSkip = lastRecoveryAt === pos ? 1 : 0;
+    let found: { skip: number; depth: number; nt: string; target: number } | undefined;
+    for (let skip = minSkip; !found && pos + skip < input.length; skip++) {
+      const a = input[pos + skip];
+      for (let depth = frames.length - 1; !found && depth >= 0; depth--) {
+        for (const nt of nonTerminals) {
+          const target = table.gotoTable.get(frames[depth].state)?.get(nt);
+          if (target === undefined || !follow(nt).has(a)) continue;
+          if (!canContinueFrom([...frames.slice(0, depth + 1).map(f => f.state), target], a)) continue;
+          found = { skip, depth, nt, target };
+          break;
+        }
+      }
+    }
+    if (!found) {
+      push({
+        kind: 'error', state: q, lookahead: la, lineKeys: [lineKey.err(q)], recovery: { kind: 'giveUp', errorNumber: err.number },
+        text: {
+          en: `${head[0]}: ${cell} is empty. Panic mode: no procedure on the call stack has a goto g(s, A) after which the parser could go on with a later input symbol a ∈ FOLLOW(A) — the analysis stops (ERR).`,
+          cz: `${head[1]}: ${cell} je prázdné. Panický režim: žádná procedura na zásobníku volání nemá přechod g(s, A), po kterém by analyzátor mohl pokračovat některým dalším symbolem vstupu a ∈ FOLLOW(A) — analýza končí (ERR).`
+        }
+      });
+      return false;
+    }
+
+    const { skip, depth, nt, target } = found;
+    const s = frames[depth].state;
+    const below = frames.slice(0, depth + 1).map(f => f.state);
+    const syncSet = sortedSymbols([...follow(nt)].filter(a => canContinueFrom([...below, target], a)));
+    const a = input[pos + skip];
+    const returning = frames.length - 1 - depth;
+    const info = { errorNumber: err.number, nonTerminal: nt, syncSet };
+    push({
+      kind: 'error', state: q, lookahead: la, lineKeys: [lineKey.err(q)], recovery: { kind: 'start', ...info },
+      text: {
+        en: `${head[0]}: ${cell} is empty — syntax error at '${la}'. Panic mode instead of ERR (which would leave all procedures): the error part is taken for a non-terminal A. The nearest procedure on the call stack with a goto g(s, A) whose state can go on is ${name(s)} with A = ${nt}: g(${name(s)}, ${nt}) = ${name(target)}; the stop symbols are the symbols of FOLLOW(${nt}) with which the parser then really goes on: ${setText(syncSet)}. Plan: ${returning} procedure(s) above ${name(s)} return without a result, ${skip} input symbol(s) are thrown away, then ${name(s)} calls g(${name(s)}, ${nt}).`,
+        cz: `${head[1]}: ${cell} je prázdné — syntaktická chyba u '${la}'. Panický režim místo ERR (který by ukončil všechny procedury): chybná část se bude považovat za neterminál A. Nejbližší procedura na zásobníku volání s přechodem g(s, A), jehož stav může pokračovat, je ${name(s)} s A = ${nt}: g(${name(s)}, ${nt}) = ${name(target)}; zastavovací symboly jsou symboly z FOLLOW(${nt}), se kterými pak analyzátor skutečně pokračuje: ${setText(syncSet)}. Plán: ${returning} procedur(a) nad ${name(s)} se vrátí bez výsledku, zahodí se ${skip} symbol(ů) vstupu, pak ${name(s)} zavolá g(${name(s)}, ${nt}).`
+      }
+    });
+
+    // 1. The procedures above s return without a result; their trees become the error part
+    // (shown as a pending tree of A until the goto)
+    const errorChildren: DerivationNode[] = [];
+    const errorNode: DerivationNode = { id: `ra_node_${nodeCounter++}`, symbol: nt, isTerminal: false, mark: 'error', children: errorChildren };
+    pending = errorNode;
+    while (frames.length - 1 > depth) {
+      const f = frames.pop()!;
+      if (f.tree) errorChildren.unshift(f.tree);
+      err.popped++;
+      const top = frames[frames.length - 1].state;
+      push({
+        kind: 'recover', state: f.state, lookahead: input[pos], lineKeys: [], recovery: { kind: 'pop', ...info, poppedStates: [f.state] },
+        text: {
+          en: `Panic mode: the procedure of ${name(f.state)} returns without a result — its state leaves the stack (symbol ${f.symbol}); its tree goes into the error part. ${name(top)} is running again${top === s ? ` — it has the goto g(${name(s)}, ${nt})` : ''}.`,
+          cz: `Panický režim: procedura stavu ${name(f.state)} se vrátí bez výsledku — její stav opouští zásobník (symbol ${f.symbol}); její strom přejde do chybné části. Znovu běží ${name(top)}${top === s ? ` — má přechod g(${name(s)}, ${nt})` : ''}.`
+        }
+      });
+    }
+    // The symbol-table actions of rule instances that began at or above s are abandoned
+    if (tableActive) {
+      for (const [key, id] of [...openedScopes]) {
+        if (Number(key.split(':')[0]) < depth) continue;
+        openedScopes.delete(key);
+        closeScope(id);
+      }
+      for (const key of [...doneEvents]) if (Number(key.split(':')[0]) >= depth) doneEvents.delete(key);
+    }
+
+    // 2. Input is thrown away up to the stop symbol
+    for (let i = 0; i < skip; i++) {
+      const tok = input[pos];
+      pos++;
+      err.skipped++;
+      errorChildren.push({ id: `ra_node_${nodeCounter++}`, symbol: tok, isTerminal: true, mark: 'skipped' });
+      push({
+        kind: 'recover', state: s, lookahead: tok, lineKeys: [], recovery: { kind: 'skip', ...info, token: tok },
+        text: { en: `Panic mode: '${tok}' is not a stop symbol ${setText(syncSet)} — thrown away.`, cz: `Panický režim: '${tok}' není zastavovací symbol ${setText(syncSet)} — zahodí se.` }
+      });
+    }
+
+    // 3. s calls g(s, A) for the error part, as if a reduction to A had returned to it
+    if (errorChildren.length === 0) errorChildren.push({ id: `ra_node_${nodeCounter++}`, symbol: '⚠', isTerminal: true, mark: 'error' });
+    pending = undefined;
+    // the error part has no names: the actions of entering g(s, A) wait for the reduction
+    frames.push({ state: target, symbol: nt, lexeme: nt, tree: errorNode });
+    activeNodeIds = [errorNode.id];
+    lastRecoveryAt = pos;
+    push({
+      kind: 'recover', state: s, lookahead: a, nt, count: 0, target, lineKeys: [lineKey.goto(s, nt), lineKey.proc(target), lineKey.entry(target)],
+      recovery: { kind: 'recovered', ...info, token: a },
+      text: {
+        en: `Recovered: '${a}' is a stop symbol. ${name(s)} takes the error part for ${nt}, as if a reduction to ${nt} had returned (${nt}, 1) to it: in its loop it calls g(${name(s)}, ${nt}) = ${name(target)}, which can go on with '${a}'.`,
+        cz: `Zotaveno: '${a}' je zastavovací symbol. ${name(s)} považuje chybnou část za ${nt}, jako by se jí z redukce na ${nt} vrátilo (${nt}, 1): ve své smyčce zavolá g(${name(s)}, ${nt}) = ${name(target)}, který může pokračovat symbolem '${a}'.`
+      }
+    });
+    return true;
+  };
+
   while (steps.length < maxSteps) {
     const q = frames[frames.length - 1].state;
     const s = states[q];
@@ -462,6 +682,15 @@ export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, 
     if (!action) {
       // LR(0) accepts in every column, but only at the end of the input
       const early = table.actionTable.get(q)?.get(la)?.some(a => a.type === 'accept');
+      if (recovery && early) {
+        acceptTooEarly(q, la, cell);
+        continue;
+      }
+      if (recovery) {
+        if (!recover(q, la, cell)) return done(false);
+        if (semanticStop) return done(false);
+        continue;
+      }
       push({
         kind: 'error', state: q, lookahead: la, lineKeys: [lineKey.err(q)],
         text: {
@@ -474,6 +703,7 @@ export function simulateRecursiveAscent(tokens: string[], gen: GeneratedAscent, 
     if (action.kind === 'shift') {
       const lexeme = lexemes[pos];
       pos++;
+      shiftedSinceRecovery = true;
       const leaf: DerivationNode = { id: `ra_node_${nodeCounter++}`, symbol: la, isTerminal: true };
       const f: Frame = { state: action.target, symbol: la, lexeme, tree: leaf };
       frames.push(f);

@@ -3239,6 +3239,35 @@
   font-weight: 700;
 }
 
+/* Recursive descent and ascent: the stop symbols of a call, the test lines, the switch */
+.rd-frame-stop {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.rd-frame-stop-label {
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.rd-frame-stop code {
+  font-size: 11px;
+}
+
+.rd-branch-recovery {
+  background-color: var(--color-warning-subtle);
+  border-left: 3px solid var(--color-warning);
+  font-weight: 700;
+  color: var(--color-warning);
+}
+
+.rd-recovery-toggle,
+.ra-recovery-toggle {
+  margin: 2px 0 8px;
+}
+
 .recovery-errors {
   margin: 6px 0 0 18px;
   padding: 0;
