@@ -13,6 +13,8 @@ import { SimulatorControls, useAutoPlay } from '../components/SimulatorControls'
 import { AutomatonGraphVisualizer } from '../visualizer/AutomatonGraphVisualizer';
 import { ReferenceBar } from '../components/ReferenceBar';
 import { Language } from '../../i18n/translations';
+import { RecoverySets } from '../../core/analyser/errorRecovery';
+import { RecoveryToggle, RecoveryStepBox, RecoveryErrorsList } from '../components/ErrorRecovery';
 import { AlertTriangle, CheckCircle2, Copy, Check, Download, ExternalLink, Play, XCircle, BookOpen, Layers, Database, Settings2 } from 'lucide-react';
 
 type LRVariantName = 'LR(0)' | 'SLR(1)' | 'LALR(1)' | 'IELR(1)' | 'LR(1)';
@@ -102,6 +104,11 @@ interface RecursiveAscentViewProps {
   onStopOnSemanticErrorsChange: (v: boolean) => void;
   /** Opens the editor of the actions */
   onEditActions?: () => void;
+  /** Optional panic-mode error recovery (the switch is shared with recursive descent) */
+  recoveryOn?: boolean;
+  onRecoveryChange?: (on: boolean) => void;
+  /** The stop symbols (FOLLOW sets) */
+  recoverySets?: RecoverySets;
 }
 
 export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
@@ -117,7 +124,10 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
   ruleActions,
   stopOnSemanticErrors,
   onStopOnSemanticErrorsChange,
-  onEditActions
+  onEditActions,
+  recoveryOn = false,
+  onRecoveryChange,
+  recoverySets
 }) => {
   const cz = lang === 'cz';
   const [codeLang, setCodeLang] = useState<AscentLang>('js');
@@ -150,9 +160,12 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
 
   const simulation: AscentSimulation | null = useMemo(
     () => (gen && tokenized.unknown.length === 0
-      ? simulateRecursiveAscent(tokenized.tokens, gen, table!, { lexemes: tokenized.lexemes, placements, keywords, stopOnSemanticErrors })
+      ? simulateRecursiveAscent(tokenized.tokens, gen, table!, {
+        lexemes: tokenized.lexemes, placements, keywords, stopOnSemanticErrors,
+        recovery: recoveryOn && recoverySets ? { sets: recoverySets } : undefined
+      })
       : null),
-    [gen, tokenized, table, placements, keywords, stopOnSemanticErrors]
+    [gen, tokenized, table, placements, keywords, stopOnSemanticErrors, recoveryOn, recoverySets]
   );
   useEffect(() => {
     setStepIdx(0);
@@ -317,14 +330,14 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
       'Značkové neterminály (akce Yaccu uprostřed pravidla) nevkládá: akci, kterou stav neurčí, provede až při redukci a jen ohlásí, že je pozdě. Rozsah otevřený až při redukci tak neobsahuje jména deklarovaná uvnitř pravidla a jejich použití mohou skončit chybou.',
       'Akce na začátku pravidla (pozice 1 u rozsahu, vlastní kód při výběru pravidla) proběhnou vždy až při redukci: analyzátor LR pravidlo předem nezná.',
       'Generované programy kontrolují jen syntaxi, tabulku symbolů nemají (akce jsou v nich jen v komentářích); JavaScript má háčky onEnter, onMatch, onRule. Oberon zde nelze přeložit ani spustit.',
-      'Tabulka symbolů je stejná demonstrace jako v rekurzivním sestupu: žádné typy, druhy jmen, adresy ani kód; žádné zotavení z chyb.',
+      'Tabulka symbolů je stejná demonstrace jako v rekurzivním sestupu: žádné typy, druhy jmen, adresy ani kód. Zotavení z chyb (panický režim) umí jen krokování, generované programy končí u první chyby.',
       'Jen deterministické tabulky (bez kolizí); krokování nejvýše 2 000 + 100 kroků na symbol vstupu.'
     ]
     : [
       'It does not insert marker non-terminals (Yacc\'s mid-rule actions): an action that no state determines runs at the reduction, and the step only says that it is late. A scope opened at the reduction does not hold the names declared inside the rule, and their uses may end in an error.',
       'Actions at the start of a rule (a scope from position 1, own code when the rule is chosen) always run at the reduction: the LR parser does not know the rule in advance.',
       'The generated programs check the syntax only and have no symbol table (the actions are only in comments); the JavaScript has the hooks onEnter, onMatch, onRule. Oberon cannot be compiled or run here.',
-      'The symbol table is the same demonstration as in recursive descent: no types, kinds of names, addresses or code; no error recovery.',
+      'The symbol table is the same demonstration as in recursive descent: no types, kinds of names, addresses or code. Error recovery (panic mode) is done by the step simulator only; the generated programs stop at the first error.',
       'Deterministic (conflict-free) tables only; the step simulator stops after 2,000 + 100 steps per input symbol.'
     ];
 
@@ -332,7 +345,7 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
     const labels: Record<AscentStep['kind'], [string, string]> = {
       call: ['volání', 'call'], shift: ['přesun', 'shift'], reduce: ['redukce: návrat', 'reduce: return'],
       epsilon: ['ε-redukce', 'ε-reduction'], return: ['návrat', 'return'], goto: ['přechod (goto)', 'goto'],
-      accept: ['přijetí', 'accept'], error: ['chyba', 'error']
+      accept: ['přijetí', 'accept'], error: ['chyba', 'error'], recover: ['zotavení', 'recovery']
     };
     return labels[s.kind][cz ? 0 : 1];
   };
@@ -432,18 +445,22 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
               </label>
             )}
           </div>
+          {onRecoveryChange && recoverySets && (
+            <RecoveryToggle enabled={recoveryOn} onChange={onRecoveryChange} method="ra" lang={lang} className="ra-recovery-toggle" />
+          )}
 
           {simulation && step && (
             <>
               <div className="sim-sticky">
                 <SimulatorControls stepIdx={stepIdx} total={total} isPlaying={isPlaying} speed={speed} lang={lang} onStep={setStepIdx} onTogglePlay={() => setIsPlaying(p => !p)} onSpeed={setSpeed} />
-                <div className="card ra-step" style={{ padding: '10px 14px', borderLeft: `4px solid ${step.kind === 'error' ? 'var(--color-danger)' : step.kind === 'accept' ? 'var(--color-success)' : 'var(--color-primary)'}` }}>
+                <div className="card ra-step" style={{ padding: '10px 14px', borderLeft: `4px solid ${step.kind === 'error' ? 'var(--color-danger)' : step.kind === 'recover' ? 'var(--color-warning)' : step.kind === 'accept' ? 'var(--color-success)' : 'var(--color-primary)'}` }}>
                   <div style={{ fontSize: '12.5px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--color-text-secondary)' }}>
                       {cz ? `Krok ${stepIdx + 1} z ${total} (${stepKindLabel(step)}): ` : `Step ${stepIdx + 1} of ${total} (${stepKindLabel(step)}): `}
                     </span>
                     <span>{cz ? step.text.cz : step.text.en}</span>
                   </div>
+                  {step.recovery && <RecoveryStepBox info={step.recovery} method="ra" lang={lang} />}
                 </div>
               </div>
 
@@ -537,6 +554,12 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                         })}
                       </tbody>
                     </table>
+                    {step.recovery?.kind === 'pop' && (
+                      <div className="ra-returning">
+                        {cz ? 'Bez výsledku se vrátila procedura ' : 'Returned without a result: the procedure of '}<strong>{name(step.state)}</strong>
+                        {cz ? `; běží ${name(step.frames[step.frames.length - 1])}` : `; ${name(step.frames[step.frames.length - 1])} is running`}
+                      </div>
+                    )}
                     {(step.kind === 'reduce' || step.kind === 'return') && step.nt !== undefined && (
                       <div className="ra-returning">
                         {cz ? 'Vrací se ' : 'Returning '}<code>({step.nt}, {step.count})</code>
@@ -589,10 +612,14 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                 </div>
               </div>
 
-              <div className={`report-box ${simulation.accepted ? 'success' : 'danger'}`} style={{ marginTop: '10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <div className={`report-box ${simulation.accepted ? 'success' : simulation.completedWithErrors ? 'warning' : 'danger'}`} style={{ marginTop: '10px', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
                 {simulation.accepted ? <CheckCircle2 size={15} /> : <XCircle size={15} />}
                 <span>
-                  {simulation.accepted
+                  {simulation.completedWithErrors && simulation.errors
+                    ? (cz
+                      ? `Slovo odmítnuto: syntaktických chyb ${simulation.errors.length}, analýza po zotavení v panickém režimu přečetla celý vstup.`
+                      : `Word rejected: ${simulation.errors.length} syntax error(s); after panic-mode recovery the analysis read the whole input.`)
+                    : simulation.accepted
                     ? (cz ? `Slovo přijato. Pravý rozklad: ${simulation.rightParse.join(' ') || '–'} (stejný jako v záložce LR analyzátory).` : `Word accepted. Right parse: ${simulation.rightParse.join(' ') || '–'} (the same as on the tab LR parsers).`)
                     : simulation.stopped
                       ? (cz ? 'Zastaveno po limitu kroků.' : 'Stopped at the step limit.')
@@ -600,6 +627,9 @@ export const RecursiveAscentView: React.FC<RecursiveAscentViewProps> = ({
                         ? (cz ? 'Slovo odmítnuto pro sémantickou chybu (tabulka symbolů), ne pro syntaxi.' : 'Word rejected for a semantic error (the symbol table), not for its syntax.')
                         : (cz ? 'Slovo odmítnuto.' : 'Word rejected.')}
                   {simulation.undeclared.length > 0 && !stopOnSemanticErrors && (cz ? ` Nedeklarováno: ${[...new Set(simulation.undeclared.map(u => u.name))].join(', ')}.` : ` Not declared: ${[...new Set(simulation.undeclared.map(u => u.name))].join(', ')}.`)}
+                  {simulation.errors && simulation.errors.length > 0 && (
+                    <RecoveryErrorsList errors={simulation.errors} tokens={tokenized.tokens} lang={lang} method="ra" />
+                  )}
                 </span>
               </div>
             </>
